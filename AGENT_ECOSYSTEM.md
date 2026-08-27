@@ -40,7 +40,7 @@
 渐进式披露是**工作区级概念**——哪个层级目录作为工作区打开，平台就扫它下面的 `.workbuddy/skills`。因此三级目录统一采用「**实体 + 引用**」结构：
 
 ```
-C001-AI自动化公司/                ← 公司级工作区
+companies/C001/                 ← 公司级工作区（稳定锚 junction→真实公司目录）
 ├── skills/ticket-system/         ← 实体（唯一出处，文件系统即真相）
 └── .workbuddy/skills → junction→ skills/     ← 引用（平台披露通道）
 
