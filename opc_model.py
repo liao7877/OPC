@@ -126,6 +126,16 @@ def _read(p: Path) -> str:
         return ""
 
 
+def extract_id(text: str, fm_key: str = "id", prose_pat: str = r"ID[：:]\s*(\S+)") -> str | None:
+    """实体 ID 提取：优先 frontmatter 的 fm_key（如 id），回退散文「XX ID：...」。
+    兼容 P0001（散文）与 P0002/P0003（frontmatter）两种注册格式，不强制单一写法。"""
+    fm = parse_frontmatter(text)
+    if fm.get(fm_key):
+        return fm[fm_key].strip()
+    m = re.search(prose_pat, text)
+    return m.group(1).strip() if m else None
+
+
 def build_indexes(company_root: str) -> dict:
     root = Path(company_root)
     tasks: dict[str, dict] = {}
@@ -144,18 +154,18 @@ def build_indexes(company_root: str) -> dict:
             pm = d / "project.md"
             if pm.is_file():
                 txt = _read(pm)
-                m = re.search(r"项目\s*ID[：:]\s*(\S+)", txt)
-                if m:
-                    projects[m.group(1).strip()] = {"path": str(pm), "txt": txt}
+                pid = extract_id(txt, "id", r"项目\s*ID[：:]\s*(\S+)")
+                if pid:
+                    projects[pid] = {"path": str(pm), "txt": txt}
 
     for d in root.iterdir():
         if d.is_dir() and re.match(r"^T\d+", d.name):
             tm = d / "team.md"
             if tm.is_file():
                 txt = _read(tm)
-                m = re.search(r"团队\s*ID[：:]\s*(\S+)", txt)
-                if m:
-                    teams[m.group(1).strip()] = {"path": str(tm)}
+                tid = extract_id(txt, "id", r"团队\s*ID[：:]\s*(\S+)")
+                if tid:
+                    teams[tid] = {"path": str(tm)}
 
     roster = root / "E0000-AI员工-总管" / "roster.md"
     if not roster.is_file():
