@@ -2,7 +2,7 @@
 
 > **定位**：PRINCIPLES 的补充约定，是 P2（单一真相）/ P3（高内聚低耦合）在**「架构常量层」**的具体落地。
 > **创建**：2026-08-28 · **依据**：架构评审（依赖倒置视角）+ PoC 验证。
-> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`generate_dashboard.py`（首个接入的 consumer）。
+> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`scripts/link-company.*`（稳定锚同步）、`scripts/watch-companies.py`（可选监听守护）、`generate_dashboard.py`（首个接入的 consumer）。
 
 ---
 
@@ -24,6 +24,8 @@
 
 - **Q1 命名空间 scheme** = `opc://` URI 逻辑符号（稳定契约，几乎不变）。
 - **Q2 Registry 组织** = **全局单例（`opc.toml`）+ 公司级覆盖**（约定优于配置：公司段仅写偏离 DEFAULT 的字段）。
+- **Z 稳定锚方案** = 公司 `home` 指向 OS 级稳定锚 `companies/<cid>`（junction/symlink），真实目录可任意改名/挪动，只更新该链接（手动跑脚本或未来加 watcher），所有 consumer 零改动、跨平台。
+- **跨平台硬约束** = 所有机制（resolver / 脚本 / watcher）必须同时兼容 Windows / macOS / Linux：Windows 用 `mklink /J`（junction），*nix 用 `ln -s`（symlink）；发现/重指逻辑全在 `opc_resolver.py`（仅标准库、无平台分支业务），平台差异只在 `_create_link` 一处；`companies/` 锚目录 gitignore（Windows 默认不跟踪 symlink，提交了会退化成文本文件）。
 
 ---
 
@@ -41,13 +43,15 @@ affairs = "workbench/affairs"
 page_templates = "page-templates"
 
 [company.C001]                   # 仅覆盖偏离字段；其余继承 DEFAULT
-home = "C001-AI自动化公司"
+home = "companies/C001"          # Z 方案：指向 OS 级稳定锚（junction/symlink），不直写真实目录名
 ```
 
 **铁律**
-- `opc.toml` 是**物理路径首选真相源（人类可读 + 加速）**，但非唯一必需：公司层改名**连本文件都不用改**——resolver 靠 `company.md` 的「公司 ID」扫描发现真实目录（自愈）。team / employee / project 本就按目录名前缀扫描发现，改名天然自愈。
-- 手动改目录名后**无需任何操作**：所有 consumer 经 resolver 自动解析到新位置。仍建议把 `home` 同步成新名，保持 manifest 作为人类可读的布局速查。
+- `opc.toml` 的 `home` 指向**稳定锚** `companies/<cid>`，不直写易变的真实目录名（`C001-AI自动化公司`）。真实目录改名后，**只更新锚、不碰本文件、不碰 consumer**。
+- **更新锚 = 跑 `scripts/link-company`（零参数）**：脚本不靠你告诉它改了哪个目录，而是扫 OPC 根下各 `company.md`、按「公司 ID」扫描发现真实位置，重指 `companies/<cid>`。发现逻辑复用 resolver 的 `_discover_company_home`，零手动输入。
+- **终极兜底（C 自愈）**：即便锚也断了（没跑脚本），resolver 仍按 `company.md` 的「公司 ID」扫描发现真实目录——所有 consumer 经 resolver 自动定位，改名零配置。锚只是「人类可读 + 加速」层。
 - 公司段只写「偏离」字段，未写字段回退 DEFAULT（约定优于配置）。
+- **company.md 锚点的维护边界（回答「总得有人维护吗」）**：仅公司根目录一份 `company.md`，其「公司 ID」由 `create-company` 技能在**建公司时写一次**；ID 是位置无关的，**目录改名不需要改它**。子实体（员工/团队/项目）靠目录名前缀（`E0000-`/`T001-`/`P0001-`）扫描发现，**无 md、零维护**。锚点漂移由 `audit_structure`（被 `--check` / pre-commit 自动跑）兜底报警——你无需记着维护，工具替你盯。
 
 ---
 
@@ -73,40 +77,53 @@ opc://<scope>/<type>/<id>/<sub>
 | `affairs` | 常设事务目录 | `opc://company:C001/affairs` |
 | `page_templates` | 看板模板目录 | `opc://company:C001/page_templates` |
 
-**技能命名约定（resolver 待扩展）**：`opc://company:C001/skill/<名称>`。
+**技能命名约定**：`opc://company:C001/skill/<名称>`（约定式：`{home}/{skills}/<名称>`）。
 
 ---
 
 ## 4. resolver（`opc_resolver.py`，OPC 根，零第三方依赖）
 
 仅用标准库 `tomllib`。API：
-- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。**自愈兜底**：若 manifest 的 `home` 目录不存在，自动扫 OPC 根下 `company.md`、按「公司 ID」定位真实目录——手动改名目录忘了改 manifest 也能工作。
+- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。**自愈兜底**：若 `home` 目录不存在，自动扫 OPC 根下 `company.md`、按「公司 ID」定位真实目录——改名目录忘了更新锚也能工作。
 - `resolve(uri)` → `opc://...` 解析为绝对路径；无 name 则返回公司根。
-- `check_links(cid)` → 扫描所有 name 是否解析到真实存在的路径；失效即报「失效引用：opc://... -> 路径（不存在）」，返回 issue 列表。
+- `check_links(cid)` → ① manifest key 物理存在 + ② 全文 opc:// 引用可解析 + ③ 结构审计（company.md 锚点缺失/ID 无效/与 opc.toml 不符）；任一失效报 issue 列表。
+- `audit_structure()` → 结构审计（见上 ③）；可单独调用，亦被 `check_links` 内含。
+- `sync_links()` → **稳定锚同步中枢**：对每个公司，按 `home`（优先）或 `company.md` 的「公司 ID」扫描发现真实位置，把 `companies/<cid>` 重指过去。零参数、零手动输入。**手动脚本与未来 watcher 都只调它**（DIP：业务智能单一来源）。
 
 `CompanyConfig` 即**依赖倒置容器**：高层只依赖 `opc://` 符号，物理路径细节在此注入。
 
 ---
 
-## 5. 链接器自检（check-links）
+## 5. 链接器自检 + 稳定锚同步
 
 ```bash
-cd OPC根 && python opc_resolver.py --check          # 全绿=自洽
+cd OPC根
+python opc_resolver.py --check            # 全文扫描 opc:// 引用，全绿=自洽
 python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对路径
+python opc_resolver.py --sync-links        # 重指 companies/<cid> 到真实目录（零参数）
 ```
-**用途**：改名 / 重构后跑一次，立即知道哪些引用漏改。拟接入 **pre-commit** 钩子，提交前阻断失效引用。
+
+**跨平台**：`opc_resolver.py` 仅标准库、无平台分支业务；Windows 跑 `scripts/link-company.ps1`、macOS/Linux 跑 `scripts/link-company.sh`，二者都只是调 `opc_resolver.py --sync-links`。`companies/` 锚目录已 gitignore，clone 后首次跑 link-company 即重建。
+
+**手动同步（改名后跑一次）**：`scripts/link-company.ps1`（Windows）/ `scripts/link-company.sh`（*nix），内部即调 `opc_resolver.py --sync-links`。
+
+**可选监听守护（未来启用）**：`scripts/watch-companies.py` —— watchdog 监听 OPC 根 rename/move/create/delete → 防抖 2s → 调 `--sync-links`。它只是「触发器外壳」，不含任何发现逻辑（全在 resolver），故「加监听 = 写个 20 行包装」。依赖 `pip install watchdog`。
+
+**pre-commit 分发**：钩子装在 `.git/hooks/pre-commit`（git 不追踪 `.git/`）。clone 后重装：`cp scripts/pre-commit .git/hooks/`（或 `git config core.hooksPath scripts/`）。
 
 ---
 
-## 6. 落地状态（PoC 2026-08-28，已验证）
+## 6. 落地状态（2026-08-28，已验证）
 
 - 新增 `opc.toml` + `opc_resolver.py`。
 - `C001-AI自动化公司/generate_dashboard.py` 顶部加注入块：路径常量从 `opc_resolver.load_company("C001")` 注入，保留 `__file__` fallback。
-- **验证三步全过**：
+- **验证三步全过（PoC）**：
   1. 生成器从 manifest 注入公司根，三级看板数据正常生成（exit 0）；
   2. `opc check-links` → 「命名空间自洽」；
-  3. 模拟把 `home` 改成不存在名（manifest 未同步改名）→ resolver 靠 `company.md` 的「公司 ID」**自愈定位**真实目录，`check-links` 全绿、生成器照常生成、**配置与脚本零改动**；改回真名后一致。
-  4. （后续增强）公司层自愈落地：即便 `opc.toml` 的 `home` 永久写错 / 过时，所有 consumer 仍经 `_discover_company_home` 按 ID 现场发现，改名零配置。
+  3. 模拟把 `home` 改成不存在名 → resolver 靠 `company.md` 的「公司 ID」**自愈定位**真实目录，`check-links` 全绿、生成器照常生成、配置与脚本零改动；改回真名后一致。
+- **Z 稳定锚（本轮新增）**：
+  - `companies/C001` junction 已建，指向真实公司目录；`opc.toml` 的 `home` 改为 `companies/C001`。
+  - `sync_links()` + `scripts/link-company.{ps1,sh}` + `scripts/watch-companies.py` 已实现：靠 `company.md` 的「公司 ID」扫描发现，**零参数**重指锚。`--sync-links` 实跑验证待 shell 恢复后补（逻辑已审阅）。
 
 ---
 
@@ -119,7 +136,9 @@ python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对�
 | C | consumer 铺开：绝对路径 / 已废弃 INDEX.md / 写死公司名等高危裸引用全改 `opc://`（`company-template` 同步） | ✅ 已做 |
 | D | pre-commit：接入 `check-links`，提交前阻断失效引用（本仓库已装 `.git/hooks/pre-commit`，其他 clone 需重装） | ✅ 已做 |
 | E | resolver 扩展：补 `skill/team/employee/project` 实体解析 + `org` 范围 + 全文扫描 `check-links` | ✅ 已做 |
-| F | 公司层自愈：`load_company` 加 `_discover_company_home` 扫描发现兜底，手动改公司目录名忘了改 manifest 也能自动定位 | ✅ 已做（2026-08-28） |
+| F | 公司层自愈：`load_company` 加 `_discover_company_home` 扫描发现兜底，手动改公司目录名忘了改 manifest 也能自动定位 | ✅ 已做 |
+| G | Z 稳定锚：`companies/<cid>` junction + `sync_links()` + `scripts/link-company.*` + `watch-companies.py`（按 ID 扫描发现，零参数重指） | ✅ 已实现（待 shell 恢复实跑验证） |
+| H | 锚点审计：`audit_structure` 把 company.md 维护职责下沉到工具门禁（`--check` / pre-commit 自动覆盖漂移）；`.gitignore` 排除 `companies/` | ✅ 已做 |
 
 ---
 
@@ -127,12 +146,15 @@ python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对�
 
 - ❌ 在文档 / skill / 代码里裸写 `../` 上跳或绝对路径 `E:\OPC\...` 引用实体。
 - ❌ 把脚本位置（`__file__`）当作布局约定硬编码（原 `COMPANY_DIR = SCRIPT_DIR` 即此反模式）。
-- ❌ 改名时逐个改引用点（裸路径反模式）；改名后无需改任何引用——resolver 按 `opc://` 符号 + 实体 ID 自动重定位。manifest `home` 同步改是「建议」非「必须」。
+- ❌ 改名时逐个改引用点（裸路径反模式）；改名后**不要手动改 opc.toml 的 home**，而是跑 `scripts/link-company` 重指锚——引用点零改动。resolver 也会按 `company.md` 的 ID 自愈兜底。
+- ❌ 在 `companies/` 锚命名空间下放真实公司目录（该目录仅供本机制管理链接）。
+- ❌ 在机制代码里写 Windows 专属路径/命令却不提供 *nix 分支——所有机制必须 Windows + macOS + Linux 三端可用（平台差异只允许集中在 `_create_link` 一处）。
 
 ---
 
 ## 9. 与 PRINCIPLES 关系
 
-- 补充 **P2 单一真相**：延伸到「架构常量层」——路径/布局约定也有唯一出处（`opc.toml`）。
-- 补充 **P3 高内聚低耦合**：`opc_resolver.py` 单一职责（解析/注入/自检），consumer 不碰路径细节。
+- 补充 **P2 单一真相**：延伸到「架构常量层」——路径/布局约定也有唯一出处（`opc.toml` + `companies/` 锚）。
+- 补充 **P3 高内聚低耦合**：`opc_resolver.py` 单一职责（解析/注入/自检/同步锚），consumer 不碰路径细节。
 - 强化 **P4 单向管道**：`opc.toml` 是真相，consumer 只读符号、永不写回路径约定。
+- 落地 **DIP**：高层依赖 `opc://` 抽象符号；物理路径细节注入进 manifest + `companies/` 锚 + resolver 扫描发现，consumer 零感知。

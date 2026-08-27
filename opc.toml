@@ -20,4 +20,6 @@ employees = ""                    # 员工目录前缀（空=在 home 根下，�
 
 [company.C001]
 # 仅覆盖「偏离」字段；其余继承 DEFAULT（约定优于配置）
-home = "C001-AI自动化公司"
+# Z 方案：home 指向 OS 级稳定锚（companies/C001 = symlink/junction），
+# 真实目录改名后只需更新该链接，所有 consumer 零改动且跨平台。
+home = "companies/C001"
