@@ -1,0 +1,50 @@
+# opc_schema.toml — OPC 领域类型系统（单一真相）
+# 实体发现 + 字段契约 + 引用(FK) 声明。consumer 一律经 opc_model 读取，禁止私有正则。
+# 对标：DTO / Value Object / JSON Schema；FK 由 opc validate 校验。
+
+[meta]
+version = "1"
+
+# ---- 实体发现：每个实体如何被找到 ----
+[entity.company]
+discover = "company.md"        # 公司根 company.md，解析「公司 ID」
+id_field = "公司 ID"
+
+[entity.employee]
+discover = "roster"            # 经 E0000/roster.md 表发现（员工 ID 列）
+id_field = "员工 ID"
+
+[entity.team]
+discover = "team.md"
+id_field = "团队 ID"
+
+[entity.project]
+discover = "project.md"
+id_field = "项目 ID"
+
+[entity.task]
+discover = "task.md"           # workbench/tasks/<TSKxxxxx-标题>/task.md
+id_field = "id"
+
+# ---- 字段契约（类型 / 枚举 / 必填 / 格式）----
+[entity.task.fields]
+id         = { type = "string", required = true, pattern = "^TSK\\d{5}$" }
+title      = { type = "string", required = true }
+status     = { type = "enum", required = true, enum = ["backlog","in_progress","review","done","paused"] }
+owner      = { type = "ref", ref = "employee", required = true }
+project    = { type = "ref", ref = "project", required = false }
+priority   = { type = "enum", enum = ["高","中","低"] }
+type       = { type = "string" }
+due        = { type = "date" }
+created    = { type = "date" }
+updated    = { type = "date" }
+completed_at = { type = "date" }
+tags       = { type = "list" }
+handoffs   = { type = "list" }
+blocked_by = { type = "ref_list", ref = "task" }
+parent     = { type = "ref", ref = "task" }
+
+# 反规范化字段（P2 禁止复制）：标记为 derived；validator 检测到存储即告警。
+[entity.task.derived]
+owner_name   = "owner → employee.岗位"
+project_name = "project → project.名称"
