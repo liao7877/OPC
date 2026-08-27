@@ -182,10 +182,15 @@ project_name = "project → project.名称"
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 设计 | 本文件（三层架构 / schema 格式 / FK 图 / 迁移路径） | ✅ 已定稿（2026-08-28） |
-| 方案 3 实施 | `opc_schema.toml` + `opc_model.py` + `opc validate`（schema + FK） | ⏳ 待启动（文档落实后直接开工） |
-| 批次 4 | 两生成器改调 `opc_model` | 待定 |
-| 批次 5 | 反规范化字段治理 | 待定 |
-| 批次 6 | pre-commit 增 `opc validate` | 待定 |
+| 方案 3 实施 | `opc_schema.toml` + `opc_model.py` + `opc validate`（schema + FK） | ✅ 已完成（commit 273561c，实测抓出真实漂移） |
+| 批次 4 | 两生成器改调 `opc_model` | 待定（DRY 根治） |
+| 批次 5 | 反规范化字段治理 | 待定（generator 实时派生 + 删 owner_name/project_name） |
+| 批次 6 | pre-commit 增 `opc validate` | 待定（与 `--check` 并列，构成 OPC 编译器） |
+
+### 实测抓出的真实漂移（validator 首跑，2026-08-28）
+- `[ERR]` TSK00006 `status=failed` 不在枚举 → 疑似枚举缺「failed/cancelled」终态，或数据错（待决）
+- `[ERR]` TSK00007/8/9 `project=P0002/P0003` FK 悬空 → P0002/P0003 目录存在但 `project.md` 无「项目 ID」注册行（实体未注册）
+- `[WARN]`×16：8 个 task 均存储 `owner_name`/`project_name` 反规范化副本（P2 禁止，待派生化）
 
 ---
 
