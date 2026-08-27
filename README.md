@@ -24,7 +24,7 @@ OPC/
 ├── PRINCIPLES.md           # 组织级设计原则（P1~P24：架构哲学/技能体系/工程实践/协作流程/红线）
 ├── MECHANISM_PLAN.md       # 机制方案（运行 / 协作 / 派活机制的设计与规划）
 ├── SYSTEM_GUIDE.html       # 系统说明（可视化总览，浏览器打开）
-├── C001-AI自动化公司/       # 示例公司：完整跑通的 AI 自动化公司
+├── companies/C001/          # 示例公司稳定锚（junction→真实公司目录）：完整跑通的 AI 自动化公司
 │   ├── company.md          #   公司档案（定位 / 编制 / 边界）
 │   ├── AGENTS.md / CLAUDE.md # 公司级角色与红线（跨平台兜底）
 │   ├── E0000~E0002/        #   员工级工作区（总管 / 分析员 / 项目经理），各含 mydesk/worklog/skills
@@ -68,7 +68,7 @@ OPC/
 - **新开会话**后技能被平台渐进式披露（会话启动时扫描，当前会话不刷新）。
 
 **3. 跑看板**
-- `C001-AI自动化公司/` 下 `run_boards.bat`（Windows）/ `run_boards.sh`（Linux）生成 `dashboard.html` 等看板；`workbench/tasks/` 是唯一真相，看板是投影。
+- `opc://company:C001`（`companies/C001` 稳定锚）下 `run_boards.bat`（Windows）/ `run_boards.sh`（Linux）生成 `dashboard.html` 等看板；`workbench/tasks/` 是唯一真相，看板是投影。
 
 > 详细跨平台接入与子 Agent 派活机制见 [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md)；原则与红线见 [`PRINCIPLES.md`](PRINCIPLES.md)。
 
