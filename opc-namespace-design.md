@@ -45,7 +45,8 @@ home = "C001-AI自动化公司"
 ```
 
 **铁律**
-- `opc.toml` 是**物理路径唯一真相源**。改名 / 改布局 = **只改本文件一行**，所有 consumer 零改动。
+- `opc.toml` 是**物理路径首选真相源（人类可读 + 加速）**，但非唯一必需：公司层改名**连本文件都不用改**——resolver 靠 `company.md` 的「公司 ID」扫描发现真实目录（自愈）。team / employee / project 本就按目录名前缀扫描发现，改名天然自愈。
+- 手动改目录名后**无需任何操作**：所有 consumer 经 resolver 自动解析到新位置。仍建议把 `home` 同步成新名，保持 manifest 作为人类可读的布局速查。
 - 公司段只写「偏离」字段，未写字段回退 DEFAULT（约定优于配置）。
 
 ---
@@ -79,7 +80,7 @@ opc://<scope>/<type>/<id>/<sub>
 ## 4. resolver（`opc_resolver.py`，OPC 根，零第三方依赖）
 
 仅用标准库 `tomllib`。API：
-- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。
+- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。**自愈兜底**：若 manifest 的 `home` 目录不存在，自动扫 OPC 根下 `company.md`、按「公司 ID」定位真实目录——手动改名目录忘了改 manifest 也能工作。
 - `resolve(uri)` → `opc://...` 解析为绝对路径；无 name 则返回公司根。
 - `check_links(cid)` → 扫描所有 name 是否解析到真实存在的路径；失效即报「失效引用：opc://... -> 路径（不存在）」，返回 issue 列表。
 
@@ -104,7 +105,8 @@ python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对�
 - **验证三步全过**：
   1. 生成器从 manifest 注入公司根，三级看板数据正常生成（exit 0）；
   2. `opc check-links` → 「命名空间自洽」；
-  3. 模拟把 `home` 改成不存在名 → `check-links` 一次抓出 5 处失效引用，生成器 `COMPANY_DIR` 自动指向新名、**脚本一行未改**；改回真名后恢复自洽。
+  3. 模拟把 `home` 改成不存在名（manifest 未同步改名）→ resolver 靠 `company.md` 的「公司 ID」**自愈定位**真实目录，`check-links` 全绿、生成器照常生成、**配置与脚本零改动**；改回真名后一致。
+  4. （后续增强）公司层自愈落地：即便 `opc.toml` 的 `home` 永久写错 / 过时，所有 consumer 仍经 `_discover_company_home` 按 ID 现场发现，改名零配置。
 
 ---
 
@@ -117,6 +119,7 @@ python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对�
 | C | consumer 铺开：绝对路径 / 已废弃 INDEX.md / 写死公司名等高危裸引用全改 `opc://`（`company-template` 同步） | ✅ 已做 |
 | D | pre-commit：接入 `check-links`，提交前阻断失效引用（本仓库已装 `.git/hooks/pre-commit`，其他 clone 需重装） | ✅ 已做 |
 | E | resolver 扩展：补 `skill/team/employee/project` 实体解析 + `org` 范围 + 全文扫描 `check-links` | ✅ 已做 |
+| F | 公司层自愈：`load_company` 加 `_discover_company_home` 扫描发现兜底，手动改公司目录名忘了改 manifest 也能自动定位 | ✅ 已做（2026-08-28） |
 
 ---
 
@@ -124,7 +127,7 @@ python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对�
 
 - ❌ 在文档 / skill / 代码里裸写 `../` 上跳或绝对路径 `E:\OPC\...` 引用实体。
 - ❌ 把脚本位置（`__file__`）当作布局约定硬编码（原 `COMPANY_DIR = SCRIPT_DIR` 即此反模式）。
-- ❌ 改名时逐个改引用点；**改名必须只改 `opc.toml`**。
+- ❌ 改名时逐个改引用点（裸路径反模式）；改名后无需改任何引用——resolver 按 `opc://` 符号 + 实体 ID 自动重定位。manifest `home` 同步改是「建议」非「必须」。
 
 ---
 

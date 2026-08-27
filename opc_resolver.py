@@ -82,8 +82,39 @@ class CompanyConfig:
         return self._abs("page_templates")
 
 
+def _discover_company_home(cid, root):
+    """扫描发现式兜底：root 下找 company.md 中声明「公司 ID == cid」的目录。
+
+    不依赖 opc.toml 的 home（物理路径细节），靠实体身份锚点（company.md 的 ID）
+    现场认公司。对应 DIP：高层只认逻辑 ID，物理位置细节在此按身份发现。
+    返回绝对路径，找不到返回 None。
+    """
+    if not root or not os.path.isdir(root):
+        return None
+    for entry in sorted(os.listdir(root)):
+        d = os.path.join(root, entry)
+        if not os.path.isdir(d):
+            continue
+        md = os.path.join(d, "company.md")
+        if not os.path.isfile(md):
+            continue
+        try:
+            with open(md, encoding="utf-8") as f:
+                txt = f.read()
+        except OSError:
+            continue
+        m = re.search(r'公司\s*ID\s*[:：]\s*(\S+)', txt)
+        if m and m.group(1).strip() == cid:
+            return d
+    return None
+
+
 def load_company(cid):
-    """读全局 + 公司级覆盖，合并返回 CompanyConfig（DI：细节在此注入）。"""
+    """读全局 + 公司级覆盖，合并返回 CompanyConfig（DI：细节在此注入）。
+
+    自愈：opc.toml 的 home（物理路径）失效时，按 company.md 的「公司 ID」
+    扫描发现真实目录——手动改公司目录名、忘了改 manifest 也能自动定位。
+    """
     root = _find_root()
     if root is None:
         raise FileNotFoundError("未找到 opc.toml（OPC 根）")
@@ -93,6 +124,12 @@ def load_company(cid):
     merged = {**defaults, **override}        # 公司级覆盖全局
     if "home" not in merged:
         merged["home"] = cid
+    # —— 自愈兜底：manifest home 失效 → 按 company.md 的 ID 扫描发现 ——
+    home_abs = os.path.join(root, merged["home"])
+    if not os.path.isdir(home_abs):
+        discovered = _discover_company_home(cid, root)
+        if discovered:
+            merged["home"] = os.path.relpath(discovered, root)
     return CompanyConfig(cid, root, merged)
 
 
