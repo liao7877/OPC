@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import tomllib
+import subprocess
 
 
 def _find_root():
@@ -229,8 +230,52 @@ def scan_refs(root):
     return refs
 
 
+def audit_structure(root=None):
+    """结构审计：把『company.md 锚点必须正确』这件维护职责从「人记忆」下沉到「工具门禁」。
+
+    扫描 OPC 根下「像公司」的目录（含 company.md 或 workbench/），校验：
+      - 必须有 company.md，且声明有效「公司 ID」（否则改名后无法被 sync_links 发现）；
+      - 其 ID 必须在 opc.toml 的 [company.<cid>] 中有对应段（否则解析不到实体）。
+    返回问题列表。被 check_links 调用，故 pre-commit 自动覆盖锚点漂移。
+    """
+    root = root or _find_root()
+    issues = []
+    if root is None or not os.path.isdir(root):
+        return issues
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    known_cids = {k for k in g.get("company", {}).keys() if k != "DEFAULT"}
+    skip = {".git", "companies", ".workbuddy", "scripts",
+            "create-company", "company-template"}
+    for entry in sorted(os.listdir(root)):
+        d = os.path.join(root, entry)
+        if not os.path.isdir(d) or entry in skip:
+            continue
+        md = os.path.join(d, "company.md")
+        has_md = os.path.isfile(md)
+        has_wb = os.path.isdir(os.path.join(d, "workbench"))
+        if not (has_md or has_wb):
+            continue  # 非公司目录（普通文档/工具目录），跳过
+        if not has_md:
+            issues.append(f"孤儿公司目录：{entry}/ 缺 company.md，改名后将无法被 sync_links 发现")
+            continue
+        try:
+            txt = open(md, encoding="utf-8").read()
+        except OSError:
+            issues.append(f"{entry}/company.md 不可读")
+            continue
+        m = re.search(r'公司\s*ID\s*[:：]\s*(\S+)', txt)
+        if not m:
+            issues.append(f"{entry}/company.md 缺「公司 ID」声明，无法被发现")
+            continue
+        cid = m.group(1).strip()
+        if known_cids and cid not in known_cids:
+            issues.append(
+                f"{entry}/company.md 声明公司 ID={cid}，但 opc.toml 无 [company.{cid}] 段")
+    return issues
+
+
 def check_links(cid="C001", root=None):
-    """链接器自检：① manifest 定义的 key 必须物理存在；② 全文 opc:// 引用必须可解析。"""
+    """链接器自检：① manifest 定义的 key 必须物理存在；② 全文 opc:// 引用必须可解析；③ 结构审计（锚点）。"""
     root = root or _find_root()
     issues = []
 
@@ -259,19 +304,121 @@ def check_links(cid="C001", root=None):
             rel = os.path.relpath(fp, root)
             issues.append(f"失效引用 {uri} @ {rel}:{ln} -> {e}")
 
+    # ③ 结构审计：company.md 锚点缺失/无效 → 改名后无法被发现（维护职责下沉到门禁）
+    issues += audit_structure(root)
+
     return issues
+
+
+# ---------------------------------------------------------------------------
+# 稳定锚同步（sync_links）：把 companies/<cid> 重指向真实目录
+# —— 零参数、零手动输入：靠 company.md 的「公司 ID」扫描发现真实位置。
+# 手动改公司目录名后跑一次即可；未来 watcher 也只调本函数。
+# ---------------------------------------------------------------------------
+
+def _create_link(link, target):
+    """创建 OS 级稳定锚 link -> target。
+    Windows 用 junction 联接（普通用户可建、跨盘符无碍）；*nix 用 symlink。
+    """
+    if sys.platform.startswith("win"):
+        # mklink 是 cmd 内建命令，必须经 cmd /c；路径加引号以兼容空格/中文
+        cmd = f'mklink /J "{link}" "{target}"'
+        subprocess.run(cmd, shell=True, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+def _remove_link(link):
+    """安全删除链接本身（不碰目标）。兼容 symlink / junction（含断链）。
+    companies/ 是受管锚命名空间，内部链接由本函数独占重建，安全。
+    """
+    for fn in (
+        lambda: os.unlink(link),
+        lambda: os.rmdir(link),
+        lambda: subprocess.run(
+            ["cmd", "/c", "rmdir", link], shell=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False),
+    ):
+        try:
+            fn()
+            return
+        except OSError:
+            continue
+        except Exception:
+            continue
+
+
+def _link_resolves_to(link, target):
+    """link 是否已指向 target（断链/不存在返回 False）。"""
+    try:
+        return os.path.realpath(link) == os.path.realpath(target)
+    except OSError:
+        return False
+
+
+def sync_links(root=None):
+    """重新同步所有公司的稳定锚 companies/<cid> -> 真实目录。
+
+    发现逻辑（不依赖手动输入）：
+      - 先试 opc.toml 的 home（已是 companies/<cid> 或真实存在的目录）；
+      - home 失效/不存在（如真实目录被改名）→ 按 company.md 的「公司 ID」扫描发现真实位置。
+    返回 (ok_list, err_list)。companies/ 是受管锚命名空间，内部链接可安全重建。
+    """
+    root = root or _find_root()
+    if root is None:
+        return [], ["未找到 opc.toml（OPC 根）"]
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    companies = g.get("company", {})
+    cids = [k for k in companies if k != "DEFAULT"]
+    ok, err = [], []
+    link_root = os.path.join(root, "companies")
+    os.makedirs(link_root, exist_ok=True)
+
+    for cid in cids:
+        home_rel = companies[cid].get("home")
+        target = None
+        if home_rel:
+            cand = os.path.join(root, home_rel)
+            if os.path.isdir(cand) and not _link_resolves_to(cand, os.path.join(link_root, cid)):
+                target = cand
+        if target is None:
+            target = _discover_company_home(cid, root)
+        if target is None:
+            err.append(f"{cid}: 未发现真实目录（home 失效且无 company.md ID 匹配）")
+            continue
+
+        link = os.path.join(link_root, cid)
+        if _link_resolves_to(link, target):
+            ok.append(f"{cid}: 已指向 {target}（无需改动）")
+            continue
+        _remove_link(link)          # 断链/错指都安全移除（companies/ 受管）
+        _create_link(link, target)
+        ok.append(f"{cid}: 重指向 -> {target}")
+    return ok, err
 
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
     ap.add_argument("--check", action="store_true", help="校验命名空间路径自洽（含全文扫描）")
+    ap.add_argument("--sync-links", action="store_true",
+                    help="同步稳定锚：重指向 companies/<cid> 到真实目录（零参数，靠 company.md ID 发现）")
     ap.add_argument("--company", default="C001", help="公司 id")
     ap.add_argument("--resolve", help="解析单个 opc:// URI 并打印绝对路径")
     a = ap.parse_args()
 
     if a.resolve:
         print(resolve(a.resolve))
+    elif a.sync_links:
+        ok, err = sync_links()
+        for line in ok:
+            print("[ok]", line)
+        for line in err:
+            print("[ERR]", line)
+        if err:
+            sys.exit(1)
+        print("[done] 稳定锚同步完成")
     elif a.check:
         iss = check_links(a.company)
         if iss:

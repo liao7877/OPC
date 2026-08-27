@@ -15,6 +15,10 @@ venv/
 .DS_Store
 Thumbs.db
 
+# OPC 命名空间稳定锚（companies/<cid> 是 OS 级 junction/symlink，由 scripts/link-company 重建，不入库）
+# 注意：Windows 上 git 默认 core.symlinks=false，提交 symlink 会退化成文本文件、clone 后失效，故必须忽略。
+companies/
+
 # 环境变量/凭据（防御性，正常不存在）
 .env
 .env.*
