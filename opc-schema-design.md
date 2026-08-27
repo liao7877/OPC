@@ -187,10 +187,12 @@ project_name = "project → project.名称"
 | 批次 5 | 反规范化字段治理 | 待定（generator 实时派生 + 删 owner_name/project_name） |
 | 批次 6 | pre-commit 增 `opc validate` | 待定（与 `--check` 并列，构成 OPC 编译器） |
 
-### 实测抓出的真实漂移（validator 首跑，2026-08-28）
-- `[ERR]` TSK00006 `status=failed` 不在枚举 → 疑似枚举缺「failed/cancelled」终态，或数据错（待决）
-- `[ERR]` TSK00007/8/9 `project=P0002/P0003` FK 悬空 → P0002/P0003 目录存在但 `project.md` 无「项目 ID」注册行（实体未注册）
-- `[WARN]`×16：8 个 task 均存储 `owner_name`/`project_name` 反规范化副本（P2 禁止，待派生化）
+### 实测抓出 → 根因已修（validator 首跑，2026-08-28）
+初跑报 4 ERR + 16 WARN，根因复盘（均修在工具层，未动业务数据）：
+- `[ERR]` TSK00006 `status=failed` 越枚举 → **根因：opc_schema.toml 枚举漏写 failed/cancelled**。系统权威 7 值为 `backlog/in_progress/review/done/failed/paused/cancelled`（见 KANBAN_PRD.md:46 / generate_tasks.py:33 / ticket-system SKILL.md:20）。已补 7 值。
+- `[ERR]` TSK00007/8/9 `project=P0002/P0003` FK 悬空 → **根因：校验器只认散文「项目 ID：P000x」，但 P0002/P0003 用 frontmatter `id: P000x` 注册（与 task.md 同款写法）**，属校验器单格式解析 bug，非数据漏注册。已修 `extract_id` 同时支持 frontmatter+散文（根治，不补冗余 prose 行，避打补丁）。
+- `[WARN]`×16：8 个 task 存储 `owner_name`/`project_name` 反规范化副本（P2 禁止）→ 留作批次 5 派生化治理（非阻断）。
+修正后重跑：0 ERR，仅剩 16 WARN（反规范化债务）。
 
 ---
 

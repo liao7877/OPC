@@ -30,7 +30,7 @@ id_field = "id"
 [entity.task.fields]
 id         = { type = "string", required = true, pattern = "^TSK\\d{5}$" }
 title      = { type = "string", required = true }
-status     = { type = "enum", required = true, enum = ["backlog","in_progress","review","done","paused"] }
+status     = { type = "enum", required = true, enum = ["backlog","in_progress","review","done","failed","paused","cancelled"] }
 owner      = { type = "ref", ref = "employee", required = true }
 project    = { type = "ref", ref = "project", required = false }
 priority   = { type = "enum", enum = ["高","中","低"] }
