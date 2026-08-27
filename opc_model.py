@@ -1,39 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-opc_model.py — OPC 领域模型（Repository + 校验器）
+opc_model.py — OPC 实体共享读取器（唯一解析点）
 
-职责（设计见 opc-schema-design.md）：
-  1. 发现实体：task / project / employee / team / company（按公司维度）
-  2. 按 opc_schema.toml 解析 + schema 校验（枚举 / 必填 / 格式）
-  3. 构建 FK 索引，做参照完整性校验（owner/project/blocked_by/parent/handoffs）
-  4. 反规范化字段（derived）存储告警
+职责：
+  1. 发现实体（按公司维度）：task / project / employee / team / company
+  2. 把实体卡（frontmatter）读成 (dict, body, has_fm) —— 不校验、不写死字段
 
-数据组织：opc_schema.toml / opc.toml 在组织根（OPC 根）；实体数据在每个公司目录
-（含 company.md，如 C001-AI自动化公司/ 或 companies/C001）。`opc validate` 默认校验
-OPC 根下全部公司；`--root <公司目录>` 只校验单公司。
+为什么单独成模块（设计取舍，2026-08-28 廖哥拍板 X 方案）：
+  - 所有 consumer（generate_dashboard.py / generate_tasks.py，含 C001 与
+    company-template 两套）统一 import 本模块的 parse_frontmatter，禁止各脚本
+    私写正则（呼应 P3 高内聚 / DRY）。加字段免费、改格式只动本文件一处。
+  - 不做什么：不做 schema 校验、不做 FK 阻断、不报错拦下。改名类问题靠
+    consumer 一处修，不做“校验不过就拦下”的复杂机制（避免“一堆检验过不了
+    导致根本用不起来”）。
+  - 仅用标准库（json + re + pathlib）。
 
-consumer（generate_dashboard.py / generate_tasks.py）应改调本模块，禁止私有正则（P3/DRY）。
-仅用标准库（tomllib + re + pathlib）。
+用法（被其他脚本 import）：
+  from opc_model import parse_frontmatter, build_indexes, discover_companies
+  fm, body, has = parse_frontmatter(open(".../task.md").read())
+  idx = build_indexes("C001-AI自动化公司")   # -> {task:{}, project:{}, team:{}, employee:{}}
 
-CLI:
-  python opc_model.py --validate [--root DIR]    # 跑 schema + FK 校验
-  python opc_model.py --schema                   # 打印已加载 schema
-退出码：有 [ERR] 则 1。
+命令行（可选，仅列举、非校验、不阻断）：
+  python opc_model.py --list      # 列出 OPC 根下各公司与实体数量
 """
+
 from __future__ import annotations
 import argparse
 import json
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # 根目录发现
 # ---------------------------------------------------------------------------
-def _find_opc_root(start: str | None = None) -> str | None:
+def _find_opc_root(start=None):
     """向上找含 opc.toml（组织根）的目录。"""
     d = Path(start or os.getcwd()).resolve()
     for _ in range(8):
@@ -45,128 +48,101 @@ def _find_opc_root(start: str | None = None) -> str | None:
     return None
 
 
-def load_schema(root: str | None = None) -> dict:
-    """从组织根加载 opc_schema.toml（向上找）。"""
-    d = Path(root or os.getcwd()).resolve()
-    for _ in range(8):
-        p = d / "opc_schema.toml"
-        if p.is_file():
-            with open(p, "rb") as f:
-                return tomllib.load(f)
-        if d.parent == d:
-            break
-        d = d.parent
-    raise RuntimeError("找不到 opc_schema.toml（OPC 组织根）")
-
-
 # ---------------------------------------------------------------------------
-# frontmatter 解析（容错：列表/JSON 对象/裸值）
+# 卡片解析（容错：列表/JSON 对象数组/裸值/空值；返回 body 与 has_fm）
 # ---------------------------------------------------------------------------
-def parse_frontmatter(text: str) -> dict:
+def parse_frontmatter(text):
+    """解析卡片 frontmatter -> (dict, body, has_fm)。
+
+    - key: value / key: [a, b] / key:（空）
+    - [a, b] 优先按 JSON 解析（支持对象数组，如 handoffs:[{...}]），失败回退逗号拆分
+    - 空值 -> None；裸值去引号
+    - 无 --- 包裹 -> ( {}, text.strip(), False )（交由调用方跳过坏文件）
+    """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
-        return {}
+        return {}, text.strip(), False
     end = None
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
             end = i
             break
     if end is None:
-        return {}
-    fm: dict[str, str] = {}
+        return {}, text.strip(), False
+    data = {}
     for line in lines[1:end]:
-        if ":" not in line or line.lstrip().startswith("#"):
+        s = line.strip()
+        if not s or s.startswith("#") or ":" not in line:
             continue
-        k, _, v = line.partition(":")
-        fm[k.strip()] = v.strip()
-    return fm
+        key, _, val = line.partition(":")
+        key, val = key.strip(), val.strip()
+        if val.startswith("[") and val.endswith("]"):
+            inner = val[1:-1].strip()
+            if not inner:
+                data[key] = []
+            else:
+                try:
+                    data[key] = json.loads(val)
+                except Exception:
+                    data[key] = [x.strip().strip('"').strip("'") for x in inner.split(",") if x.strip()]
+        elif val == "":
+            data[key] = None
+        else:
+            data[key] = val.strip('"').strip("'")
+    body = "\n".join(lines[end + 1:]).strip()
+    return data, body, True
 
 
-def parse_scalar_list(v: str) -> list[str]:
-    v = v.strip()
-    if v.startswith("[") and v.endswith("]"):
-        inner = v[1:-1].strip()
-        if not inner:
-            return []
-        try:
-            data = json.loads(v)
-            if isinstance(data, list):
-                return [str(x) for x in data]
-        except Exception:
-            pass
-        return [x.strip().strip("\"'") for x in inner.split(",") if x.strip()]
-    return [v] if v else []
-
-
-def parse_handoff_refs(v: str) -> list[str]:
-    """handoffs 是 [{from,to,...}]；返回其中的员工 ID 列表。"""
-    v = v.strip()
+def read_card(path):
+    """读取单个实体卡文件，返回 (dict, body, has_fm)。文件不存在 -> ({}, '', False)。"""
+    p = Path(path)
+    if not p.is_file():
+        return {}, "", False
     try:
-        data = json.loads(v)
-        if isinstance(data, list):
-            ids = []
-            for item in data:
-                if isinstance(item, dict):
-                    for key in ("from", "to"):
-                        if item.get(key):
-                            ids.append(str(item[key]))
-            return ids
-    except Exception:
-        pass
-    return re.findall(r"E\d{4}", v)
-
-
-# ---------------------------------------------------------------------------
-# 实体发现 / 索引构建（按单个公司目录）
-# ---------------------------------------------------------------------------
-def _read(p: Path) -> str:
-    try:
-        return p.read_text(encoding="utf-8")
+        return parse_frontmatter(p.read_text(encoding="utf-8", errors="ignore"))
     except OSError:
-        return ""
+        return {}, "", False
 
 
-def extract_id(text: str, fm_key: str = "id", prose_pat: str = r"ID[：:]\s*(\S+)") -> str | None:
+def extract_id(text, fm_key="id", prose_pat=r"ID[：:]\s*(\S+)"):
     """实体 ID 提取：优先 frontmatter 的 fm_key（如 id），回退散文「XX ID：...」。
     兼容 P0001（散文）与 P0002/P0003（frontmatter）两种注册格式，不强制单一写法。"""
-    fm = parse_frontmatter(text)
+    fm, _, _ = parse_frontmatter(text)
     if fm.get(fm_key):
         return fm[fm_key].strip()
     m = re.search(prose_pat, text)
     return m.group(1).strip() if m else None
 
 
-def build_indexes(company_root: str) -> dict:
-    root = Path(company_root)
-    tasks: dict[str, dict] = {}
-    projects: dict[str, dict] = {}
-    teams: dict[str, dict] = {}
-    employees: dict[str, dict] = {}
+def _read(p):
+    try:
+        return p.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
+
+def build_indexes(company_root):
+    """发现并索引公司内实体（task/project/team/employee），返回 dict。"""
+    root = Path(company_root)
+    tasks, projects, teams, employees = {}, {}, {}, {}
     for tm in root.glob("workbench/tasks/*/task.md"):
-        fm = parse_frontmatter(_read(tm))
+        fm, _, _ = parse_frontmatter(_read(tm))
         tid = fm.get("id")
         if tid:
             tasks[tid] = {"fm": fm, "path": str(tm)}
-
     for d in root.iterdir():
         if d.is_dir() and re.match(r"^P\d+", d.name):
             pm = d / "project.md"
             if pm.is_file():
-                txt = _read(pm)
-                pid = extract_id(txt, "id", r"项目\s*ID[：:]\s*(\S+)")
+                pid = extract_id(_read(pm), "id", r"项目\s*ID[：:]\s*(\S+)")
                 if pid:
-                    projects[pid] = {"path": str(pm), "txt": txt}
-
-    for d in root.iterdir():
-        if d.is_dir() and re.match(r"^T\d+", d.name):
+                    projects[pid] = {"path": str(pm)}
+        elif d.is_dir() and re.match(r"^T\d+", d.name):
             tm = d / "team.md"
             if tm.is_file():
-                txt = _read(tm)
-                tid = extract_id(txt, "id", r"团队\s*ID[：:]\s*(\S+)")
+                tid = extract_id(_read(tm), "id", r"团队\s*ID[：:]\s*(\S+)")
                 if tid:
                     teams[tid] = {"path": str(tm)}
-
     roster = root / "E0000-AI员工-总管" / "roster.md"
     if not roster.is_file():
         for d in root.iterdir():
@@ -180,16 +156,14 @@ def build_indexes(company_root: str) -> dict:
             m = re.match(r"\|\s*(E\d{4})\s*\|", line)
             if m:
                 employees[m.group(1)] = {"path": str(roster)}
-
     return {"task": tasks, "project": projects, "team": teams, "employee": employees}
 
 
-def discover_companies(opc_root: str) -> list[str]:
+def discover_companies(opc_root):
+    """列出 OPC 根下全部公司目录（含 companies/ 稳定锚，按真实路径去重）。"""
     opc_root = Path(opc_root)
-    skip = {".git", "companies", ".workbuddy", "scripts",
-            "create-company", "company-template"}
-    cands: list[str] = []
-    seen: set[str] = set()
+    skip = {".git", "companies", ".workbuddy", "scripts", "create-company", "company-template"}
+    cands, seen = [], set()
     for d in opc_root.iterdir():
         if d.is_dir() and d.name not in skip and (d / "company.md").is_file():
             rp = str(d.resolve())
@@ -207,130 +181,23 @@ def discover_companies(opc_root: str) -> list[str]:
     return sorted(cands)
 
 
-# ---------------------------------------------------------------------------
-# 校验
-# ---------------------------------------------------------------------------
-def validate_task(tid: str, rec: dict, schema: dict, idx: dict,
-                  data_root: str, issues: list[str]) -> None:
-    fm = rec["fm"]
-    fields = schema["entity"]["task"]["fields"]
-    rel = os.path.relpath(rec["path"], data_root)
-
-    for fname, spec in fields.items():
-        val = fm.get(fname)
-        if spec.get("required") and not val:
-            issues.append(f"[ERR] {rel}: 缺必填字段 {fname}")
-            continue
-        if not val:
-            continue
-        if spec.get("type") == "enum" and "enum" in spec:
-            if val not in spec["enum"]:
-                issues.append(f"[ERR] {rel}: {fname}={val} 不在枚举 {spec['enum']}")
-        if spec.get("type") == "string" and spec.get("pattern"):
-            if not re.match(spec["pattern"], val):
-                issues.append(f"[ERR] {rel}: {fname}={val} 不匹配格式 {spec['pattern']}")
-        if spec.get("type") == "ref":
-            table = idx.get(spec["ref"], {})
-            if val not in table:
-                issues.append(f"[ERR] {rel}: {fname}={val} 指向的{spec['ref']}不存在（FK 悬空）")
-        if spec.get("type") == "ref_list":
-            table = idx.get(spec["ref"], {})
-            for item in parse_scalar_list(val):
-                if item not in table:
-                    issues.append(f"[ERR] {rel}: {fname}={item} 指向的{spec['ref']}不存在（FK 悬空）")
-
-    if fm.get("handoffs"):
-        for emp in parse_handoff_refs(fm["handoffs"]):
-            if emp not in idx["employee"]:
-                issues.append(f"[ERR] {rel}: handoffs 含员工 {emp} 不存在（FK 悬空）")
-
-    for dname in schema["entity"]["task"].get("derived", {}):
-        if fm.get(dname):
-            issues.append(f"[WARN] {rel}: 存储了反规范化字段 {dname}（应由 FK 实时派生，见 opc_schema.toml derived）")
-
-
-def validate_project(pid: str, rec: dict, idx: dict, data_root: str, issues: list[str]) -> None:
-    txt = rec.get("txt", "")
-    rel = os.path.relpath(rec["path"], data_root)
-    m = re.search(r"负责人（owner）[：:]\s*(\S+)", txt)
-    if m:
-        emp = re.search(r"E\d{4}", m.group(1))
-        if emp and emp.group(0) not in idx["employee"]:
-            issues.append(f"[WARN] {rel}: owner 指向员工 {emp.group(0)} 不存在")
-    t = re.search(r"归属团队[：:]\s*(\S+)", txt)
-    if t:
-        team = re.search(r"T\d+", t.group(1))
-        if team and team.group(0) not in idx["team"]:
-            issues.append(f"[WARN] {rel}: 归属团队 {team.group(0)} 不存在")
-
-
-def validate_company(company_root: str, schema: dict) -> list[str]:
-    issues: list[str] = []
-    idx = build_indexes(company_root)
-    for tid, rec in idx["task"].items():
-        validate_task(tid, rec, schema, idx, company_root, issues)
-    for pid, rec in idx["project"].items():
-        validate_project(pid, rec, idx, company_root, issues)
-    if not idx["task"]:
-        issues.append(f"[WARN] {os.path.basename(company_root)}: 未发现任何 task")
-    return issues
-
-
-def validate_all(root: str | None = None) -> list[str]:
-    opc_root = root or _find_opc_root()
-    if not opc_root:
-        return ["[ERR] 找不到 opc.toml（OPC 组织根）"]
-    schema = load_schema(opc_root)
-    companies = discover_companies(opc_root)
-    if not companies:
-        return ["[WARN] 未发现任何公司（无含 company.md 的目录）"]
-    all_issues: list[str] = []
-    for c in companies:
-        name = os.path.basename(c)
-        sub = validate_company(c, schema)
-        if not sub:
-            all_issues.append(f"[ok] {name}: schema + FK 校验全绿")
-        else:
-            all_issues.append(f"=== {name} ===")
-            all_issues.extend(sub)
-    return all_issues
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-def main() -> int:
-    ap = argparse.ArgumentParser(description="OPC 领域模型校验（schema + FK）")
-    ap.add_argument("--validate", action="store_true", help="跑 schema + FK 校验（默认校验全部公司）")
-    ap.add_argument("--schema", action="store_true", help="打印已加载 schema")
-    ap.add_argument("--root", default=None, help="指定公司目录（只校验该公司）；默认校验 OPC 根下全部公司")
+def main():
+    ap = argparse.ArgumentParser(description="OPC 实体共享读取器（列出发现的公司与实体）")
+    ap.add_argument("--list", action="store_true", help="列出 OPC 根下各公司与实体数量")
+    ap.add_argument("--root", default=None, help="指定 OPC 根（默认向上查找 opc.toml）")
     a = ap.parse_args()
-
-    if a.schema:
-        print(json.dumps(load_schema(a.root), ensure_ascii=False, indent=2))
+    root = a.root or _find_opc_root()
+    if not root:
+        print("[ERR] 找不到 opc.toml（OPC 组织根）")
+        return 1
+    comps = discover_companies(root)
+    if not comps:
+        print("未发现任何公司（无含 company.md 的目录）")
         return 0
-
-    if a.validate:
-        if a.root:
-            schema = load_schema(a.root)
-            issues = validate_company(a.root, schema)
-            if not issues:
-                print(f"[ok] {os.path.basename(a.root)}: schema + FK 校验全绿")
-            else:
-                for i in issues:
-                    print(i)
-        else:
-            issues = validate_all()
-        if a.root:
-            return 1 if any(i.startswith("[ERR]") for i in issues) else 0
-        # 全部公司模式：汇总
-        for i in issues:
-            print(i)
-        if any(i.startswith("[ERR]") for i in issues):
-            return 1
-        return 0
-
-    ap.print_help()
+    for c in comps:
+        idx = build_indexes(c)
+        print(f"{os.path.basename(c)}: task={len(idx['task'])} project={len(idx['project'])} "
+              f"team={len(idx['team'])} employee={len(idx['employee'])}")
     return 0
 
 

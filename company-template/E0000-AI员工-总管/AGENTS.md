@@ -28,3 +28,4 @@
 - 状态留痕：任务状态变更必须记录到 messages.md
 - 派发必须注入：员工人设（AGENTS.md）+ 工作流（workflow.md）+ 记忆（memory/）
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
+- **共享读取器（2026-08-28 新增，依据 PRINCIPLES P25）**：实体卡（task/project/team/worklog/affair 等）的 frontmatter 读取统一走 OPC 根 `opc_model.py` 的 `parse_frontmatter`；写任何读取 / 扫描脚本都 `import` 它，禁止各脚本私写解析正则。加字段免费、改格式只动 `opc_model.py` 一处。新建公司继承本模板即自动遵循。

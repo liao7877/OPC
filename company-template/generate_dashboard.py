@@ -53,40 +53,18 @@ AFF_CADENCE_DAYS = {"每日": 2, "每周": 9, "每两周": 17, "每月": 35}
 
 # ---------- 基础工具（与 generate_tasks.py 同构，保持家规一致） ----------
 
-def parse_frontmatter(text):
-    """极简 frontmatter 解析：key: value / key: [a, b] / key:(空)。返回 (dict, body, has_fm)。"""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}, text.strip(), False
-    end = None
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            end = i
-            break
-    if end is None:
-        return {}, text.strip(), False
-    data = {}
-    for line in lines[1:end]:
-        s = line.strip()
-        if not s or s.startswith("#") or ":" not in line:
-            continue
-        key, _, val = line.partition(":")
-        key, val = key.strip(), val.strip()
-        if val.startswith("[") and val.endswith("]"):
-            inner = val[1:-1].strip()
-            if not inner:
-                data[key] = []
-            else:
-                try:
-                    data[key] = json.loads(val)
-                except Exception:
-                    data[key] = [x.strip().strip('"').strip("'") for x in inner.split(",") if x.strip()]
-        elif val == "":
-            data[key] = None
-        else:
-            data[key] = val.strip('"').strip("'")
-    body = "\n".join(lines[end + 1:]).strip()
-    return data, body, True
+# ---- 共享读取器：统一走 OPC 根 opc_model.py（PRINCIPLES P25，禁私写正则）----
+from pathlib import Path
+def _opc_root():
+    d = Path(__file__).resolve()
+    for _ in range(6):
+        if (d / "opc.toml").is_file():
+            return d
+        d = d.parent
+    return Path.cwd()
+if str(_opc_root()) not in sys.path:
+    sys.path.insert(0, str(_opc_root()))
+from opc_model import parse_frontmatter
 
 
 def split_blocks(text):

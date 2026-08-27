@@ -29,3 +29,4 @@
 - 派发必须注入：员工人设（AGENTS.md）+ 工作流（workflow.md）+ 记忆（memory/）
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
 - **命名空间治理（2026-08-28 新增，依据 opc-namespace-design.md）**：物理路径唯一真相源在 `opc.toml`（OPC 根）——改名 / 改布局只改该文件一行，公司内所有引用零改动；公司内引用统一用 `opc://company:C001/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；定期 `cd OPC根 && python opc_resolver.py --check` 巡检失效引用并修（先改 opc.toml 再查 consumer）；**agent 打开文件**：`opc://company:C001/...` 直接当稳定锚 `companies/C001/...` 用（真实目录，OS 透明解析，无需跑脚本），或 `python opc_resolver.py --resolve <uri>` 取绝对路径。详见 opc-namespace-design.md §3.1。
+- **共享读取器（2026-08-28 新增，依据 PRINCIPLES P25）**：实体卡（task/project/team/worklog/affair 等）的 frontmatter 读取统一走 OPC 根 `opc_model.py` 的 `parse_frontmatter`；写任何读取 / 扫描脚本都 `import` 它，禁止各脚本私写解析正则。加字段免费、改格式只动 `opc_model.py` 一处。

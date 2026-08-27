@@ -42,48 +42,18 @@ VALID_STATUS = {
 STATUS_ORDER = ["backlog", "in_progress", "review", "done", "failed", "paused", "cancelled"]
 
 
-def parse_frontmatter(text):
-    """极简 frontmatter 解析：支持  key: value / key: [a, b] / key:(空)。
-    返回 (dict, body_str, has_fm)。has_fm 仅当首尾均为 --- 时为 True；
-    否则视为无 frontmatter 的坏文件（由调用方决定跳过）。"""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}, text.strip(), False
-    end = None
-    for i in range(1, len(lines)):
-        if lines[i].strip() == "---":
-            end = i
-            break
-    if end is None:
-        return {}, text.strip(), False
-    fm_lines = lines[1:end]
-    body = "\n".join(lines[end + 1:]).strip()
-    data = {}
-    for line in fm_lines:
-        s = line.strip()
-        if not s or s.startswith("#"):
-            continue
-        if ":" not in line:
-            continue
-        key, _, val = line.partition(":")
-        key = key.strip()
-        val = val.strip()
-        if val.startswith("[") and val.endswith("]"):
-            inner = val[1:-1].strip()
-            if not inner:
-                data[key] = []
-            else:
-                # 优先按 JSON 解析（支持对象数组，如 handoffs:[{...}]）；
-                # 失败则回退简单逗号拆分（字符串数组，如 tags:[a, b]）
-                try:
-                    data[key] = json.loads(val)
-                except Exception:
-                    data[key] = [x.strip().strip('"').strip("'") for x in inner.split(",") if x.strip()]
-        elif val == "":
-            data[key] = None
-        else:
-            data[key] = val.strip('"').strip("'")
-    return data, body, True
+# ---- 共享读取器：统一走 OPC 根 opc_model.py（PRINCIPLES P25，禁私写正则）----
+from pathlib import Path
+def _opc_root():
+    d = Path(__file__).resolve()
+    for _ in range(6):
+        if (d / "opc.toml").is_file():
+            return d
+        d = d.parent
+    return Path.cwd()
+if str(_opc_root()) not in sys.path:
+    sys.path.insert(0, str(_opc_root()))
+from opc_model import parse_frontmatter
 
 
 def list_files(directory):
