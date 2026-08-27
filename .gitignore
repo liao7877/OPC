@@ -1,0 +1,22 @@
+# WorkBuddy 项目数据（含本地记忆/隐私，不入库）
+.workbuddy/
+.workbuddy/**
+
+# 依赖
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 日志与临时
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# 环境变量/凭据（防御性，正常不存在）
+.env
+.env.*
+*.pem
+*.key

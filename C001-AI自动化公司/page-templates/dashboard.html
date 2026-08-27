@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>公司驾驶舱 · C001</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2129; --panel-2: #222b35; --border: #2c3742;
+    --text: #e6edf3; --text-dim: #8b98a5; --accent: #4f9cf9;
+    --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef1f5; --border: #d8dee6;
+    --text: #1a2129; --text-dim: #6b7785; --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .brand h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  .brand .sub { font-size: 12px; color: var(--text-dim); }
+  .head-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; text-decoration: none;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .stale-input { width: 52px; text-align: center; border-radius: 8px; padding: 5px 6px;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-size: 12px; }
+  .stale-label { font-size: 12px; color: var(--text-dim); }
+  #staleBar { display: none; padding: 8px 20px; font-size: 13px; font-weight: 600;
+    color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
+    border-bottom: 1px solid var(--warn); }
+  nav.chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; }
+  nav.chips a { color: var(--accent); text-decoration: none; font-size: 13px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px; }
+  nav.chips a:hover { border-color: var(--accent); }
+  main { padding: 6px 20px 40px; max-width: 1280px; margin: 0 auto; }
+  section { margin-top: 22px; scroll-margin-top: 120px; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--accent); letter-spacing: .5px; }
+  h2 .cnt { color: var(--text-dim); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .grid { display: grid; gap: 12px; }
+  .g-emp { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .g-stat { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .g-proj { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .card.click { cursor: pointer; transition: border-color .12s, transform .08s; }
+  .card.click:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .stat-card { text-align: center; }
+  .stat-card .num { font-size: 26px; font-weight: 700; }
+  .stat-card .lbl { font-size: 12px; color: var(--text-dim); }
+  .emp-name { font-weight: 700; font-size: 15px; }
+  .dim { color: var(--text-dim); font-size: 12px; }
+  .badge { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1px 7px; color: var(--text-dim); font-size: 11px; display: inline-block; margin: 2px 3px 2px 0; }
+  .badge.st-on { color: var(--ok); border-color: var(--ok); }
+  .badge.st-reg { color: var(--bad); border-color: var(--bad); }
+  .badge.team { color: var(--accent); border-color: var(--accent); }
+  .bar { height: 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; display: flex; margin-top: 8px; }
+  .bar i { display: block; height: 100%; }
+  .bar .b1 { background: #8a94a6; } .bar .b2 { background: var(--accent); } .bar .b3 { background: var(--ok); }
+  .load-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
+  .load-row .who { width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .load-row .track { flex: 1; }
+  .feed { display: flex; flex-direction: column; gap: 8px; }
+  .feed-item { display: flex; gap: 10px; align-items: baseline; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+  .feed-item .when { font-size: 11px; color: var(--text-dim); white-space: nowrap; width: 150px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .d-plan { background: #8a94a6; } .d-doing { background: var(--accent); } .d-done { background: var(--ok); }
+  .risk-item { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--warn);
+    border-radius: 8px; padding: 7px 10px; font-size: 13px; margin-bottom: 6px; }
+  .risk-item.bad { border-left-color: var(--bad); }
+  .empty { color: var(--text-dim); font-size: 13px; padding: 14px 0; }
+  .no-data { margin: 60px auto; text-align: center; color: var(--text-dim); }
+  .no-data code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; color: var(--accent); }
+  .ver { font-size: 11px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>🏢 公司驾驶舱 <span class="ver" id="ver"></span></h1>
+      <span class="sub" id="genInfo">加载中…</span>
+    </div>
+    <div class="head-controls">
+      <span class="stale-label">陈旧阈值(分)</span>
+      <input type="number" min="1" class="stale-input" id="staleMin" />
+      <a class="btn" id="kanbanLink" href="workbench/kanban.html">🗂 工单协作看板</a>
+      <button class="btn" id="syncBtn">🔄 同步</button>
+      <button class="btn" id="themeBtn">☀️ 切亮色</button>
+    </div>
+  </header>
+  <div id="staleBar"></div>
+  <nav class="chips" id="navChips"></nav>
+  <main id="main"></main>
+
+  <script src="dashboard-data.js"></script>
+  <script>
+  (function () {
+    var DATA = window.DASHBOARD_DATA;
+    function esc(s) {
+      if (s === null || s === undefined) return "";
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+    function parseDate(s) {
+      if (!s) return null;
+      var iso = String(s).trim().replace(" ", "T");
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) d = new Date(s + "T00:00:00");
+      return isNaN(d.getTime()) ? null : d;
+    }
+    function pct(r) { return (r === null || r === undefined) ? "—" : Math.round(r * 100) + "%"; }
+    function empName(code) { var m = (DATA && DATA.employees) || {}; for (var i = 0; i < m.length; i++) { if (m[i].eid === code) return m[i].name; } return code; }
+
+    // ---- 主题（默认暗）----
+    function applyTheme(t) {
+      document.documentElement.setAttribute("data-theme", t);
+      document.getElementById("themeBtn").textContent = t === "dark" ? "☀️ 切亮色" : "🌙 切暗色";
+      try { localStorage.setItem("boards-theme", t); } catch (e) {}
+    }
+    var savedTheme = null;
+    try { savedTheme = localStorage.getItem("boards-theme"); } catch (e) {}
+    applyTheme(savedTheme || "dark");
+    document.getElementById("themeBtn").addEventListener("click", function () {
+      applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    });
+
+    // ---- 陈旧阈值（默认 10 分钟，localStorage 记忆）----
+    var staleMin = 10;
+    try { staleMin = parseInt(localStorage.getItem("boards-stale-min"), 10) || 10; } catch (e) {}
+    var staleInput = document.getElementById("staleMin");
+    staleInput.value = staleMin;
+    staleInput.addEventListener("change", function () {
+      staleMin = Math.max(1, parseInt(staleInput.value, 10) || 10);
+      staleInput.value = staleMin;
+      try { localStorage.setItem("boards-stale-min", String(staleMin)); } catch (e) {}
+      updateStale();
+    });
+    function updateStale() {
+      var bar = document.getElementById("staleBar");
+      if (!DATA || !DATA.generated_at) { bar.style.display = "none"; return; }
+      var g = parseDate(DATA.generated_at);
+      if (!g) { bar.style.display = "none"; return; }
+      var mins = Math.floor((Date.now() - g.getTime()) / 60000);
+      if (mins > staleMin) {
+        bar.style.display = "block";
+        bar.textContent = "⚠️ 数据已陈旧 " + mins + " 分钟（生成器可能未运行）——内容停留在 " + DATA.generated_at;
+      } else bar.style.display = "none";
+    }
+    setInterval(updateStale, 5000);
+
+    // ---- 渲染 ----
+    function statHTML(lbl, num, color) {
+      return '<div class="card stat-card"><div class="num" style="' + (color ? "color:" + color : "") + '">' + num + '</div><div class="lbl">' + lbl + '</div></div>';
+    }
+    function empCard(e) {
+      var s = e.stats || {};
+      var t = s.total || 0;
+      var seg = t
+        ? '<div class="bar"><i class="b1" style="width:' + (s.planned / t * 100) + '%"></i>' +
+                '<i class="b2" style="width:' + (s.in_progress / t * 100) + '%"></i>' +
+                '<i class="b3" style="width:' + (s.done / t * 100) + '%"></i></div>' : "";
+      var teams = (e.teams || []).map(function (t) { return '<span class="badge team">' + esc(t) + "</span>"; }).join("");
+      return '<div class="card click" data-href="' + esc(e.mydesk) + '" title="进入 ' + esc(e.name) + ' 的个人工作台">' +
+        '<div class="emp-name">' + esc(e.name) + ' <span class="dim">' + esc(e.eid) + "</span></div>" +
+        '<div><span class="badge">' + esc(e.role) + "</span>" +
+        '<span class="badge ' + (e.status === "在职" ? "st-on" : "") + '">' + esc(e.status) + "</span>" + teams +
+        (e.registered ? "" : '<span class="badge st-reg">未登记 roster</span>') + "</div>" +
+        '<div class="dim" style="margin-top:6px">计划 ' + s.planned + " · 进行 " + s.in_progress + " · 完成 " + s.done + " · 完成率 " + pct(s.rate) + "</div>" + seg + "</div>";
+    }
+    function render() {
+      if (!DATA) {
+        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>dashboard-data.js</code>。<br>请先运行 <code>python generate_dashboard.py（公司根下）</code>。</div>';
+        return;
+      }
+      document.getElementById("ver").textContent = DATA.page_version || "";
+      var M = document.getElementById("main");
+      var emps = DATA.employees || [], teams = DATA.teams || [], projs = DATA.projects || [], acts = DATA.activity || [];
+      var risk = DATA.risks || {};
+
+      // M2 公司统计
+      var agg = { p: 0, i: 0, d: 0, t: 0 };
+      emps.forEach(function (e) { agg.p += e.stats.planned; agg.i += e.stats.in_progress; agg.d += e.stats.done; agg.t += e.stats.total; agg.d7 = (agg.d7||0) + (e.stats.done_7d||0); });
+      var onJob = emps.filter(function (e) { return e.status === "在职"; }).length;
+      var rate = agg.t ? agg.d / agg.t : null;
+      var m2 = '<section id="m2"><h2>📊 公司统计</h2><div class="grid g-stat">' +
+        statHTML("在职员工", onJob) + statHTML("工作条目", agg.t) + statHTML("在途", agg.i, "var(--accent)") +
+        statHTML("已完成", agg.d, "var(--ok)") + statHTML("完成率", pct(rate)) +
+        statHTML("近7天完成", agg.d7 || 0) +
+        statHTML("团队数", teams.length) + statHTML("项目数", projs.length) + "</div>" +
+        '<div class="card" style="margin-top:12px"><b style="font-size:13px">员工负荷分布</b>' +
+        emps.map(function (e) {
+          var s = e.stats, t = s.total || 1;
+          return '<div class="load-row"><span class="who" title="' + esc(e.eid) + '">' + esc(e.name) + "</span>" +
+            '<span class="track"><span class="bar" style="margin-top:0"><i class="b1" style="width:' + (s.planned / t * 100) + '%"></i>' +
+            '<i class="b2" style="width:' + (s.in_progress / t * 100) + '%"></i>' +
+            '<i class="b3" style="width:' + (s.done / t * 100) + '%"></i></span></span>' +
+            '<span class="dim" style="width:150px;text-align:right">在途 ' + s.ongoing + " / 总 " + s.total + "</span></div>";
+        }).join("") + "</div></section>";
+
+      // M1 员工总览
+      var m1 = '<section id="m1"><h2>👥 员工总览<span class="cnt">' + emps.length + " 人 · 点击进入个人工作台</span></h2>" +
+        '<div class="grid g-emp">' + (emps.map(empCard).join("") || '<div class="empty">暂无员工</div>') + "</div></section>";
+
+      // M4 团队视图
+      var m4 = '<section id="m4"><h2>🧩 团队视图</h2><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">' +
+        (teams.map(function (t) {
+          return '<div class="card click" data-href="' + esc(t.teamboard) + '"><div class="emp-name">' + esc(t.name) +
+            ' <span class="dim">' + esc(t.tid) + "</span></div>" +
+            '<div class="dim" style="margin-top:4px">成员 ' + t.member_count + " 人 → 进入团队看板</div></div>";
+        }).join("") || '<div class="empty">暂无团队（目录 T###-名称 + team.md）</div>') + "</div></section>";
+
+      // M3 项目视图
+      var sm = DATA.status_meta || {};
+      // kanban 深链基准：统一取 DATA.links.kanban（生成器按落位产出，单一真相，页面不硬编码）
+      var KANBAN = (DATA.links && DATA.links.kanban) || "workbench/kanban.html";
+      var m3 = '<section id="m3"><h2>📁 项目视图<span class="cnt">点击卡片跳工单看板按项目浏览</span></h2><div class="grid g-proj">' +
+        (projs.map(function (p) {
+          var ts = p.ticket_stats || { total: 0, byStatus: {}, overdue: 0 };
+          var chips = Object.keys(ts.byStatus).map(function (k) {
+            return '<span class="badge">' + esc(sm[k] || k) + " " + ts.byStatus[k] + "</span>";
+          }).join("");
+          var teams = (p.teams || []).map(function (t) { return '<span class="badge team">' + esc(t) + "</span>"; }).join("");
+          return '<div class="card click" data-href="' + esc(KANBAN) + '?project=' + encodeURIComponent(p.pid) + '">' +
+            '<div class="emp-name">' + esc(p.name) + ' <span class="dim">' + esc(p.pid) + "</span></div>" +
+            "<div>" + teams + '<span class="badge">' + esc(p.status || "active") + "</span>" +
+            (p.owner ? '<span class="badge">👤 ' + esc(empName(p.owner)) + "</span>" : "") + "</div>" +
+            '<div class="dim" style="margin-top:6px">工单 ' + ts.total +
+            (ts.overdue ? ' · <span style="color:var(--bad)">逾期 ' + ts.overdue + "</span>" : "") + "</div>" +
+            (chips ? '<div style="margin-top:4px">' + chips + "</div>" : "") + "</div>";
+        }).join("") || '<div class="empty">暂无项目（目录 P####-名称 + project.md）</div>') + "</div></section>";
+
+      // M3b 常设事务（机制扩展 #17：无终点、养资产、按节奏重复的工作）
+      var affs = DATA.affairs || [];
+      var CAD_LABEL = {"每日": "每日", "每周": "每周", "每两周": "双周", "每月": "每月", "按需": "按需"};
+      var affCards = affs.map(function (a) {
+        var ownerBadge = a.owner ? '<span class="badge">👤 ' + esc(empName(a.owner)) + "</span>" : '<span class="badge">👤 未指定</span>';
+        var cadBadge = '<span class="badge" title="推进节奏">' + esc(CAD_LABEL[a.cadence] || a.cadence) + "</span>";
+        var stBadge = a.status === "active"
+          ? '<span class="badge st-on">运行中</span>'
+          : (a.status === "paused" ? '<span class="badge">⏸ 暂停</span>' : '<span class="badge">✕ 已关闭</span>');
+        var rhythm = "";
+        if (a.status === "active") {
+          if (a.never_done) rhythm = '<div class="dim" style="color:var(--bad);margin-top:4px">⚠️ 从未推进（干活后 worklog 记 aff=' + esc(a.id) + "）</div>";
+          else if (a.overdue) rhythm = '<div class="dim" style="color:var(--warn);margin-top:4px">🐢 已脱期 · 上次推进 ' + esc(a.last_touched) + "</div>";
+          else if (a.last_touched) rhythm = '<div class="dim" style="margin-top:4px">上次推进 ' + esc(a.last_touched) + "（" + esc(a.last_by || "") + "）</div>";
+          else rhythm = '<div class="dim" style="margin-top:4px">按需推进</div>';
+        }
+        return '<div class="card"><div class="emp-name">' + esc(a.title) + ' <span class="dim">' + esc(a.id) + "</span></div>" +
+          "<div>" + stBadge + cadBadge + ownerBadge + '<span class="badge">' + esc(a.priority || "中") + "</span></div>" + rhythm + "</div>";
+      }).join("");
+      var affOverdue = affs.filter(function (a) { return a.overdue || a.never_done; }).length;
+      var m3b = '<section id="m3b"><h2>🔁 常设事务<span class="cnt">' + affs.length + " 项" +
+        (affOverdue ? ' · <span style="color:var(--bad)">' + affOverdue + " 项脱期</span>" : "") +
+        " · 无终点养资产的工作（区别于项目）</span></h2>" +
+        '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">' +
+        (affCards || '<div class="empty">暂无常设事务（workbench/affairs/AFFxxxx-标题/affair.md）</div>') + "</div></section>";
+
+      // M5 近期动态流
+      var m5 = '<section id="m5"><h2>🌊 近期动态<span class="cnt">全员 worklog 时间线（最新在前）</span></h2><div class="feed">' +
+        (acts.map(function (a) {
+          var dot = a.status === "已完成" ? "d-done" : (a.status === "进行中" ? "d-doing" : "d-plan");
+          var tk = a.ticket ? ' <a href="' + esc(KANBAN) + '?id=' + esc(a.ticket) + '" style="color:var(--accent);text-decoration:none;font-size:11px">' + esc(a.ticket) + "</a>" : "";
+          return '<div class="feed-item"><span class="when">' + esc(a.updated || a.date) + "</span>" +
+            '<span><span class="dot ' + dot + '"></span><b>' + esc(a.name) + "</b> <span class=\"dim\">" + esc(a.eid) + "</span> · " +
+            esc(a.title) + ' <span class="badge">' + esc(a.type) + "</span>" + tk + ' <span class="dim">[' + esc(a.status) + "]</span></span></div>";
+        }).join("") || '<div class="empty">暂无工作记录（员工在 workspace/worklog.md 记录后自动出现）</div>') + "</div></section>";
+
+      // M6 风险与核验
+      var staleHtml = (risk.stale || []).map(function (s) {
+        return '<div class="risk-item">🐢 ' + esc(s.name) + "「" + esc(s.title) + "」进行中，" + esc(s.updated) + " 后未更新（超 " + ((DATA.config || {}).stale_days || 14) + " 天阈值）</div>";
+      }).join("");
+      var warnHtml = (risk.warnings || []).map(function (w) {
+        return '<div class="risk-item bad">⚠️ ' + esc(w.msg) + "</div>";
+      }).join("");
+      var m6 = '<section id="m6"><h2>🚨 风险与核验<span class="cnt">停滞预警 + worklog×工单 交叉核验</span></h2>' +
+        (staleHtml || warnHtml ? staleHtml + warnHtml : '<div class="empty">暂无风险与核验告警 ✓</div>') + "</section>";
+
+      M.innerHTML = m2 + m1 + m4 + m3 + m3b + m5 + m6;
+      document.getElementById("navChips").innerHTML =
+        ['m2|📊 统计', 'm1|👥 员工', 'm4|🧩 团队', 'm3|📁 项目', 'm3b|🔁 事务', 'm5|🌊 动态', 'm6|🚨 风险']
+          .map(function (x) { var p = x.split("|"); return '<a href="#' + p[0] + '">' + p[1] + "</a>"; }).join("");
+      Array.prototype.forEach.call(M.querySelectorAll(".card.click"), function (el) {
+        el.addEventListener("click", function () { location.href = el.getAttribute("data-href"); });
+      });
+      updateStale();
+      document.getElementById("genInfo").textContent = "实时同步（每3秒）· 数据生成于 " + DATA.generated_at;
+    }
+
+    // ---- 自动同步（沿用工单看板方案 X：重插 data.js + #fragment cache-buster）----
+    var lastGen = (DATA && DATA.generated_at) || null;
+    var syncEl = document.createElement("script");
+    syncEl.onload = function () {
+      var nd = window.DASHBOARD_DATA;
+      if (nd && nd.generated_at !== lastGen) { lastGen = nd.generated_at; DATA = nd; render(); }
+      updateStale();
+    };
+    syncEl.onerror = function () {
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 dashboard-data.js（请运行 generate_dashboard.py）";
+    };
+    document.body.appendChild(syncEl);
+    function doSync() { syncEl.src = "dashboard-data.js#_=" + Date.now(); }
+    document.getElementById("syncBtn").addEventListener("click", doSync);
+    render();
+    setInterval(doSync, 3000);
+  })();
+  </script>
+</body>
+</html>

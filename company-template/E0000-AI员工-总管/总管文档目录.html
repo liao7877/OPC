@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E0000 总管 · 文档目录</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1f2329; --sub:#6b7280;
+    --line:#e5e7eb; --accent:#2563eb; --warn:#b45309; --warnbg:#fffbeb;
+    --ok:#047857; --okbg:#ecfdf5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;padding:28px}
+  .wrap{max-width:920px;margin:0 auto}
+  header{background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;
+    border-radius:14px;padding:22px 26px;margin-bottom:22px}
+  header h1{font-size:22px;font-weight:700}
+  header p{font-size:13px;opacity:.9;margin-top:6px;word-break:break-all}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:18px}
+  .sec h2{font-size:15px;margin-bottom:14px;color:var(--accent);
+    border-left:4px solid var(--accent);padding-left:10px}
+  /* 目录树 */
+  .tree{font-family:"SF Mono",Consolas,monospace;font-size:13px;line-height:1.9}
+  .tree .dir{color:var(--accent);font-weight:600}
+  .tree .file{color:var(--ink)}
+  .tree .indent{color:var(--line)}
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f1f5f9;font-weight:600;color:var(--sub);font-size:12px}
+  td.path{font-family:"SF Mono",Consolas,monospace;font-size:12px;color:var(--sub);word-break:break-all}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600}
+  .tag.ok{background:var(--okbg);color:var(--ok)}
+  .tag.empty{background:var(--warnbg);color:var(--warn)}
+  .note{font-size:12px;color:var(--sub);margin-top:10px}
+  footer{text-align:center;font-size:12px;color:var(--sub);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🗂 E0000 总管 · 文档目录</h1>
+    <p>根路径：E:\OPC\C001-AI自动化公司\E0000-AI员工-总管</p>
+  </header>
+
+  <div class="sec">
+    <h2>目录结构（树状）</h2>
+    <div class="tree">
+      <div><span class="dir">E0000-AI员工-总管/</span></div>
+      <div><span class="indent">├─ </span><span class="file">AGENTS.md</span> <span class="note">（人设/角色）</span></div>
+      <div><span class="indent">├─ </span><span class="file">roster.md</span> <span class="note">（员工花名册）</span></div>
+      <div><span class="indent">├─ </span><span class="dir">memory/</span></div>
+      <div><span class="indent">│&nbsp;&nbsp; └─ </span><span class="file">MEMORY.md</span> <span class="note">（长期记忆）</span></div>
+      <div><span class="indent">├─ </span><span class="dir">skills/</span></div>
+      <div><span class="indent">│&nbsp;&nbsp; └─ </span><span class="file">README.md</span> <span class="note">（技能策略）</span></div>
+      <div><span class="indent">├─ </span><span class="dir">workbench/</span></div>
+      <div><span class="indent">│&nbsp;&nbsp; ├─ </span><span class="file">task-index.md</span> <span class="note">（任务台账）</span></div>
+      <div><span class="indent">│&nbsp;&nbsp; ├─ </span><span class="file">board.md</span> <span class="note">（看板）</span></div>
+      <div><span class="indent">│&nbsp;&nbsp; └─ </span><span class="file">auto-rules.md</span> <span class="note">（自动化规则）</span></div>
+      <div><span class="indent">└─ </span><span class="dir">workspace/</span></div>
+      <div><span class="indent">&nbsp;&nbsp;&nbsp; └─ </span><span class="file">README.md</span> <span class="note">（工作区说明）</span></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>文档清单（8 个文件 / 8 个 .md）</h2>
+    <table>
+      <thead>
+        <tr><th>文档</th><th>绝对路径</th><th>作用</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>AGENTS.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\AGENTS.md</td>
+          <td>总管人设：角色定位、5 项职责、启动流程、行为规范（只调度不代劳等）</td>
+          <td><span class="tag ok">已配置</span></td>
+        </tr>
+        <tr>
+          <td><b>roster.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\roster.md</td>
+          <td>员工花名册：E0000 总管（在职）+ E0001 分析员（示例员工）</td>
+          <td><span class="tag ok">已配置</span></td>
+        </tr>
+        <tr>
+          <td><b>memory/MEMORY.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\memory\MEMORY.md</td>
+          <td>长期核心记忆（五要素格式）</td>
+          <td><span class="tag empty">空壳</span></td>
+        </tr>
+        <tr>
+          <td><b>skills/README.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\skills\README.md</td>
+          <td>技能策略：私有技能（暂无）+ 全局技能引用清单（未填）</td>
+          <td><span class="tag empty">空壳</span></td>
+        </tr>
+        <tr>
+          <td><b>workbench/task-index.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\workbench\task-index.md</td>
+          <td>任务台账：TSK 编号登记簿 + 状态机</td>
+          <td><span class="tag empty">空壳</span></td>
+        </tr>
+        <tr>
+          <td><b>workbench/board.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\workbench\board.md</td>
+          <td>看板：按状态聚合在办任务</td>
+          <td><span class="tag empty">空壳</span></td>
+        </tr>
+        <tr>
+          <td><b>workbench/auto-rules.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\workbench\auto-rules.md</td>
+          <td>自动化派发规则：什么任务自动派给谁</td>
+          <td><span class="tag empty">空壳</span></td>
+        </tr>
+        <tr>
+          <td><b>workspace/README.md</b></td>
+          <td class="path">E:\OPC\C001-AI自动化公司\E0000-AI员工-总管\workspace\README.md</td>
+          <td>总管自己的工作区：草稿/中间产物存放地</td>
+          <td><span class="tag ok">已配置</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">说明：当前 8 个文件全部为 .md 文档，无隐藏文件、无 tasks/ 子目录。标「空壳」的 5 个文件已建好框架但内容待填。</p>
+  </div>
+
+  <footer>Generated by 总管(E0000) · 2026-08-26</footer>
+</div>
+</body>
+</html>
