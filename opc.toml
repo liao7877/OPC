@@ -1,0 +1,23 @@
+# OPC 全局命名空间 manifest（单例 = 物理路径唯一真相源）
+# 设计原则：改名/改布局只改本文件，所有 consumer（脚本/AGENTS.md/skill）零改动。
+# 对应决策：Q1 选 opc:// URI 符号；Q2 选「全局单例 + 公司级覆盖」。
+
+[workspace]
+# manifest 所在目录即 OPC 根；root 相对本文件
+root = "."
+
+[company.DEFAULT]
+# 骨架默认值：所有公司继承，未覆盖字段沿用此处
+workbench = "workbench"
+tasks_data = "workbench/tasks-data.json"
+roster = "E0000-AI员工-总管/roster.md"
+affairs = "workbench/affairs"
+page_templates = "page-templates"
+skills = "skills"                  # 技能根目录：skill/<name> -> {home}/skills/<name>
+teams = ""                        # 团队目录前缀（空=在 home 根下，目录名 T00x-<描述>）
+projects = ""                     # 项目目录前缀（空=在 home 根下，目录名 P00x-<描述>）
+employees = ""                    # 员工目录前缀（空=在 home 根下，目录名 E00xx-<角色>）
+
+[company.C001]
+# 仅覆盖「偏离」字段；其余继承 DEFAULT（约定优于配置）
+home = "C001-AI自动化公司"

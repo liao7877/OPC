@@ -22,7 +22,7 @@
 ## 二、技能体系
 
 - **P6 · 三层技能隔离**：公司级（组织根 `skills/`，全员可用）/ 团队级（团队目录 `skills/`，团队内）/ 私有（个人目录 `skills/`，仅本人）。放哪层由"谁需要"决定，不重复建。实体一律只存 `{层}/skills/` 一处（单一真相）；**各平台如何让技能被自动识别/披露属平台接入细节，不写入通用原则**——如 WorkBuddy 用 `{层}/.workbuddy/skills` junction（工作区级渐进式披露），Codex/Claude Code 各按其平台机制，具体见 `AGENT_ECOSYSTEM.md`。
-- **P7 · 技能引用与身份规范分离**：AGENTS.md 只写根本性规范（身份/职责/红线）与一行技能索引入口；技能清单（触发词摘要+路径）独立成 `{层}/skills/INDEX.md`（披露层），命中再读 `SKILL.md` 全文——避免 AGENTS.md 膨胀，功能单一不耦合（P3）。**例外**：平台披露已覆盖的技能（如公司级经 junction 接入），AGENTS.md 一行直引兜底即可，不建 INDEX。技能引用一律不进 workflow.md。
+- **P7 · 技能引用与身份规范分离**：AGENTS.md 只写根本性规范（身份/职责/红线）与一行技能索引入口；技能引用统一走 `opc://company:<id>/skill/<名称>` 逻辑符号（见 opc-namespace-design.md），命中触发词再读 `SKILL.md` 全文——避免 AGENTS.md 膨胀，功能单一不耦合（P3）。原 `{层}/skills/INDEX.md` 披露层已由命名空间机制取代（MECHANISM_PLAN 批#1 已废弃）：技能建好即自动可被 `opc://` 解析，无需登记。技能引用一律不进 workflow.md。
 - **P8 · workflow.md 仅描述多技能编排/复杂协同任务**：只有当任务需要多个技能配合、流程复杂到单文件说不清时，才用 workflow.md 描述流程；简单任务不进。
 - **P9 · 技能自解释自包含**：技能内容（SKILL.md）必须自带完整流程、模板、告警对照、红线，靠"一行引用"即可加载使用，**不依赖人肉培训**。
 - **P10 · 规范文件层与平台技能的边界**：组织目录下的技能是"规范文件层"（靠 AGENTS.md 引用路径读取，不会自动触发）；平台注册的技能才自动触发。设计时要明确用的是哪种。**多 Agent 平台接入方法见 `AGENT_ECOSYSTEM.md`**（WorkBuddy / Claude Code / Codex 各自目录与披露机制）。

@@ -63,13 +63,13 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
 1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E0003-AI员工-岗位/`
 2. **复制模板**：把 `../templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
 3. **改人设**：编辑 AGENTS.md —— 替换全部【替换】占位符（编号/岗位名/职责/红线）；CLAUDE.md 保持一行 `@AGENTS.md`
-4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description 触发词），并在 `skills/INDEX.md` 登记一行
+4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description 触发词）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析，**无需登记 INDEX.md**（MECHANISM_PLAN 批#1 已废弃）
 5. **建 junction（关键，模板复制不会带过来）**：
    ```powershell
    New-Item -ItemType Junction -Path "E0003-岗位/.workbuddy/skills" -Target "E0003-岗位/skills"
    ```
    验证：`ls -i .workbuddy/skills/<技能>/SKILL.md skills/<技能>/SKILL.md` inode 相同
 6. **登记 roster.md**：追加一行（ID / 岗位 / 目录路径）
-7. **验证四件套**：AGENTS.md（WorkBuddy/Codex 自动加载）、CLAUDE.md（Claude Code 一行导入）、skills/INDEX.md（披露层）、.workbuddy/skills junction（平台披露通道）四件齐
+7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原 skills/INDEX.md 披露层已废弃，四件套精简为三件
 
 > ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。

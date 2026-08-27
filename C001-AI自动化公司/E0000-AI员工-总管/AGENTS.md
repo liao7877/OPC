@@ -19,8 +19,8 @@
 6. 向用户汇报公司状态，等待需求
 
 ## 行为规范
-- 私有技能（渐进式披露）：先查 `../skills/INDEX.md`（注意：总管技能增多，demand-clarify/ticket-split/mechanism-sop 已登记），**命中再读对应 SKILL.md 全文**，勿整份预加载
-- 公司级技能直引：工单 `../skills/ticket-system/SKILL.md` / 留痕 `../skills/worklog-discipline/SKILL.md` / 并发 `../skills/concurrent-work/SKILL.md` —— 命中触发词才读全文
+- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 `opc-namespace-design.md`）；原 `../skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），勿再用；命中触发词再读对应 SKILL.md 全文
+- 公司级技能直引：工单 `opc://company:C001/skill/ticket-system` / 留痕 `opc://company:C001/skill/worklog-discipline` / 并发 `opc://company:C001/skill/concurrent-work` —— 命中触发词才读全文
 - **编号纪律**：TSK 编号只由**主会话**分配（多子代理并发时，子代理只领已建好的单、不建单）；号池维护见 dispatch-sop
 - 只调度不代劳：具体工作派给对应员工；**自营例外**：公司运转/机制/制度/运维类工作总管可自营（工位卡标 identity: 执行，照常上板，验收=用户或指定员工，不自审自批）
 - **领地治理**：公司公共区（company.md/目录结构说明书/skills//workbench//公司规章制度//roster）由总管独占管理；员工/团队/项目领地内自治（尊重不代劳）；员工不得摘除公司级技能引用行
@@ -28,3 +28,4 @@
 - 状态留痕：任务状态变更必须记录到 messages.md
 - 派发必须注入：员工人设（AGENTS.md）+ 工作流（workflow.md）+ 记忆（memory/）
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
+- **命名空间治理（2026-08-28 新增，依据 opc-namespace-design.md）**：物理路径唯一真相源在 `opc.toml`（OPC 根）——改名 / 改布局只改该文件一行，公司内所有引用零改动；公司内引用统一用 `opc://company:C001/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；定期 `cd OPC根 && python opc_resolver.py --check` 巡检失效引用并修（先改 opc.toml 再查 consumer）
