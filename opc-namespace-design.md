@@ -79,6 +79,15 @@ opc://<scope>/<type>/<id>/<sub>
 
 **技能命名约定**：`opc://company:C001/skill/<名称>`（约定式：`{home}/{skills}/<名称>`）。
 
+### 3.1 路径解析约定（agent 实操：opc:// 如何变成能打开的文件）
+文档里的 `opc://company:C001/...` 是**逻辑符号，不是文件路径**。agent 要读 / 写对应文件时，必须先把符号落到真实路径，两种等价方式任选：
+
+- **方式 A（推荐，零 resolver）：稳定锚直开**。`opc://company:C001` 在公司根有 OS 级稳定锚 `companies/C001/`（junction / symlink），是真实可开目录。把前缀 `opc://company:C001` 直接换成 `companies/C001` 即可，例如技能文件 → 直接打开 `companies/C001/skills/ticket-system/SKILL.md`（OS 内核透明解析，任何 agent / 编辑器 / 工具都行，无需跑脚本）。
+- **方式 B（精确绝对路径）：resolver 翻译**。`cd OPC根 && python opc_resolver.py --resolve opc://company:C001/skill/ticket-system` → 打印绝对路径（如 `E:\OPC\companies\C001\skills\ticket-system`）。
+- **技能通常以名调用**：平台经 `.workbuddy/skills` junction 披露技能，agent 命中触发词直接调技能名即可，不必手动解析 opc:// 去 Read SKILL.md；仅当需手动检视某技能文件时才用上面 A / B。
+
+> ❗红线：agent **绝不要把 `opc://...` 当裸文件路径直接 Read / Open**（必找不到）；先按 A 或 B 落到真实路径。详见各员工 AGENTS.md「命名空间治理」段。
+
 ---
 
 ## 4. resolver（`opc_resolver.py`，OPC 根，零第三方依赖）
