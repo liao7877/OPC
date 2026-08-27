@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 自动化公司系统 · 架构讲解</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2129; --panel2: #222b35; --border: #2c3742;
+    --text: #e6edf3; --dim: #8b98a5; --accent: #4f9cf9; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+    --code-bg: #161d26;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 15px; line-height: 1.75; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 80px; }
+  header.hero { text-align: center; padding: 48px 0 28px; }
+  header.hero h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: 1px; }
+  header.hero .sub { color: var(--dim); font-size: 15px; }
+  .mode-switch { display: flex; gap: 10px; justify-content: center; margin: 26px 0 8px; }
+  .mode-btn { background: var(--panel); color: var(--dim); border: 1px solid var(--border); border-radius: 999px;
+    padding: 8px 22px; font-size: 14px; cursor: pointer; }
+  .mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .mode-desc { text-align: center; color: var(--dim); font-size: 13px; margin-bottom: 18px; }
+  nav.toc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 20px;
+    display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 26px; }
+  nav.toc a { color: var(--accent); text-decoration: none; font-size: 13.5px; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin: 40px 0; }
+  h2 { font-size: 21px; border-left: 4px solid var(--accent); padding-left: 12px; margin: 0 0 16px; }
+  h3 { font-size: 17px; margin: 26px 0 10px; color: var(--accent); }
+  p { margin: 10px 0; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin: 14px 0; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--border); padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: var(--dim); font-weight: 600; white-space: nowrap; }
+  code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px;
+    font-family: Consolas, "Courier New", monospace; font-size: 13px; color: #9ecbff; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px;
+    overflow-x: auto; font-size: 13px; line-height: 1.55; }
+  pre code { background: none; border: none; padding: 0; color: var(--text); }
+  .tag { display: inline-block; border-radius: 6px; padding: 1px 9px; font-size: 12px; margin: 0 3px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--dim); }
+  .tag.b { color: var(--accent); border-color: var(--accent); }
+  .tag.g { color: var(--ok); border-color: var(--ok); }
+  .tag.w { color: var(--warn); border-color: var(--warn); }
+  .tag.r { color: var(--bad); border-color: var(--bad); }
+  .kv { color: var(--dim); }
+  .hl { color: var(--accent); font-weight: 600; }
+  .warnbox { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border: 1px solid var(--warn);
+    border-radius: 10px; padding: 12px 18px; margin: 12px 0; font-size: 14px; }
+  .okbox { background: color-mix(in srgb, var(--ok) 9%, var(--panel)); border: 1px solid var(--ok);
+    border-radius: 10px; padding: 12px 18px; margin: 12px 0; font-size: 14px; }
+  /* 深潜章节在概览模式下隐藏 */
+  body[data-mode="overview"] .deep { display: none; }
+  .deep-badge { font-size: 12px; color: var(--warn); border: 1px solid var(--warn); border-radius: 6px;
+    padding: 0 8px; vertical-align: 3px; margin-left: 8px; }
+  footer { margin-top: 60px; text-align: center; color: var(--dim); font-size: 13px; }
+  @media print { body[data-mode="overview"] .deep { display: block; } }
+</style>
+</head>
+<body data-mode="overview">
+<div class="wrap">
+
+<header class="hero">
+  <h1>🏢 AI 自动化公司系统</h1>
+  <div class="sub">一套用「文件系统」运营 AI 员工组织的完整方法 —— 运作方式 · 设计原则 · 目录结构 · 机制说明 · 从零上手</div>
+  <div class="mode-switch">
+    <button class="mode-btn active" data-mode="overview">☕ 5 分钟概览</button>
+    <button class="mode-btn" data-mode="deep">🔬 深潜模式（全量细节）</button>
+  </div>
+  <div class="mode-desc" id="modeDesc">概览模式：理解这套系统是什么、怎么运作、怎么上手。切到深潜模式可查看每个机制的实现细节与规则原文。</div>
+</header>
+
+<nav class="toc">
+  <a href="#s1">一、这是什么</a>
+  <a href="#s2">二、核心思想</a>
+  <a href="#s3">三、目录结构</a>
+  <a href="#s4">四、运作方式</a>
+  <a href="#s5">五、机制一览</a>
+  <a href="#s6">六、从零上手</a>
+  <a href="#d1">深潜·原则全文</a>
+  <a href="#d2">深潜·字段契约</a>
+  <a href="#d3">深潜·扩展法则</a>
+  <a href="#d4">深潜·双入口与领地</a>
+</nav>
+
+<!-- ================= 一、这是什么 ================= -->
+<section id="s1">
+  <h2>一、这是什么</h2>
+  <p>这是一套<strong>用文件系统运营 AI 员工组织</strong>的完整系统：你拥有一个由 AI 员工组成的公司——有总管、有团队、有工单看板、有工作记录、有规章制度——但这一切没有数据库、没有后端服务，<span class="hl">全部由普通文件和目录构成</span>。</p>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">📦 你看到的东西</h3>
+      <p>一个目录树。公司是一个大文件夹，员工各自有文件夹，每个工单是一个子文件夹，看板是双击就能打开的网页。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">🤖 谁在干活</h3>
+      <p>AI Agent（如 Claude、WorkBuddy 等平台的智能体）扮演员工。<strong>它们的工作方式 = 读写这些文件</strong>：改工单文件就是推进任务，写日志文件就是留痕。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">👤 你要做什么</h3>
+      <p>只说想法。你对总管描述需求，总管负责澄清、拆单、派活、验收、汇报。你不需要懂任何文件怎么组织。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">🔍 为什么可信</h3>
+      <p>一切工作有留痕、可审计、可回滚。看板只是投影，删了能重建；数据永远在文件里，不会因为某个系统挂掉而丢失。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 二、核心思想 ================= -->
+<section id="s2">
+  <h2>二、核心思想（8 条支柱）</h2>
+  <div class="card">
+    <table>
+      <tr><th style="width:190px">原则</th><th>一句话解释</th></tr>
+      <tr><td><b>📁 文件即真相</b></td><td>工单、工作记录、组织架构……全部是文件。看板、报表只是「投影」——只读展示，永不写回，删了可重建。</td></tr>
+      <tr><td><b>🗂 实体即目录</b></td><td>公司、团队、员工、项目、工单各占一个文件夹；归属关系用字段声明（引用制），不靠物理嵌套，支持多对多。</td></tr>
+      <tr><td><b>🧠 人设即文件</b></td><td>员工 = 一个文件夹：AGENTS.md 是人设（角色/职责/行为规范），skills/ 是技能，workspace/ 是工作区，memory/ 是记忆。平台自动加载人设，员工「出生即上岗」。</td></tr>
+      <tr><td><b>📚 技能自解释</b></td><td>技能是一篇自包含的操作手册（触发词+全流程+红线），引用一行路径即可生效，不存在「人肉培训」。</td></tr>
+      <tr><td><b>🔀 调度中枢</b></td><td>总管只调度不代劳；用户也可以直接指挥任何员工（双入口），但两个入口汇入同一套文件契约，杜绝两本账。</td></tr>
+      <tr><td><b>✍️ 留痕即审计</b></td><td>一切工作必须写 worklog（只增不删）；工单状态与工作日志交叉核验，「说做了」和「真做了」互相咬合。</td></tr>
+      <tr><td><b>🏭 组织可实例化</b></td><td>公司 = 母版模板 + 建司流程。目录结构说明书是结构契约，create-company 技能一键实例化新公司。</td></tr>
+      <tr><td><b>↩️ 变更可逆</b></td><td>任何结构改动先出清单过目、备份 .bak、再执行；扩展先占字段契约（空值不报错），未来扩展零成本。</td></tr>
+    </table>
+  </div>
+  <div class="okbox">💡 <b>一个比喻</b>：这套系统相当于把「一家公司的组织架构 + 工作流 + 制度」翻译成了 Agent 天然会用的语言——文件读写。Agent 不需要学习任何专有系统，看懂文件就会干活。</div>
+</section>
+
+<!-- ================= 三、目录结构 ================= -->
+<section id="s3">
+  <h2>三、目录结构安排</h2>
+  <div class="card">
+<pre>OPC/                                ← 组织根：跨公司共享层
+├── PRINCIPLES.md                  ← 组织宪法（24 条设计原则）
+├── AGENT_ECOSYSTEM.md             ← 多平台接入规范（junction 技巧等）
+├── MECHANISM_PLAN.md              ← 机制决策存档（17 项）
+├── create-company/SKILL.md        ← 建司技能（交互式问卷建新公司）
+├── company-template/              ← 公司母版（空骨架，含 000 号总管）
+│
+└── C001-AI自动化公司/              ← 一家公司实例
+    ├── company.md                 ← 公司宪法（实体清单/命名规范）
+    ├── AGENTS.md / CLAUDE.md      ← 平台加载入口（只指路）
+    ├── workflow.md                ← 公司级工作流（跨实体协作协议）
+    ├── 目录结构说明书.md            ← 结构契约（每个目录的职责/维护者/红线）
+    │
+    ├── skills/                    ← 公司级技能（全员共用，单一出处）
+    │   ├── ticket-system/         ←   工单系统操作（建/认领/流转/阻塞/父单）
+    │   ├── worklog-discipline/    ←   工作留痕纪律（三段式/归档/并发追加）
+    │   └── concurrent-work/       ←   并发协作（工位卡/收口/合并）
+    │
+    ├── workbench/                 ← 工作执行区
+    │   ├── tasks/                 ←   工单真相区（TSKxxxxx-标题/）
+    │   ├── affairs/               ←   常设事务区（AFFxxxx-标题/）
+    │   ├── task-index.md          ←   编号台账 + 预留号池
+    │   ├── generate_tasks.py      ←   校验+投影生成器（自检/结构检查）
+    │   └── kanban.html            ←   工单看板（只读投影）
+    │
+    ├── 公司规章制度/               ← 制度声明层（「必须干什么」）
+    ├── 公司知识库/                 ← 显性知识（common/ 资料 + methods/ 候选）
+    ├── templates/employee-template/ ← 员工母版（新建员工唯一出处）
+    ├── page-templates/            ← 看板页面母版
+    │
+    ├── E0000-AI员工-总管/          ← 员工实体（各自独立目录）
+    │   ├── AGENTS.md              ←   人设（角色/职责/启动流程/引用行）
+    │   ├── roster.md              ←   ★ 全公司花名册（员工发现唯一权威）
+    │   ├── skills/ + INDEX.md     ←   私有技能 + 披露索引
+    │   ├── workflow.md            ←   员工级工作流
+    │   ├── memory/                ←   长期记忆（MEMORY.md + inbox/ 并发分片）
+    │   └── workspace/             ←   工作区（worklog.md + sessions/ + 归档）
+    │
+    ├── E0001-AI员工-分析员/        ← 员工实体同构
+    ├── T001-AI开发团队/            ← 团队实体（team.md/workflow/notices/skills）
+    └── P0001-示例项目/             ← 项目实体（project.md/workflow/knowledge）</pre>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">命名规范</h3>
+    <p><code>前缀+序号-名称</code>：公司 C+三位（C001）、团队 T+三位（T001）、员工 E+四位（E0000）、项目 P+四位（P0001）、工单 TSK+五位（TSK00001）、事务 AFF+四位（AFF0001）。</p>
+    <p class="kv">员工→团队归属只看 <code>roster.md</code> 一张表（团队列），team.md 不重复维护名单——单一真相，绝不漂移。</p>
+  </div>
+</section>
+
+<!-- ================= 四、运作方式 ================= -->
+<section id="s4">
+  <h2>四、系统怎么运作</h2>
+
+  <h3>4.1 数据流水线（单向）</h3>
+  <div class="card">
+<pre>数据层（真相）              生成层（校验+投影）           展示层（只读渲染）
+tasks/ + affairs/ + worklog → generate_tasks.py          → kanban.html（工单看板）
+                            → generate_dashboard.py      → dashboard.html（公司驾驶舱）
+                                                           T*/teamboard.html（团队看板）
+                                                           E*/mydesk.html（个人工作台）</pre>
+    <p class="kv">Agent 改文件 → 生成器 3 秒内重算 → 页面自动刷新。<strong>方向铁律：展示层永不写回数据层</strong>；数据损坏删投影重跑即可，真相无损。</p>
+  </div>
+
+  <h3>4.2 一件事的生命周期</h3>
+  <div class="card">
+    <table>
+      <tr><th style="width:130px">阶段</th><th>发生什么</th></tr>
+      <tr><td>① 你提需求</td><td>对总管说想法。总管用「需求澄清」技能一问一答把想法理清楚，产出 PRD 存档。</td></tr>
+      <tr><td>② 拆解派单</td><td>总管判断怎么落位（开工单/开事务/只记账），按「谁干合适」拆分工单，建父单跟踪需求闭环。</td></tr>
+      <tr><td>③ 员工认领</td><td>员工会话启动时自动发现名下工单：worklog 记「计划中」= 认领；动工才改「进行中」（看板能区分已接未动）。</td></tr>
+      <tr><td>④ 执行留痕</td><td>员工按技能规程干活，产物交 deliverables/，过程记 worklog 与 messages，状态随推进更新。</td></tr>
+      <tr><td>⑤ 审核闭环</td><td>完成后转 review，总管或用户验收；拆出的子单全完成，父单才能关闭——需求整体闭环。</td></tr>
+      <tr><td>⑥ 沉淀</td><td>经验写 memory（对自己有用）或知识库 methods/（对他人有用），总管定期提炼成技能/制度。</td></tr>
+    </table>
+  </div>
+
+  <h3>4.3 四分流：任何工作都有家</h3>
+  <div class="card">
+    <table>
+      <tr><th>活的形态</th><th>去处</th><th>为什么</th></tr>
+      <tr><td>干一次就好的小事</td><td><span class="tag">直聊记账</span></td><td>worklog 记一笔即可，不产单不立实体</td></tr>
+      <tr><td>有终点、可验收的任务</td><td><span class="tag b">工单 TSK</span></td><td>有限单元：状态机+验收+闭环</td></tr>
+      <tr><td>多工单多角色、有交付终点</td><td><span class="tag g">项目 P</span></td><td>父单管需求闭环，项目目录管资料</td></tr>
+      <tr><td>无终点、养资产、按节奏重复<br><span class="kv">（长期内容运营、文件维护）</span></td><td><span class="tag w">常设事务 AFF</span></td><td>持续存在的不是任务而是「被养的资产」；affair.md 声明责任人+节奏，逾期自动告警</td></tr>
+    </table>
+    <p class="kv">分界口诀一句话：<b>项目有终点，事务没终点</b>。</p>
+  </div>
+</section>
+
+<!-- ================= 五、机制一览 ================= -->
+<section id="s5">
+  <h2>五、机制一览（14 项）</h2>
+  <div class="card">
+    <table>
+      <tr><th style="width:150px">机制</th><th style="width:230px">解决什么</th><th>怎么运作（概要）</th></tr>
+      <tr><td>🎫 工单系统</td><td>任务怎么派、怎么追</td><td>一个工单=一个目录；7 值状态机；改文件即上板</td></tr>
+      <tr><td>🧩 需求闭环（父单）</td><td>一个需求拆 N 个单后没人管整体</td><td>type=需求 的父单 + 子单 parent 字段；子单全 done 父单才能 done；看板显示进度 🧩 n/m</td></tr>
+      <tr><td>🔗 前置阻塞</td><td>工单有先后依赖</td><td>blocked_by 字段；上游全 done 才能开工；自查+看板黄条+总管巡检三重保障</td></tr>
+      <tr><td>🤝 自动认领</td><td>员工怎么「接到」派给他的单</td><td>推（总管派发即回执）+ 拉（启动自扫漏接）；高优先级漏接自动开工，中低补认领等指令</td></tr>
+      <tr><td>🧵 并发工位卡</td><td>同一员工多会话并行打架</td><td>一会话一卡（sessions/seat-*.md）；同工单只有持卡会话改状态；memory 走 inbox 分片收口合并</td></tr>
+      <tr><td>✍️ 工作留痕</td><td>干没干活说不清</td><td>worklog 三段式（计划中/进行中/已完成）只增不删；与工单双账交叉核验</td></tr>
+      <tr><td>🗄 年度归档</td><td>worklog 数据量增长</td><td>按自然年切到 worklog-archive/；生成器全量扫描，历史照常显示，mydesk 可筛「含归档」</td></tr>
+      <tr><td>🔁 常设事务</td><td>长期运营/维护类工作没处放</td><td>AFF 目录（affair.md+assets/）；cadence 声明节奏；生成器从 worklog 推导上次推进，脱期黄条</td></tr>
+      <tr><td>⚖️ 领地自治</td><td>谁有权改什么</td><td>员工管自己目录、lead 管团队、负责人管项目、总管独占公司公共区；唯一例外：公司级技能引用行不可摘</td></tr>
+      <tr><td>🚪 双入口</td><td>直接指挥员工 vs 走总管</td><td>入口自由、机制收敛：直派时员工号池取号建单、自填 owner 留「用户直派」痕；两个入口同一套账</td></tr>
+      <tr><td>🎯 需求澄清</td><td>想法→可执行需求</td><td>总管 demand-clarify 技能：一问一答→PRD 存档→拆单</td></tr>
+      <tr><td>🧠 记忆体系</td><td>经验怎么沉淀复用</td><td>memory/（私人五要素）＋知识库 methods/（公共候选）→总管提炼成技能/制度/资料</td></tr>
+      <tr><td>📐 结构防漂移</td><td>目录乱掉没人知道</td><td>目录结构说明书（契约）+ --check-structure 机械自检：缺目录/野目录都告警</td></tr>
+      <tr><td>🏭 建司复制</td><td>这套体系怎么复制到新公司</td><td>company-template 空骨架母版 + create-company 交互式问卷；000 号总管自带全套技能入职运转</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 六、从零上手 ================= -->
+<section id="s6">
+  <h2>六、从零开始使用</h2>
+
+  <h3>6.1 建一家新公司（10 分钟）</h3>
+  <div class="card">
+    <ol>
+      <li>打开 Agent 会话，工作区指向 <code>OPC/</code>；</li>
+      <li>说「<strong>建一家新公司，叫 XXX</strong>」——触发 create-company 技能；</li>
+      <li>回答建司问卷（公司 ID 自动分配、业务域、要不要预装技能/初始团队）；</li>
+      <li>Agent 复制母版 → 重建 junction → 跑三项自检 → <strong>000 号总管入职向你报到</strong>；</li>
+      <li>之后所有搭建（团队/员工/项目）都由总管按 SOP 推进，你只管提需求。</li>
+    </ol>
+  </div>
+
+  <h3>6.2 日常使用（你只需要会三句话）</h3>
+  <div class="card">
+    <table>
+      <tr><th style="width:280px">你说</th><th>发生什么</th></tr>
+      <tr><td>「我有个想法：……」</td><td>总管进入需求澄清模式，一问一答帮你理清 → 出 PRD → 问你要不要拆单执行</td></tr>
+      <tr><td>「这个事办一下 / 直接让 E0002 去……」</td><td>总管拆单派发；或员工直接领命（自动留「用户直派」痕、需要时号池取号建单）</td></tr>
+      <tr><td>「现在公司什么情况？」</td><td>总管汇报看板状态；你也可以自己双击 <code>dashboard.html</code> 看驾驶舱</td></tr>
+    </table>
+  </div>
+
+  <h3>6.3 看板怎么用</h3>
+  <div class="card">
+    <table>
+      <tr><th>页面</th><th>位置</th><th>看什么</th></tr>
+      <tr><td>🏢 公司驾驶舱</td><td><code>dashboard.html</code></td><td>员工/团队/项目总览、常设事务脱期、全员动态流、风险核验告警</td></tr>
+      <tr><td>🗂 工单看板</td><td><code>workbench/kanban.html</code></td><td>工单全生命周期、🔒阻塞、🧩父单进度、筛选/搜索/导出</td></tr>
+      <tr><td>🧩 团队看板</td><td><code>T001-*/teamboard.html</code></td><td>团队聚合统计、组内动态、团队公告</td></tr>
+      <tr><td>🧑‍💻 个人工作台</td><td><code>E00xx-*/mydesk.html</code></td><td>个人负荷、名下工单（含🔒阻塞标记）、工作记录（含归档筛选）</td></tr>
+    </table>
+    <p class="kv">全部双击即开、离线可用；页面出现「数据已陈旧」黄条 = 生成器没在跑，让总管跑一次 <code>run_boards.bat</code> 即可。</p>
+  </div>
+</section>
+
+<!-- ================= 深潜 A：原则全文 ================= -->
+<section id="d1" class="deep">
+  <h2>深潜 A · 设计原则全文<span class="deep-badge">深潜模式</span></h2>
+  <div class="card">
+    <h3 style="margin-top:0">架构哲学</h3>
+    <p><b>P1 文件系统即真相</b>：领域事实只存在于文件系统，一切视图只是投影，投影只读可重建。<br>
+    <b>P2 单一真相</b>：任何事实只允许一个权威出处（如员工→团队归属只在 roster.md），引用代替复制。<br>
+    <b>P3 高内聚低耦合</b>：每个模块/文件/技能只干一件事，模块间只通过明确定义的接口协作。<br>
+    <b>P4 单向数据管道</b>：数据源→生成层→展示层单向流动，展示层永不写回。<br>
+    <b>P5 实体即目录、引用制归属</b>：归属用字段声明不靠嵌套，支持多对多、可迁移重组。</p>
+    <h3>技能体系</h3>
+    <p><b>P6 三层技能隔离</b>：公司级（skills/，≥2 人需要）/团队级/私有（1 人用），实体只存一处。<br>
+    <b>P7 引用与身份分离</b>：AGENTS.md 只写人设+一行技能索引；触发词命中才读全文（渐进式披露，省 token）。<br>
+    <b>P8 workflow 只描述多技能编排</b>：简单任务不进。<br>
+    <b>P9 技能自解释自包含</b>：拿到 SKILL.md 就会操作，不依赖人肉培训。<br>
+    <b>P10 规范文件层≠平台技能</b>：区分「靠引用读取」与「平台自动触发」两种形态。</p>
+    <h3>工程实践</h3>
+    <p><b>P11 容错：跳过+告警，不降级上板</b>；<b>P12 原子写</b>（临时文件+替换）；<b>P13 零依赖可移植</b>（双击即开）；<b>P14 契约先行</b>（字段占位空值不报错）；<b>P15 数据格式纪律</b>（日期 YYYY-MM-DD、数组单行 JSON）；<b>P16 改必测测必清</b>。</p>
+    <h3>协作流程与红线</h3>
+    <p><b>P17 先调研汇报再讨论再执行</b>；<b>P18 一问一答澄清、决策先行存档</b>；<b>P19 流程偏好可覆盖、正确性底线不可妥协</b>；<b>P20 领地划分</b>（升级为「领地自治+跨领地经中枢」）；<b>P21 根治根因不打补丁</b>；<b>P22 多轮自审、成果用户自验</b>；<b>P23 坦诚不确定性、严禁迎合改结论</b>；<b>P24 变更优先零风险可逆</b>。</p>
+  </div>
+</section>
+
+<!-- ================= 深潜 B：字段契约 ================= -->
+<section id="d2" class="deep">
+  <h2>深潜 B · 数据契约（A 层字段权威定义）<span class="deep-badge">深潜模式</span></h2>
+  <div class="card">
+    <h3 style="margin-top:0">task.md（工单）</h3>
+    <table>
+      <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+      <tr><td><code>id</code> / <code>title</code> / <code>status</code></td><td>✓</td><td>编号（TSK+五位）/ 标题 / 7 值状态机（backlog·in_progress·review·done·failed·paused·cancelled）</td></tr>
+      <tr><td><code>owner</code> / <code>project</code></td><td>—</td><td>负责人/所属项目（可空=待派）</td></tr>
+      <tr><td><code>priority</code> / <code>type</code> / <code>due</code></td><td>—</td><td>高中低 / 需求·bug·任务·父单用「需求」/ 截止日</td></tr>
+      <tr><td><code>handoffs</code></td><td>—</td><td>流转链（单行 JSON 数组）：换负责人=改 owner+追加一条；铁律「最后一条 to=当前 owner，换人不换状态」</td></tr>
+      <tr><td><code>inputs</code></td><td>—</td><td>输入物引用（引用不复制）；上一手交付物=下一手输入物</td></tr>
+      <tr><td><code>completed_at</code></td><td>done 时✓</td><td>实际完成时间（按期/逾期判断）</td></tr>
+      <tr><td><code>parent</code></td><td>子单✓</td><td>父单编号；子单全 done 父单才能 done</td></tr>
+      <tr><td><code>blocked_by</code></td><td>—</td><td>前置阻塞数组（单行）；所列全 done 才可开工；生成器三重校验</td></tr>
+      <tr><td><code>status_history</code></td><td>—</td><td>状态切换轨迹（可选审计）</td></tr>
+    </table>
+    <h3>worklog 条目（员工工作留痕）</h3>
+    <table>
+      <tr><th>字段</th><th>说明</th></tr>
+      <tr><td><code>wid</code></td><td>W-YYYYMMDD-序号（自带日期，跨档唯一）</td></tr>
+      <tr><td><code>status</code></td><td>计划中→进行中→已完成（三段式）</td></tr>
+      <tr><td><code>type</code></td><td>工单 / 直聊 / 事务 / 自由</td></tr>
+      <tr><td><code>ticket</code> / <code>aff</code></td><td>type=工单 填 ticket；type=事务 填 aff；大活工单可同时带两者</td></tr>
+      <tr><td><code>deliverable</code></td><td>交付物相对路径（可选）</td></tr>
+    </table>
+    <h3>affair.md（常设事务）</h3>
+    <table>
+      <tr><th>字段</th><th>说明</th></tr>
+      <tr><td><code>id</code> / <code>title</code> / <code>status</code></td><td>AFF+四位 / 标题 / active·paused·closed</td></tr>
+      <tr><td><code>owner</code> / <code>cadence</code></td><td>养护责任人 / 节奏（每日·每周·每两周·每月·按需）</td></tr>
+      <tr><td>逾期推导</td><td>生成器扫全公司 worklog 的 aff 字段取「上次推进」，超阈值（每日2天/每周9天/双周17天/每月35天）黄条；从未记账标「从未推进」——<b>节奏数据是推导出来的，不是填出来的</b></td></tr>
+    </table>
+    <h3>roster.md（花名册，唯一权威）</h3>
+    <p>列序：员工 ID｜路径｜岗位｜状态｜团队（多值逗号分隔）｜<b>角色</b>（lead=团队负责人）｜备注。另预留需求分析师岗位升级线。</p>
+    <h3>task-index.md（编号台账）</h3>
+    <p>TSK/AFF 分配记录 + <b>预留号池</b>（约 20 个连续号，供入口 B 自助取号；先占台账后建单防撞号；水位 &lt;5 总管补号）。</p>
+  </div>
+</section>
+
+<!-- ================= 深潜 C：扩展法则 ================= -->
+<section id="d3" class="deep">
+  <h2>深潜 C · 扩展法则（总管落位决策树）<span class="deep-badge">深潜模式</span></h2>
+  <div class="card">
+    <p>总管接到任何构想，第一判断是「这属于哪类」，然后按固定流程落位：</p>
+<pre>构想
+├─ 新实体（人/团队/项目多了）  → 新目录 + 实体卡 + 登记（roster/台账/parent 挂接）
+├─ 教 Agent 怎么干            → 技能：定层（1人私有 / ≥2人公司级 / 团队内）
+├─ 必须遵守什么               → 制度：声明要点+范围+红线，引用技能为执行标准
+├─ 无终点养资产               → 常设事务 AFF（affairs/）
+├─ 要多记一样数据             → A 字段契约 → B 生成器解析 → C 看板展示（三步铁律）
+└─ 新报表/页面               → page-templates 复制，只读投影</pre>
+    <h3>技能定制三档（防止复制漂移）</h3>
+    <p>① <b>纯引用</b>（公司版适用）→ ② <b>增量扩展</b>（"加上我的"：私有技能只写差异）→ ③ <b>真分叉</b>（"换成我的"：改名新建+登记 fork，不再自动跟进）。<span class="tag r">禁止复制整份再微调</span>——那会产生两份都像权威的复制品。</p>
+    <h3>制度 vs 技能判定口诀</h3>
+    <p><b>技能=能力</b>（做了更好，触发词命中才加载）；<b>制度=义务</b>（必须/禁止/时限/追责，常在约束，审计锚点，修订须注明原因日期）。含"必须"语义的→建制度；纯流程→只建技能；纪律+新操作→成对建。</p>
+    <h3>落位执行五步</h3>
+    <p>① 归类（决策树）→ ② 出改动清单<b>给用户过目</b> → ③ 备份 .bak → ④ 执行+同步目录结构说明书 → ⑤ 跑 --check-structure 与 --selftest 验证，汇报与回滚方式。</p>
+  </div>
+</section>
+
+<!-- ================= 深潜 D：双入口与领地 ================= -->
+<section id="d4" class="deep">
+  <h2>深潜 D · 双入口与领地自治<span class="deep-badge">深潜模式</span></h2>
+  <div class="card">
+    <h3 style="margin-top:0">原则：入口自由，机制收敛</h3>
+    <p>用户→总管（入口 A，常态）或用户→直接指挥员工（入口 B，直通）：入口只决定活从哪进来，<b>机制必须汇入同一套文件契约</b>。每条机制设计时都要回答「入口 B 走到这步时谁触发、谁有权、留痕到哪」。</p>
+    <h3>入口 B 的配套规则</h3>
+    <table>
+      <tr><th>场景</th><th>规则</th></tr>
+      <tr><td>直派要建单</td><td>员工号池自助取号：重读台账→占号→立即登记→建单（防并发撞号）</td></tr>
+      <tr><td>直派已有工单</td><td>用户指令=授权：员工自填 owner + handoffs 注明「用户直派」</td></tr>
+      <tr><td>来源留痕</td><td>直派工单在 messages.md 追加「来源：用户直派（日期）」，总管巡检可识别</td></tr>
+      <tr><td>越权拦截</td><td>业务性指令直干；跨领地/公共区操作先上报总管</td></tr>
+    </table>
+    <h3>领地表</h3>
+    <table>
+      <tr><th>领地</th><th>自治人</th><th>说明</th></tr>
+      <tr><td>员工 E00xx/</td><td>该员工</td><td>技能/机制/workflow/memory 自治；<span class="tag r">例外：不得摘除公司级技能引用行</span></td></tr>
+      <tr><td>团队 T00x/</td><td>lead（roster 角色列）</td><td>团队 workflow/技能审定；成员可提案 lead 定稿</td></tr>
+      <tr><td>项目 P00xx/</td><td>项目负责人（project.md owner）</td><td>项目文档/workflow/knowledge</td></tr>
+      <tr><td>公司公共区</td><td>总管独占</td><td>company.md/说明书/skills//workbench//制度/知识库/roster</td></tr>
+    </table>
+    <p class="kv">总管有权动一切领地，但尊重自治不代劳。总管自营单（自己领活干）照常上板，工位卡标「执行身份」，验收=用户或指定员工，不自审自批。</p>
+  </div>
+</section>
+
+<footer>
+  <p>AI 自动化公司系统 · 架构讲解 v1.1 · 2026-08-28</p>
+  <p class="kv">配套权威文档：PRINCIPLES.md（原则）· MECHANISM_PLAN.md（决策存档）· 目录结构说明书.md（结构契约）· workbench/affairs/AFF-SCHEMA.md（事务契约）</p>
+</footer>
+
+</div>
+<script>
+(function () {
+  var btns = document.querySelectorAll(".mode-btn");
+  var desc = document.getElementById("modeDesc");
+  btns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      btns.forEach(function (x) { x.classList.remove("active"); });
+      b.classList.add("active");
+      var m = b.getAttribute("data-mode");
+      document.body.setAttribute("data-mode", m);
+      desc.textContent = m === "overview"
+        ? "概览模式：理解这套系统是什么、怎么运作、怎么上手。切到深潜模式可查看每个机制的实现细节与规则原文。"
+        : "深潜模式：包含原则全文、字段契约、扩展法则、双入口与领地的完整细节。日常介绍他人用概览即可。";
+    });
+  });
+})();
+</script>
+</body>
+</html>

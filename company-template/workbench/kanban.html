@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>协作看板 · 可视化任务面板</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2129; --panel-2: #222b35; --border: #2c3742;
+    --text: #e6edf3; --text-dim: #8b98a5; --accent: #4f9cf9;
+    --st-backlog: #8a94a6; --st-in_progress: #3b82f6; --st-review: #f59e0b;
+    --st-done: #22c55e; --st-failed: #ef4444; --st-paused: #a855f7; --st-cancelled: #6b7280;
+    --pri-high: #ef4444; --pri-mid: #f59e0b; --pri-low: #8a94a6;
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef1f5; --border: #d8dee6;
+    --text: #1a2129; --text-dim: #6b7785; --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 20px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .5px; }
+  .brand .sub { font-size: 12px; color: var(--text-dim); }
+  .head-controls { display: flex; align-items: center; gap: 10px; }
+  .theme-btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  }
+  .theme-btn:hover { border-color: var(--accent); }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .toolbar label { font-size: 12px; color: var(--text-dim); margin-right: 4px; }
+  select, input[type="search"] {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; outline: none;
+  }
+  select:focus, input[type="search"]:focus { border-color: var(--accent); }
+  input[type="search"] { min-width: 200px; }
+  .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .spacer { flex: 1; }
+  .count-info { font-size: 12px; color: var(--text-dim); }
+
+  .board {
+    display: flex; gap: 14px; padding: 18px 20px; overflow-x: auto; align-items: flex-start;
+    min-height: calc(100vh - 130px);
+  }
+  .column {
+    flex: 0 0 290px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; display: flex; flex-direction: column; max-height: calc(100vh - 150px);
+  }
+  .col-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  .col-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+  .col-count {
+    margin-left: auto; background: var(--panel-2); color: var(--text-dim);
+    border-radius: 999px; padding: 1px 8px; font-size: 12px;
+  }
+  .col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+  .empty-col { color: var(--text-dim); font-size: 12px; text-align: center; padding: 18px 0; }
+
+  .card {
+    background: var(--panel-2); border: 1px solid var(--border); border-left-width: 4px;
+    border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: transform .08s, border-color .12s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card .title { font-weight: 600; margin-bottom: 8px; }
+  .card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+  .badge {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1px 7px; color: var(--text-dim); font-size: 11px;
+  }
+  .pri-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .card-id { font-size: 11px; color: var(--text-dim); background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 0 6px; margin-left: 6px; font-weight: 600; letter-spacing: .3px; vertical-align: 1px; }
+  .badge.due-over { color: var(--st-failed); border-color: var(--st-failed); }
+  .badge.due-late { color: var(--st-review); border-color: var(--st-review); }
+  .pri-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; }
+  .board-hint { padding: 8px 20px 0; font-size: 12px; color: var(--text-dim); }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px; font-size: 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .stats .s { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px 10px; }
+  .stats .s b { font-weight: 700; }
+  .wip-flag { color: var(--st-failed); font-size: 11px; font-weight: 700; margin-left: 4px; }
+  .desc-md { white-space: normal; }
+  .desc-md ul { margin: 4px 0; padding-left: 20px; }
+  .desc-md li { margin: 2px 0; }
+  .desc-md code { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+  .stat-click { cursor: pointer; }
+  .stat-click:hover { border-color: var(--accent); }
+  .card.focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .tag { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; font-size: 11px; color: var(--text-dim); }
+  .badge-flow { background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+  .card.flow-hot { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .timeline { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 2px; }
+  .tl-node { font-size: 13px; font-weight: 600; }
+  .tl-line { font-size: 12px; color: var(--text-dim); border-left: 2px solid var(--border); margin-left: 6px; padding-left: 8px; }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40; display: none;
+  }
+  .overlay.show { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: 460px; max-width: 92vw;
+    background: var(--panel); border-left: 1px solid var(--border); z-index: 50;
+    transform: translateX(100%); transition: transform .18s ease; display: flex; flex-direction: column;
+  }
+  .drawer.show { transform: translateX(0); }
+  .drawer-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .drawer-head h2 { font-size: 15px; margin: 0; }
+  .close-btn { background: none; border: none; color: var(--text-dim); font-size: 22px; cursor: pointer; line-height: 1; }
+  .drawer-body { padding: 16px 18px; overflow-y: auto; }
+  .field-grid { display: grid; grid-template-columns: 84px 1fr; gap: 6px 12px; margin-bottom: 16px; }
+  .field-grid .k { color: var(--text-dim); font-size: 12px; }
+  .field-grid .v { font-size: 13px; }
+  .sec-title { font-weight: 600; margin: 14px 0 6px; font-size: 13px; color: var(--accent); }
+  .desc-box, .msg-box {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; white-space: pre-wrap; font-size: 13px; max-height: 240px; overflow-y: auto;
+  }
+  .file-list { list-style: none; padding: 0; margin: 0; }
+  .file-list li { padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 12px; }
+  .file-list a { color: var(--accent); text-decoration: none; }
+  .file-list a:hover { text-decoration: underline; }
+  .nowrap { white-space: nowrap; }
+  .no-data {
+    margin: 60px auto; text-align: center; color: var(--text-dim); max-width: 420px;
+  }
+  .no-data code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; color: var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>协作看板</h1>
+      <span class="sub" id="genInfo">加载中…</span>
+    </div>
+    <div class="head-controls">
+      <label style="font-size:12px;color:var(--text-dim)">分组</label>
+      <select id="groupBy">
+        <option value="status">状态</option>
+        <option value="project">项目</option>
+        <option value="owner">负责人</option>
+        <option value="participant">参与者</option>
+      </select>
+      <a class="theme-btn" id="dashLink" href="../dashboard.html" style="text-decoration:none">🏢 公司驾驶舱</a>
+      <button class="theme-btn" id="syncBtn">🔄 同步</button>
+      <button class="theme-btn" id="themeBtn">🌙 切暗色</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div><label>优先级</label>
+      <select id="fPriority"><option value="all">全部</option><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
+    </div>
+    <div><label>类型</label>
+      <select id="fType"><option value="all">全部</option><option value="需求">需求</option><option value="bug">bug</option><option value="任务">任务</option></select>
+    </div>
+    <div><label>标签</label><div class="tag-chips" id="tagChips"></div></div>
+    <input type="search" id="fSearch" placeholder="搜索标题 / ID / 描述 / 负责人 / 项目 / 标签…" />
+    <button class="theme-btn" id="exportBtn">⬇ 导出 CSV</button>
+    <div class="spacer"></div>
+    <div class="count-info" id="countInfo"></div>
+  </div>
+
+  <div class="stats" id="statsBar"></div>
+  <div class="board-hint" id="boardHint" style="display:none">💡 参与者分组：同一工单可能因经手多人而出现在多列（含历史经手人）。</div>
+  <div class="board-hint" id="deepHint" style="display:none">🔗 当前为深链过滤视图（<span id="deepWho"></span>）。<a href="#" id="deepClear" style="color:var(--accent)">清除过滤，显示全部</a></div>
+  <div class="board" id="board"></div>
+
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <h2 id="drawerTitle">工单详情</h2>
+      <button class="close-btn" id="closeDrawer">×</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <script src="tasks-data.js"></script>
+  <script>
+  (function () {
+    var DATA = window.KANBAN_DATA;
+    var STATUS_ORDER = ["backlog", "in_progress", "review", "done", "failed", "paused", "cancelled"];
+    var STATUS_LABEL = (DATA && DATA.status_meta) || {
+      backlog: "待领", in_progress: "进行中", review: "待审", done: "完成", failed: "失败", paused: "暂停", cancelled: "取消"
+    };
+    var PRI_COLOR = { "高": "var(--pri-high)", "中": "var(--pri-mid)", "低": "var(--pri-low)" };
+
+    // 可调常量 + 合法值白名单（URL/localStorage 恢复时校验，避免非法值产生怪视图）
+    var WIP_LIMIT = 6; // 「进行中」列 WIP 上限
+    var GROUP_BY_VALID = ["status", "project", "owner", "participant"];
+    var PRI_VALID = ["all", "高", "中", "低"];
+    var TYPE_VALID = ["all", "需求", "bug", "任务"];
+
+    var CHUNK_THRESHOLD = 800; // 卡片总数超此值分片渲染，避免一次性大 DOM 阻塞
+    var focusList = []; // 键盘导航：当前渲染卡片 id 列表（按 DOM 顺序）
+    var focusIdx = -1;
+
+    // 代号→名称 解析（注册表由生成器从公司目录扫描得出；解析不到回退原代号）
+    function empName(code) {
+      if (!code) return "待派";
+      var m = (DATA && DATA.employees) || {};
+      return m[code] || code;
+    }
+    function projName(code) {
+      if (!code) return "未关联";
+      var m = (DATA && DATA.projects) || {};
+      return m[code] || code;
+    }
+
+    var state = { groupBy: "status", priority: "all", type: "all", tags: new Set(), search: "" };
+
+    function esc(s) {
+      if (s === null || s === undefined) return "";
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+
+    function tasks() { return (DATA && DATA.tasks) || []; }
+
+    function filtered() {
+      var q = state.search.trim().toLowerCase();
+      return tasks().filter(function (t) {
+        if (state.priority !== "all" && t.priority !== state.priority) return false;
+        if (state.type !== "all" && t.type !== state.type) return false;
+        // 深链过滤：?owner= / ?participant= / ?project=（与分组联动，仅显示该代号相关工单）
+        if (state.deepOwner && (t.owner || "") !== state.deepOwner) return false;
+        if (state.deepParticipant && (t.participants || []).indexOf(state.deepParticipant) === -1 &&
+            (t.owner || "") !== state.deepParticipant) return false;
+        if (state.deepProject && (t.project || "") !== state.deepProject) return false;
+        if (state.tags.size > 0) {
+          var has = (t.tags || []).some(function (tg) { return state.tags.has(tg); });
+          if (!has) return false;
+        }
+        if (q) {
+          var partsHay = (t.participants || []).map(function (p) { return p + " " + empName(p); }).join(" ");
+          var hay = [t.id, t.title, t.description, t.owner, empName(t.owner), t.project, projName(t.project), partsHay, (t.tags || []).join(" ")].join(" ").toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+    }
+
+    function groupValue(t, by) {
+      if (by === "status") return t.status;
+      if (by === "project") return t.project || "未关联";
+      if (by === "owner") return t.owner || "待派";
+      return "?";
+    }
+
+    // 轻量 markdown 渲染（先 esc 转义防注入，再处理标记；链接白名单拦截危险协议）
+    function mdToHtml(s) {
+      if (!s) return "";
+      var h = esc(s);
+      h = h.replace(/`([^`]+)`/g, function (m, c) { return "<code>" + c + "</code>"; });
+      h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, txt, url) {
+        var u = url.trim();
+        if (/^(javascript|data|vbscript):/i.test(u)) return txt;
+        // 不加 target=_blank：file:// 下 _blank 打开本地文件会被 Chrome 拦截（与交付物/输入物链接保持一致）
+        return '<a href="' + u + '">' + txt + "</a>";
+      });
+      h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+      h = h.replace(/^(#{1,3})\s+(.+)$/gm, function (m, hh, t) { return "<b style='font-size:14px'>" + t + "</b>"; });
+      var out = [], inList = false;
+      h.split(/\n/).forEach(function (ln) {
+        var li = ln.match(/^\s*[-*]\s+(.+)$/);
+        if (li) {
+          if (!inList) { out.push("<ul>"); inList = true; }
+          out.push("<li>" + li[1] + "</li>");
+        } else {
+          if (inList) { out.push("</ul>"); inList = false; }
+          out.push(ln ? ln : "<br>");
+        }
+      });
+      if (inList) out.push("</ul>");
+      return out.join("\n");
+    }
+
+    // 顶部统计栏：总数 / 各状态 / 逾期中 / 逾期完成
+    function updateStats() {
+      var bar = document.getElementById("statsBar");
+      if (!bar) return;
+      var all = tasks(), cnt = {};
+      all.forEach(function (t) { cnt[t.status] = (cnt[t.status] || 0) + 1; });
+      var overdue = all.filter(isOverdue).length;
+      var doneLate = all.filter(isOverdueDone).length;
+      var blockedCnt = all.filter(isBlocked).length;
+      var parts = ['<span class="s">总 <b>' + all.length + '</b></span>'];
+      STATUS_ORDER.forEach(function (st) {
+        if (cnt[st]) parts.push('<span class="s stat-click" data-st="' + st + '" title="点击查看该状态列">' + (STATUS_LABEL[st] || st) + ' <b>' + cnt[st] + '</b></span>');
+      });
+      if (blockedCnt) parts.push('<span class="s" style="color:var(--st-failed)">🔒 阻塞中 <b>' + blockedCnt + '</b></span>');
+      if (overdue) parts.push('<span class="s" style="color:var(--st-failed)">⚠️ 逾期中 <b>' + overdue + '</b></span>');
+      if (doneLate) parts.push('<span class="s" style="color:var(--st-review)">🟠 逾期完成 <b>' + doneLate + '</b></span>');
+      bar.innerHTML = parts.join("");
+    }
+
+    // 筛选状态持久化（localStorage）+ URL 参数（分享视图）
+    function saveState() {
+      try {
+        localStorage.setItem("kanban-state", JSON.stringify({
+          groupBy: state.groupBy, priority: state.priority, type: state.type,
+          search: state.search, tags: Array.from(state.tags)
+        }));
+      } catch (e) {}
+    }
+    function loadState() {
+      try {
+        var s = JSON.parse(localStorage.getItem("kanban-state") || "{}");
+        if (GROUP_BY_VALID.indexOf(s.groupBy) !== -1) state.groupBy = s.groupBy;
+        if (PRI_VALID.indexOf(s.priority) !== -1) state.priority = s.priority;
+        if (TYPE_VALID.indexOf(s.type) !== -1) state.type = s.type;
+        if (typeof s.search === "string") state.search = s.search;
+        if (Array.isArray(s.tags)) state.tags = new Set(s.tags);
+      } catch (e) {}
+    }
+    function applyURLParams() {
+      try {
+        var q = new URLSearchParams(location.search);
+        if (GROUP_BY_VALID.indexOf(q.get("groupBy")) !== -1) state.groupBy = q.get("groupBy");
+        if (PRI_VALID.indexOf(q.get("priority")) !== -1) state.priority = q.get("priority");
+        if (TYPE_VALID.indexOf(q.get("type")) !== -1) state.type = q.get("type");
+        if (q.get("search") !== null) state.search = q.get("search");
+        if (q.get("tags")) state.tags = new Set(q.get("tags").split(",").filter(Boolean));
+        // 结构化深链：?project=P0001（比 search 更稳，不受项目更名影响）
+        if (/^P\d{3,}$/.test(q.get("project") || "")) {
+          state.deepProject = q.get("project");
+          state.groupBy = "project";
+          document.getElementById("groupBy").value = "project";
+        }
+        // 深链：?owner=E0001 / ?participant=E0001 → 直接切分组视图（三级看板跳转入口）
+        if (q.get("owner") && /^[A-Z]\d{3,}$/.test(q.get("owner"))) {
+          state.deepOwner = q.get("owner");
+          state.groupBy = "owner";
+          document.getElementById("groupBy").value = "owner";
+        } else if (q.get("participant") && /^[A-Z]\d{3,}$/.test(q.get("participant"))) {
+          state.deepParticipant = q.get("participant");
+          state.groupBy = "participant";
+          document.getElementById("groupBy").value = "participant";
+        }
+      } catch (e) {}
+    }
+
+    // 分片渲染：大工单量时按批插入列，避免一次构建巨大 DOM 阻塞主线程
+    function renderColumns(board, cols) {
+      var totalCards = 0;
+      cols.forEach(function (c) { totalCards += (c.match(/class="card/g) || []).length; });
+      if (totalCards <= CHUNK_THRESHOLD) {
+        board.innerHTML = cols.join("");
+        bindCardEvents(board);
+        return;
+      }
+      var BATCH = 3, i = 0;
+      board.innerHTML = "";
+      (function next() {
+        board.insertAdjacentHTML("beforeend", cols.slice(i, i + BATCH).join(""));
+        i += BATCH;
+        if (i < cols.length) requestAnimationFrame(next);
+        else bindCardEvents(board);
+      })();
+    }
+
+    // 卡片事件绑定 + 键盘导航列表刷新
+    function bindCardEvents(board) {
+      Array.prototype.forEach.call(board.querySelectorAll(".card"), function (el) {
+        el.addEventListener("click", function () { openDrawer(el.getAttribute("data-id")); });
+      });
+      focusList = Array.prototype.map.call(board.querySelectorAll(".card"), function (el) {
+        return el.getAttribute("data-id");
+      });
+      focusIdx = -1;
+    }
+
+    // 升级中工单高亮徽标（机制扩展 #18）
+    function escBadge(t) {
+      return (t.escalations && t.escalations.length)
+        ? '<span class="badge" style="color:var(--st-review);border-color:var(--st-review)" title="员工升级待总管处理">⏫ 升级中</span>'
+        : "";
+    }
+
+    // 导出 CSV（带 BOM，Excel 打开中文不乱码）
+    function exportCSV() {
+      var head = ["ID", "标题", "状态", "负责人", "项目", "优先级", "类型", "截止日", "实际完成", "标签", "更新时间"];
+      var rows = [head];
+      tasks().forEach(function (t) {
+        rows.push([t.id, t.title, STATUS_LABEL[t.status] || t.status, t.owner || "", t.project || "", t.priority || "",
+          t.type || "", t.due || "", t.completed_at || "", (t.tags || []).join(";"), t.updated || ""]);
+      });
+      var csv = rows.map(function (r) {
+        return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
+      }).join("\r\n");
+      try {
+        var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "kanban-tasks-" + new Date().toISOString().slice(0, 10) + ".csv";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+      } catch (e) { alert("导出失败：" + e.message); }
+    }
+
+    // 前端冒烟自测：?selftest=1 时在页面顶部横幅展示纯逻辑断言结果
+    var tasks_save_source = null; // selftest 用：暂存原始数据源
+    function runFrontendSelftest() {
+      var results = [];
+      function check(name, cond) { results.push({ name: name, pass: !!cond }); }
+      check("parseDate 纯日期", parseDate("2026-08-27") !== null);
+      check("parseDate 带时间(空格)", parseDate("2026-08-27 14:30") !== null);
+      check("parseDate 非法返回 null", parseDate("abc") === null);
+      check("isOverdue 仅活跃未完成", isOverdue({ status: "in_progress", due: "2026-08-01" }) === true && isOverdue({ status: "done", due: "2026-08-01" }) === false && isOverdue({ status: "cancelled", due: "2026-08-01" }) === false);
+      check("isOverdueDone 逾期完成", isOverdueDone({ status: "done", due: "2026-08-01", completed_at: "2026-08-02" }) === true);
+      check("mdToHtml XSS 转义", mdToHtml("<script>alert(1)<\/script>").indexOf("<script>") === -1);
+      check("mdToHtml 危险链接拦截", mdToHtml("[x](javascript:alert(1))").indexOf("javascript:") === -1);
+      check("白名单 groupBy", GROUP_BY_VALID.indexOf("abc") === -1);
+      // 机制扩展：阻塞/父子单纯逻辑断言
+      taskIndex = { A: { id: "A", status: "done" }, B: { id: "B", status: "in_progress" } };
+      check("isBlocked 上游未done为真", isBlocked({ id: "C", status: "backlog", blocked_by: ["B"] }) === true);
+      check("isBlocked 上游done为假", isBlocked({ id: "C", status: "backlog", blocked_by: ["A"] }) === false);
+      check("isBlocked 引用不存在视为阻塞", isBlocked({ id: "C", status: "backlog", blocked_by: ["ZZZ"] }) === true);
+      check("isBlocked 终态不标阻塞", isBlocked({ id: "C", status: "done", blocked_by: ["B"] }) === false);
+      tasks_save_source = window.KANBAN_DATA;
+      window.KANBAN_DATA = { tasks: [{ id: "P1", status: "in_progress", type: "需求" }, { id: "S1", status: "done", parent: "P1" }, { id: "S2", status: "backlog", parent: "P1" }], status_meta: {}, employees: {}, projects: {} };
+      DATA = window.KANBAN_DATA;
+      check("childProgress 1/2", childProgress("P1").done === 1 && childProgress("P1").total === 2);
+      check("childProgress 无子单为null", childProgress("S1") === null);
+      window.KANBAN_DATA = tasks_save_source; DATA = tasks_save_source; rebuildIndex();
+      var fails = results.filter(function (r) { return !r.pass; });
+      var banner = document.createElement("div");
+      banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;padding:10px 20px;font-size:13px;color:#fff;background:" + (fails.length ? "#ef4444" : "#22c55e");
+      banner.textContent = fails.length
+        ? ("前端自测失败 " + fails.length + " 项: " + fails.map(function (f) { return f.name; }).join(", "))
+        : ("前端自测通过 ✓ " + results.length + " 项");
+      document.body.prepend(banner);
+      console.log("[frontend-selftest]", results);
+    }
+
+    function groupKeys(by, list) {
+      var keys = [];
+      var seen = {};
+      list.forEach(function (t) {
+        var k = groupValue(t, by);
+        if (!seen[k]) { seen[k] = 1; keys.push(k); }
+      });
+      if (by === "status") {
+        keys.sort(function (a, b) { return STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b); });
+      } else {
+        keys.sort();
+      }
+      return keys;
+    }
+
+    function statusColor(st) { return "var(--st-" + st + ")"; }
+
+    // F5-④ 流转高亮：最近 7 天内有 handoff 的工单
+    function isRecentFlow(t) {
+      if (!t || !t.last_handoff_at) return false;
+      // Safari 不解析空格分隔的日期时间，先换成 T（ISO 格式）；失败再兜底拼日期
+      var iso = String(t.last_handoff_at).trim().replace(" ", "T");
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) d = new Date(t.last_handoff_at + "T00:00:00");
+      if (isNaN(d.getTime())) return false;
+      var days = (Date.now() - d.getTime()) / 86400000;
+      return days >= 0 && days <= 7;
+    }
+
+    // 日期解析助手：兼容纯日期(2026-08-27)与带时间(2026-08-27 14:30)；Safari 兼容
+    function parseDate(s) {
+      if (!s) return null;
+      var iso = String(s).trim().replace(" ", "T");
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) d = new Date(s + "T00:00:00");
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // 逾期（逾期中）：仅"活跃未完成"（待领/进行中/待审）且 due 早于今天 0 点；
+    // done（已完成）/paused（有意暂停）/failed（已定性失败）一律不标"逾期中"
+    function isOverdue(t) {
+      if (!t || !t.due) return false;
+      if (t.status !== "backlog" && t.status !== "in_progress" && t.status !== "review") return false;
+      var d = parseDate(t.due);
+      if (!d) return false;
+      var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      return d.getTime() < t0.getTime();
+    }
+
+    // 逾期完成：done 且实际完成时间 > due（拖了才完成）
+    function isOverdueDone(t) {
+      if (!t || t.status !== "done" || !t.due || !t.completed_at) return false;
+      var c = parseDate(t.completed_at), d = parseDate(t.due);
+      if (!c || !d) return false;
+      return c.getTime() > d.getTime();
+    }
+
+    // 逾期天数（completed_at - due，天）
+    function overdueDays(t) {
+      var c = parseDate(t.completed_at), d = parseDate(t.due);
+      if (!c || !d) return null;
+      return Math.round((c.getTime() - d.getTime()) / 86400000);
+    }
+
+    // ---- 机制扩展（2026-08-28）：阻塞与父子单 ----
+    // 全量任务索引（id→task），供阻塞判断与父单进度计算
+    var taskIndex = {};
+    function rebuildIndex() {
+      taskIndex = {};
+      tasks().forEach(function (t) { taskIndex[t.id] = t; });
+    }
+    // 前置阻塞未清：blocked_by 任一上游非 done（引用不存在视为未清，保守显示阻塞）
+    function isBlocked(t) {
+      if (!t || !t.blocked_by || !t.blocked_by.length) return false;
+      if (t.status === "done" || t.status === "cancelled") return false;
+      return t.blocked_by.some(function (b) {
+        var up = taskIndex[b];
+        return !up || up.status !== "done";
+      });
+    }
+    // 父单进度：子单 done 数 / 总数（无子单返回 null）
+    function childProgress(pid) {
+      var kids = tasks().filter(function (t) { return t.parent === pid; });
+      if (!kids.length) return null;
+      var done = kids.filter(function (k) { return k.status === "done"; }).length;
+      return { done: done, total: kids.length };
+    }
+
+    // 逾期中已拖天数（今天 - due，天）
+    function overdueDaysSince(t) {
+      var d = parseDate(t.due);
+      if (!d) return null;
+      var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      var days = Math.round((t0.getTime() - d.getTime()) / 86400000);
+      return days > 0 ? days : null;
+    }
+
+    function cardHTML(t) {
+      var color = statusColor(t.status);
+      var priDot = t.priority ? '<span class="pri-badge" style="color:' + (PRI_COLOR[t.priority] || "var(--text-dim)") + '"><span class="pri-dot" style="background:' + (PRI_COLOR[t.priority] || "var(--text-dim)") + '"></span>' + esc(t.priority) + '</span>' : "";
+      var tags = (t.tags || []).map(function (tg) { return '<span class="tag">' + esc(tg) + "</span>"; }).join("");
+      var due = t.due ? '<span class="badge' + (isOverdue(t) ? " due-over" : "") + (isOverdueDone(t) ? " due-late" : "") + '">📅 ' + esc(t.due) + (isOverdue(t) ? " 逾期" + (overdueDaysSince(t) || "") + "天" : "") + (isOverdueDone(t) ? " 逾期完成" : "") + '</span>' : "";
+      var flowBadge = (t.handoffs && t.handoffs.length) ? '<span class="badge-flow">🔄 经手 ' + ((t.participants || []).length || 1) + ' 人</span>' : "";
+      var inBadge = (t.inputs && t.inputs.length) ? '<span class="badge" title="' + esc((t.inputs || []).map(function (i) { return i.path; }).join("; ")) + '">📥 ' + t.inputs.length + ' 个输入</span>' : "";
+      // 🔒 阻塞中：blocked_by 任一上游未 done（详情可看阻塞链）
+      var blockBadge = isBlocked(t) ? '<span class="badge" style="color:var(--st-failed);border-color:var(--st-failed)" title="前置未完成：' + esc((t.blocked_by || []).join("、")) + '">🔒 阻塞中</span>' : "";
+      // 父单进度徽标（type=需求 且有子单）；子单显示父单归属
+      var prog = (t.type === "需求") ? childProgress(t.id) : null;
+      var progBadge = prog ? '<span class="badge" style="color:var(--accent);border-color:var(--accent)" title="子单完成进度">🧩 ' + prog.done + "/" + prog.total + '</span>' : "";
+      var parentBadge = t.parent ? '<span class="badge" title="父单：' + esc(t.parent) + '">↗ ' + esc(t.parent) + '</span>' : "";
+      var hot = isRecentFlow(t) ? " flow-hot" : "";
+      return '<div class="card' + hot + '" style="border-left-color:' + color + '" data-id="' + esc(t.id) + '">' +
+        '<div class="title">' + esc(t.title) + ' <span class="card-id">' + esc(t.id) + '</span></div>' +
+        '<div class="meta">' +
+          (t.owner ? '<span class="badge" title="' + esc(t.owner) + '">👤 ' + esc(empName(t.owner)) + ' <i style="opacity:.6">' + esc(t.owner) + '</i></span>' : '<span class="badge" style="opacity:.7">⏳ 待派</span>') +
+          priDot +
+          (t.project ? '<span class="badge" title="' + esc(t.project) + '">📁 ' + esc(projName(t.project)) + ' <i style="opacity:.6">' + esc(t.project) + '</i></span>' : "") +
+          flowBadge + inBadge + due + blockBadge + progBadge + parentBadge + escBadge(t) + tags +
+        "</div></div>";
+    }
+
+    function columnHTML(by, key, list) {
+      var dot = by === "status"
+        ? '<span class="col-dot" style="background:' + statusColor(key) + '"></span>'
+        : '<span class="col-dot"></span>';
+      var label = by === "status" ? (STATUS_LABEL[key] || key)
+        : (by === "owner" || by === "participant") ? empName(key) : projName(key);
+      var titleAttr = by === "status" ? "" : ' title="' + esc(key) + '"';
+      // WIP 提示：仅「进行中」列超限时标记（上限常量 WIP_LIMIT 可改）
+      var wip = (by === "status" && key === "in_progress" && list.length > WIP_LIMIT)
+        ? '<span class="wip-flag" title="进行中 WIP 上限 ' + WIP_LIMIT + '">⚠️WIP</span>' : "";
+      var body = list.length
+        ? list.map(cardHTML).join("")
+        : '<div class="empty-col">无匹配工单</div>';
+      return '<div class="column" data-col-key="' + esc(key) + '">' +
+        '<div class="col-head"' + titleAttr + '>' + dot + "<span>" + esc(label) + '</span>' + wip +
+        '<span class="col-count">' + list.length + "</span></div>" +
+        '<div class="col-body">' + body + "</div></div>";
+    }
+
+    function render() {
+      var board = document.getElementById("board");
+      rebuildIndex();   // 阻塞/父单进度计算依赖全量索引
+      if (!tasks().length) {
+        board.innerHTML = '<div class="no-data">暂无工单数据。<br>请先运行 <code>python generate_tasks.py</code> 生成 tasks-data.js，' +
+          '并按 TSKxxx-标题/task.md 模板在 workbench/tasks/ 下建工单。</div>';
+        document.getElementById("countInfo").textContent = "0 条";
+        updateStats(); // 空数据时统计栏显示「总 0」，避免残留旧值
+        return;
+      }
+      var list = filtered();
+      if (!list.length) {
+        board.innerHTML = '<div class="no-data">无匹配工单。<br>请调整筛选条件或搜索关键词。</div>';
+        document.getElementById("countInfo").textContent = "0 / " + tasks().length + " 条";
+        return;
+      }
+      var by = state.groupBy;
+      if (by === "participant") {
+        // F5-② 参与者分组：一单可归多列（当前 owner + 流转链历史经手人）
+        var parts = {};
+        list.forEach(function (t) {
+          var ps = (t.participants && t.participants.length) ? t.participants : [t.owner || "待派"];
+          ps.forEach(function (p) { if (p) parts[p] = 1; });
+        });
+        var pkeys = Object.keys(parts).sort();
+        renderColumns(board, pkeys.map(function (k) {
+          var sub = list.filter(function (t) {
+            var ps = (t.participants && t.participants.length) ? t.participants : [t.owner || "待派"];
+            return ps.indexOf(k) !== -1;
+          });
+          return columnHTML("participant", k, sub);
+        }));
+      } else {
+        var keys = groupKeys(by, list);
+        renderColumns(board, keys.map(function (k) {
+          var sub = list.filter(function (t) { return groupValue(t, by) === k; });
+          return columnHTML(by, k, sub);
+        }));
+      }
+      document.getElementById("countInfo").textContent = list.length + " / " + tasks().length + " 条";
+
+      // 参与者分组提示条：仅该分组下显示，避免"同一卡片重复出现"困惑
+      var hint = document.getElementById("boardHint");
+      if (hint) hint.style.display = (by === "participant") ? "block" : "none";
+      // 深链过滤提示条
+      var deep = document.getElementById("deepHint");
+      if (deep) {
+        var who = state.deepOwner || state.deepParticipant || state.deepProject;
+        if (who) {
+          var label = state.deepOwner ? ("owner=" + who + " · " + empName(who))
+            : state.deepParticipant ? ("participant=" + who + " · " + empName(who))
+            : ("project=" + who + " · " + projName(who));
+          document.getElementById("deepWho").textContent = label;
+          deep.style.display = "block";
+        } else deep.style.display = "none";
+      }
+      updateStats();
+      saveState();
+    }
+
+    function buildTagChips() {
+      var all = {};
+      tasks().forEach(function (t) { (t.tags || []).forEach(function (tg) { all[tg] = 1; }); });
+      var box = document.getElementById("tagChips");
+      box.innerHTML = "";
+      Object.keys(all).sort().forEach(function (tg) {
+        var c = document.createElement("span");
+        c.className = "chip"; c.textContent = tg;
+        c.addEventListener("click", function () {
+          if (state.tags.has(tg)) { state.tags.delete(tg); c.classList.remove("active"); }
+          else { state.tags.add(tg); c.classList.add("active"); }
+          render();
+        });
+        box.appendChild(c);
+      });
+    }
+
+    function openDrawer(id) {
+      var t = tasks().filter(function (x) { return x.id === id; })[0];
+      if (!t) return;
+      rebuildIndex();
+      currentDrawerId = id;
+      document.getElementById("drawerTitle").textContent = t.id + " · " + t.title;
+      var deliv = (t.deliverables || []).map(function (f) {
+        return '<li><a href="tasks/' + esc(f.rel_path) + '">' + esc(f.name) + "</a> <span style='color:var(--text-dim)'>(" + esc(f.rel_path) + ")</span></li>";
+      }).join("") || '<li style="color:var(--text-dim)">无</li>';
+      var logs = (t.logs || []).map(function (f) {
+        return '<li><a href="tasks/' + esc(f.rel_path) + '">' + esc(f.name) + "</a> <span style='color:var(--text-dim)'>(" + esc(f.rel_path) + ")</span></li>";
+      }).join("") || '<li style="color:var(--text-dim)">无</li>';
+      var msg = t.messages && t.messages.trim() ? esc(t.messages) : '<span style="color:var(--text-dim)">无交接备注</span>';
+
+      // 输入物：结构化引用外部文件（相对 workbench/），可指向项目目录或上游工单交付物；
+      // 失效路径（valid=false）标红 + ⚠️，不可点击
+      var inputsHTML = (t.inputs || []).map(function (i) {
+        var cls = i.valid === false ? ' style="color:var(--st-failed)"' : "";
+        var mark = i.valid === false ? " ⚠️ 路径失效" : "";
+        if (i.path && i.valid !== false) {
+          return '<li' + cls + '><a href="' + esc(i.path) + '">' + esc(i.name) + '</a> <span style="color:var(--text-dim)">(' + esc(i.path) + ')</span>' + mark + "</li>";
+        }
+        return '<li' + cls + '>' + esc(i.name) + ' <span style="color:var(--text-dim)">(' + esc(i.path) + ')</span>' + mark + "</li>";
+      }).join("") || '<li style="color:var(--text-dim)">无</li>';
+
+      var fields = [
+        ["状态", (STATUS_LABEL[t.status] || t.status) + " (" + t.status + ")"],
+        ["负责人", t.owner ? empName(t.owner) + " (" + t.owner + ")" : "待派"],
+        ["项目", t.project ? projName(t.project) + " (" + t.project + ")" : "—"],
+        ["优先级", t.priority || "—"],
+        ["类型", t.type || "—"],
+        ["截止日", (t.due || "—") + (isOverdue(t) ? " ⚠️已逾期" : "") + (isOverdueDone(t) ? " ⚠️逾期完成(逾期" + (overdueDays(t) || "?") + "天)" : "")],
+        ["实际完成", t.completed_at || "—"],
+        ["标签", (t.tags || []).join("、") || "—"],
+        ["创建", t.created || "—"],
+        ["更新", t.updated || "—"]
+      ].map(function (r) { return '<div class="k">' + r[0] + '</div><div class="v">' + esc(r[1]) + "</div>"; }).join("");
+
+      // F5-① 流转轨迹时间轴：谁 → 谁 / 时间 / 原因
+      var timeline = "";
+      if (t.handoffs && t.handoffs.length) {
+        var tl = [];
+        t.handoffs.forEach(function (h) {
+          var to = h.to ? '<b>' + esc(empName(h.to)) + '</b> <i style="opacity:.6">' + esc(h.to) + '</i>' : "<b>?</b>";
+          var at = h.at ? esc(h.at) : "未知时间";
+          var reason = h.reason ? esc(h.reason) : "无原因";
+          tl.push('<div class="tl-line">' + at + " · " + reason + "</div>" + '<div class="tl-node">↓ ' + to + "</div>");
+        });
+        var firstFrom = t.handoffs[0].from;
+        var head = firstFrom ? '<div class="tl-node">' + esc(empName(firstFrom)) + ' <i style="opacity:.6">' + esc(firstFrom) + '</i></div>' : "";
+        timeline = '<div class="sec-title">流转轨迹 (handoffs)</div><div class="timeline">' + head + tl.join("") + "</div>";
+      }
+
+      // 状态轨迹：status_history 记录状态何时切换（审计补充）
+      var shTimeline = "";
+      if (t.status_history && t.status_history.length) {
+        var sh = t.status_history.map(function (h) {
+          return '<div class="tl-line">' + (h.at ? esc(h.at) : "未知时间") + "</div>" +
+            '<div class="tl-node">→ ' + esc(STATUS_LABEL[h.to] || h.to) + ' <i style="opacity:.6">' + esc(h.to) + '</i></div>';
+        }).join("");
+        shTimeline = '<div class="sec-title">状态轨迹 (status_history)</div><div class="timeline">' + sh + "</div>";
+      }
+
+      // 阻塞链（机制扩展 #3）：blocked_by 各上游状态 + 🔒/✓；下游（谁被本单阻塞）反向列出
+      var blockHTML = "";
+      if ((t.blocked_by && t.blocked_by.length) || t.type === "需求") {
+        var bRows = (t.blocked_by || []).map(function (b) {
+          var up = taskIndex[b];
+          var stTxt = up ? (STATUS_LABEL[up.status] || up.status) : "不存在";
+          var ok = up && up.status === "done";
+          return '<div class="tl-line">' + (ok ? "✓" : "🔒") + " " + esc(b) + " · " + esc(stTxt) + (up ? " · " + esc(up.title) : "") + "</div>";
+        }).join("");
+        var kids = tasks().filter(function (x) { return x.parent === t.id; });
+        var kidRows = kids.map(function (k) {
+          var stTxt = STATUS_LABEL[k.status] || k.status;
+          return '<div class="tl-line">' + (k.status === "done" ? "✓" : "·") + " " + esc(k.id) + " · " + esc(stTxt) + " · " + esc(k.title) + "</div>";
+        }).join("");
+        if (bRows || kidRows) {
+          blockHTML = '<div class="sec-title">需求闭环（阻塞链 / 子单）</div><div class="timeline">' + bRows + kidRows + "</div>";
+        }
+      }
+      // 子单视角：显示父单状态
+      if (t.parent && taskIndex[t.parent]) {
+        var par = taskIndex[t.parent];
+        blockHTML += '<div class="sec-title">父单</div><div class="tl-line">↗ ' + esc(par.id) + " · " + esc(STATUS_LABEL[par.status] || par.status) + " · " + esc(par.title) + "</div>";
+      }
+
+      // 升级信箱（机制扩展 #18）：待处理的员工升级请求
+      var escHTML = "";
+      if (t.escalations && t.escalations.length) {
+        var escRows = t.escalations.map(function (e) {
+          return '<div class="tl-line" style="color:var(--st-review)">⏫ ' + esc(e.reason) + (e.date ? ' <i style="opacity:.6">' + esc(e.date) + "</i>" : "") + "</div>";
+        }).join("");
+        escHTML = '<div class="sec-title">⏫ 升级待处理（总管处理完删除标记行）</div><div class="timeline">' + escRows + "</div>";
+      }
+
+      document.getElementById("drawerBody").innerHTML =
+        '<div class="field-grid">' + fields + "</div>" +
+        timeline + shTimeline + blockHTML + escHTML +
+        '<div class="sec-title">描述</div><div class="desc-box desc-md">' + (mdToHtml(t.description) || '<span style="color:var(--text-dim)">无</span>') + "</div>" +
+        '<div class="sec-title">交接备注 (messages.md)</div><div class="msg-box">' + msg + "</div>" +
+        '<div class="sec-title">输入物 (inputs)</div><ul class="file-list">' + inputsHTML + "</ul>" +
+        '<div class="sec-title">交付物 (deliverables/)</div><ul class="file-list">' + deliv + "</ul>" +
+        '<div class="sec-title">执行日志 (logs/)</div><ul class="file-list">' + logs + "</ul>";
+
+      document.getElementById("overlay").classList.add("show");
+      document.getElementById("drawer").classList.add("show");
+    }
+    function closeDrawer() {
+      document.getElementById("overlay").classList.remove("show");
+      document.getElementById("drawer").classList.remove("show");
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      // 按钮显示"点击后的目标"而非当前主题，避免"点暗色却变亮色"的反直觉
+      document.getElementById("themeBtn").textContent = theme === "dark" ? "☀️ 切亮色" : "🌙 切暗色";
+      try { localStorage.setItem("boards-theme", theme); } catch (e) {}
+    }
+
+    // 初始化（默认亮色，localStorage 记忆优先）
+    var saved = null;
+    try {
+      saved = localStorage.getItem("boards-theme") || localStorage.getItem("kanban-theme");
+      if (saved && !localStorage.getItem("boards-theme")) localStorage.setItem("boards-theme", saved);
+      localStorage.removeItem("kanban-theme");
+    } catch (e) {}
+    // 主题键与三级看板统一为 boards-theme：六级页面一处切换全局一致
+    applyTheme(saved || "dark");
+
+    // 筛选状态恢复：localStorage 记忆 + URL 参数覆盖（分享视图）
+    loadState();
+    applyURLParams();
+    // 清理已失效的标签筛选：标签可能已被删除，不清理会导致恢复后看板全空且不知原因
+    if (state.tags.size) {
+      var validTags = {};
+      tasks().forEach(function (t) { (t.tags || []).forEach(function (tg) { validTags[tg] = 1; }); });
+      state.tags.forEach(function (tg) { if (!validTags[tg]) state.tags.delete(tg); });
+    }
+    document.getElementById("groupBy").value = state.groupBy;
+    document.getElementById("fPriority").value = state.priority;
+    document.getElementById("fType").value = state.type;
+    document.getElementById("fSearch").value = state.search;
+
+    function updateGenInfo() {
+      var el = document.getElementById("genInfo");
+      if (DATA && DATA.generated_at) {
+        el.textContent = "实时同步（每3秒）· 数据生成于 " + DATA.generated_at;
+      } else {
+        el.textContent = "未检测到数据，请先运行 generate_tasks.py";
+      }
+    }
+
+    document.getElementById("groupBy").addEventListener("change", function (e) { state.groupBy = e.target.value; render(); });
+    document.getElementById("fPriority").addEventListener("change", function (e) { state.priority = e.target.value; render(); });
+    document.getElementById("fType").addEventListener("change", function (e) { state.type = e.target.value; render(); });
+    // 搜索防抖：连续输入不反复全量渲染，提升大工单量下体验
+    var searchTimer = null;
+    document.getElementById("fSearch").addEventListener("input", function (e) {
+      state.search = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(render, 150);
+    });
+    document.getElementById("themeBtn").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme");
+      applyTheme(cur === "dark" ? "light" : "dark");
+    });
+    document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
+    document.getElementById("overlay").addEventListener("click", closeDrawer);
+    document.getElementById("exportBtn").addEventListener("click", exportCSV);
+    // 深链过滤清除：去掉 URL 参数回到全量视图
+    var deepClear = document.getElementById("deepClear");
+    if (deepClear) deepClear.addEventListener("click", function (e) {
+      e.preventDefault();
+      state.deepOwner = state.deepParticipant = state.deepProject = null;
+      location.href = location.pathname;
+    });
+    // 统计栏状态项点击：切到状态分组并滚动到对应列
+    document.getElementById("statsBar").addEventListener("click", function (e) {
+      var el = e.target.closest ? e.target.closest(".stat-click") : null;
+      if (!el) return;
+      var st = el.getAttribute("data-st");
+      state.groupBy = "status";
+      document.getElementById("groupBy").value = "status";
+      render();
+      var col = document.querySelector('.column[data-col-key="' + st + '"]');
+      if (col) col.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    // 键盘导航：↑↓ 移动卡片焦点，Enter 打开详情，Esc 关闭
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeDrawer(); return; }
+      var tag = (e.target.tagName || "").toUpperCase();
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (!focusList.length) return;
+        e.preventDefault();
+        var delta = e.key === "ArrowDown" ? 1 : -1;
+        focusIdx = (focusIdx + delta + focusList.length) % focusList.length;
+        var el = document.querySelector('.card[data-id="' + focusList[focusIdx] + '"]');
+        if (el) {
+          var old = document.querySelector(".card.focus");
+          if (old) old.classList.remove("focus");
+          el.classList.add("focus");
+          el.scrollIntoView({ block: "nearest" });
+        }
+      } else if (e.key === "Enter" && focusIdx >= 0 && focusList[focusIdx]) {
+        openDrawer(focusList[focusIdx]);
+      }
+    });
+
+    // 方案 X：自动同步。每 3 秒动态重插 tasks-data.js（file:// 下用 #fragment 作 cache-buster，
+    // 不影响文件路径解析），重新赋值 window.KANBAN_DATA；比对 generated_at 变化则重渲染。
+    var lastGen = (DATA && DATA.generated_at) || null;
+    var currentDrawerId = null; // 当前打开的工单（自动同步后刷新详情，避免过期数据）
+    // 复用同一个 script 元素做轮询，避免每 3 秒堆积一个 DOM 节点（长会话内存泄漏）
+    var syncEl = document.createElement("script");
+    syncEl.onload = function () {
+      var nd = window.KANBAN_DATA;
+      if (nd && nd.generated_at !== lastGen) {
+        lastGen = nd.generated_at;
+        DATA = nd;
+        if (DATA.status_meta) STATUS_LABEL = DATA.status_meta;
+        buildTagChips();
+        render();
+        // 详情面板开着时同步刷新当前工单
+        if (currentDrawerId && document.getElementById("drawer").classList.contains("show")) {
+          openDrawer(currentDrawerId);
+        }
+      }
+      updateGenInfo();
+    };
+    syncEl.onerror = function () {
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 tasks-data.js（请运行 generate_tasks.py）";
+    };
+    document.body.appendChild(syncEl);
+    function doSync() { syncEl.src = "tasks-data.js#_=" + Date.now(); }
+    document.getElementById("syncBtn").addEventListener("click", doSync);
+
+    if (DATA) { buildTagChips(); render(); updateGenInfo(); }
+    else { document.getElementById("board").innerHTML = '<div class="no-data">未找到 <code>tasks-data.js</code>。<br>请先运行 <code>python generate_tasks.py</code> 生成数据文件。</div>'; }
+
+    // 深链 ?id=TSKxxxx：打开即定位并弹出该工单详情（数据就绪后执行一次）
+    (function () {
+      try {
+        var id = new URLSearchParams(location.search).get("id");
+        if (!id) return;
+        function tryOpen() {
+          if (!DATA || !DATA.tasks) return false;
+          var t = DATA.tasks.filter(function (x) { return x.id === id; })[0];
+          if (!t) return false;
+          openDrawer(id);
+          // 详情面板打开后滚到该卡片所在列（视觉定位）
+          setTimeout(function () {
+            var el = document.querySelector('.card[data-id="' + id + '"]');
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+          }, 80);
+          return true;
+        }
+        if (!tryOpen()) {
+          // 数据尚未含该工单时，等首次同步后再试一次
+          syncEl.addEventListener("load", function () { tryOpen(); });
+        }
+      } catch (e) {}
+    })();
+
+    setInterval(doSync, 3000);
+
+    // 前端冒烟自测入口：kanban.html?selftest=1
+    if (location.search.indexOf("selftest=1") !== -1) runFrontendSelftest();
+  })();
+  </script>
+</body>
+</html>
