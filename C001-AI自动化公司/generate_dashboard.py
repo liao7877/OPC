@@ -50,6 +50,24 @@ AFF_STATUS = {"active", "paused", "closed"}
 # cadence -> 逾期天数阈值（距上次 worklog 推进；按需不判定）
 AFF_CADENCE_DAYS = {"每日": 2, "每周": 9, "每两周": 17, "每月": 35}
 
+# ---------- DIP 改造（PoC 2026-08-28）：路径常量从 opc 命名空间 manifest 注入 ----------
+# 高层（生成逻辑）只依赖 opc:// 符号；物理路径（目录名/布局）下沉到 opc.toml。
+# 改名/改布局 = 只改 opc.toml 一行，本脚本与所有 consumer 零改动。
+try:
+    _ROOT = os.path.dirname(SCRIPT_DIR)                 # OPC 根（脚本位于 C001/ 下）
+    if _ROOT not in sys.path:
+        sys.path.insert(0, _ROOT)
+    import opc_resolver as _opc
+    _cfg = _opc.load_company("C001")
+    COMPANY_DIR = _cfg.home_abs
+    PAGE_TPL_DIR = _cfg.page_templates_abs
+    TASKS_DATA = _cfg.tasks_data_abs
+    ROSTER_RELPATH = _cfg.roster_rel
+    AFFAIRS_DIR = _cfg.affairs_abs
+    print(f"  [opc] 命名空间已注入：公司根={COMPANY_DIR}")
+except Exception as _e:
+    print(f"  [opc] 未加载 manifest，回退 __file__ 推导（{_e}）")
+
 
 # ---------- 基础工具（与 generate_tasks.py 同构，保持家规一致） ----------
 

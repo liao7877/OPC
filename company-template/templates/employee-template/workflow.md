@@ -2,7 +2,7 @@
 
 > 本岗位的标准工作流程（三级工作流中的"员工级"）。
 > 统一 Markdown 格式：Steps 列表，含动作/角色/输入/产出/下一步。
-> 技能引用一律在 `AGENTS.md` 或 `skills/INDEX.md` 中声明；本文件仅在需要**多技能编排/复杂任务**时描述流程。
+> 技能引用走 `opc://company:C00x/skill/<名称>`（见 opc-namespace-design.md）或在 `AGENTS.md` 中声明；本文件仅在需要**多技能编排/复杂任务**时描述流程。
 
 ## Steps
 - step: 1

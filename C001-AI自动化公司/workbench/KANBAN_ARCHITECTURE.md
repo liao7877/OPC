@@ -153,4 +153,4 @@ workbench/tasks/TSKxxx-标题/        # 一个工单 = 一个目录；TSK 编号
 
 员工 `AGENTS.md` 只需写一行引用，指向公司级技能 `../skills/ticket-system/SKILL.md`；技能内容自解释、自包含，无需人肉培训。
 
-> **定位说明**：公司根 `skills/` 是**规范文件层**——存放自解释的规范技能（如 `ticket-system/`）。**已用 junction 接入平台自动披露**（`{工作区}/.workbuddy/skills` → 公司根 `skills/`，零复制单份文件）：ticket-system 会出现在平台技能列表、触发词命中自动加载全文（平台级渐进式披露，与用户级技能一致）。AGENTS.md 引用行是跨平台兜底（Codex/Claude Code 等不识别 WorkBuddy 平台技能时直读本文件）。具体平台接入方法见 `E:\OPC\AGENT_ECOSYSTEM.md`。
+> **定位说明**：公司根 `skills/` 是**规范文件层**——存放自解释的规范技能（如 `ticket-system/`）。**已用 junction 接入平台自动披露**（`{工作区}/.workbuddy/skills` → 公司根 `skills/`，零复制单份文件）：ticket-system 会出现在平台技能列表、触发词命中自动加载全文（平台级渐进式披露，与用户级技能一致）。AGENTS.md 引用行是跨平台兜底（Codex/Claude Code 等不识别 WorkBuddy 平台技能时直读本文件）。具体平台接入方法见 `opc://org/agent-ecosystem`。

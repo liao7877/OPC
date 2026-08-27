@@ -43,6 +43,19 @@ description: 在 OPC 组织根下快速创建新 AI 公司实例。触发词：�
 4. 向用户报到：汇报公司骨架就绪 + 请用户给第一个需求/或先搭团队；
 5. 后续团队/员工/项目全部按 `skills/dispatch-sop/SKILL.md`（新建员工 SOP、规章制度落实 SOP）+ `skills/mechanism-sop/SKILL.md`（落位决策树）推进，把公司运转起来。
 
+## 二·五、命名空间接入（2026-08-28 新增，依据 opc-namespace-design.md）
+
+> 机制：物理路径唯一真相源下沉到 `opc.toml`（OPC 根）。新建公司必须落地，否则后续改名 / 巡检无据可依。
+
+1. **写公司段**：在 `opc.toml` 追加（继承 DEFAULT 骨架，仅写偏离字段）：
+   ```toml
+   [company.C00x]
+   home = "C00x-<名称>"
+   ```
+2. **引用用符号**：公司内 `AGENTS.md` / `SKILL.md` / 看板模板一律用 `opc://company:C00x/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；
+3. **首跑验证补一项**（接 §二.4）：建司三步跑完后，回到 OPC 根跑 `python opc_resolver.py --check`（链接器自检），全绿 = 命名空间自洽；
+4. **总管入职补一项**（接 §三.1）：读 `opc-namespace-design.md` 认清机制——改名只动 `opc.toml` 一行、引用走 `opc://`、定期 `opc check-links` 巡检失效引用。
+
 ## 四、红线
 
 1. 不在模板里堆业务数据：company-template/ 永远保持"空骨架"（无实例工单/无实例员工/空 worklog）；模板升级 = 改模板，已建公司不自动跟进（各公司独立演进，重大升级由用户决定是否迁移）；
