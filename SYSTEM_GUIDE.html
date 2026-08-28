@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPC 系统总览 · Organization for AI-Agent Companies</title>
+<style>
+  :root {
+    --ink: #1a2332; --sub: #5a6a7e; --line: #e3e8ef;
+    --accent: #2456d6; --accent-soft: #eef3ff;
+    --ok: #1a7f4e; --warn: #b26a00; --bad: #c0392b;
+    --card: #ffffff; --bg: #f6f8fb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); line-height: 1.7; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.hero { background: linear-gradient(135deg, #16305e, #2456d6); color: #fff; border-radius: 16px; padding: 40px 36px; margin-bottom: 28px; }
+  header.hero h1 { font-size: 30px; letter-spacing: .5px; }
+  header.hero p.lead { margin-top: 10px; font-size: 15px; opacity: .92; max-width: 760px; }
+  .hero-badges { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.3); padding: 3px 12px; border-radius: 999px; font-size: 12.5px; }
+  h2 { font-size: 21px; margin: 34px 0 14px; padding-left: 12px; border-left: 4px solid var(--accent); }
+  h3 { font-size: 15.5px; margin: 16px 0 8px; }
+  p { margin: 8px 0; color: var(--ink); }
+  .muted { color: var(--sub); font-size: 13.5px; }
+  .grid { display: grid; gap: 14px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .card h3 { margin-top: 0; color: var(--accent); }
+  .card .tag { display: inline-block; font-size: 11.5px; color: var(--sub); background: var(--accent-soft); border-radius: 6px; padding: 1px 8px; margin-bottom: 6px; }
+  .card p, .card li { font-size: 13.5px; }
+  ul.clean { list-style: none; }
+  ul.clean li { padding-left: 20px; position: relative; margin: 5px 0; }
+  ul.clean li::before { content: "▸"; position: absolute; left: 4px; color: var(--accent); }
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin: 14px 0; }
+  .flow .step { flex: 1 1 150px; background: var(--card); border: 1px solid var(--line); padding: 14px 12px; text-align: center; position: relative; font-size: 13px; }
+  .flow .step b { display: block; color: var(--accent); font-size: 14px; margin-bottom: 4px; }
+  .flow .arrow { align-self: center; padding: 0 8px; color: var(--accent); font-weight: bold; }
+  code, .mono { font-family: Consolas, "Courier New", monospace; background: #eef1f6; border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+  pre { background: #10233f; color: #d9e6ff; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }
+  pre .c { color: #7fa3d9; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 600; }
+  .pill.ok { background: #e3f4ea; color: var(--ok); }
+  .pill.warn { background: #fdf1de; color: var(--warn); }
+  .note { background: #fffbe9; border: 1px solid #f0e0ac; border-radius: 10px; padding: 12px 16px; font-size: 13px; margin: 12px 0; }
+  footer { margin-top: 44px; color: var(--sub); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>OPC · 用 AI Agent 跑公司的组织级框架</h1>
+  <p class="lead">OPC（Organization for AI-Agent Companies）把「一家公司」装进一个 Git 仓库：AI Agent 扮演总管和员工，文件系统是唯一真相，看板与报表只是可随时重建的投影。用户只负责提出构想，公司的运转、记录、巡检与异常告警由机制层与 Agent 自治完成。</p>
+  <div class="hero-badges">
+    <span class="badge">零第三方依赖（纯 Python 标准库）</span>
+    <span class="badge">Windows / macOS / Linux 三平台 CI 验证</span>
+    <span class="badge">26 条组织级设计原则</span>
+    <span class="badge">机制代码单例 · 公司目录零机制代码</span>
+  </div>
+</header>
+
+<h2>一、它解决什么问题</h2>
+<div class="grid g3">
+  <div class="card"><span class="tag">问题</span><h3>人管不住细节</h3><p>AI 会话散落、结论不复用、改个目录名全文失效。OPC 用「文件即真相 + 符号化引用」把领域事实变成可版本化、可校验的资产。</p></div>
+  <div class="card"><span class="tag">问题</span><h3>Agent 公司不自转</h3><p>用户不来，公司就静止。OPC 给公司装了独立心跳：每日巡检 10 项检查、系统通知、待办闭环态——发现异常不依赖用户的注意力。</p></div>
+  <div class="card"><span class="tag">问题</span><h3>多会话互相踩</h3><p>多个 Agent 并发干活，谁改谁的文件？OPC 用工位卡划分领地、锁原语保护写路径、原子取号防撞号，把冲突面收敛到机制层。</p></div>
+</div>
+
+<h2>二、一条主线：文件系统即真相</h2>
+<div class="flow">
+  <div class="step"><b>数据源（真相）</b>task.md / worklog.md / roster.md / project.md<br><span class="muted">Agent 按纪律写入</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>生成层（机制）</b>opc_tickets / opc_dashboards<br><span class="muted">OPC 根单例，校验+投影</span></div>
+  <div class="arrow">→</div>
+  <div class="step"><b>展示层（投影）</b>kanban / dashboard / teamboard / mydesk<br><span class="muted">只读，删了重跑即重建</span></div>
+</div>
+<p class="muted">数据流严格单向：展示层永不写回数据源。看板数据（*-data.js）不入库——clone 后跑一次 <code>run_boards once</code> 即重建，真相永不丢失。</p>
+
+<h2>三、目录即组织（实体即目录）</h2>
+<pre>
+OPC/
+├── opc.toml                 <span class="c"># 全局 manifest：路径唯一真相源 + 实体类型注册表 + 巡检/平台配置</span>
+├── opc_resolver.py          <span class="c"># 命名空间解析器（DI 容器）：opc:// 符号 → 物理路径</span>
+├── opc_tickets.py           <span class="c"># 工单看板生成器 + 建单（--auto-id 原子取号）</span>
+├── opc_dashboards.py        <span class="c"># 三级看板生成器（公司/团队/个人）+ 交叉核验</span>
+├── opc_patrol.py            <span class="c"># 公司心跳：每日巡检 10 项 + 系统通知 + 待办闭环</span>
+├── opc_schema.py            <span class="c"># 状态机与枚举唯一真相源（工单 7 态 / 巡检元数据）</span>
+├── opc_model.py             <span class="c"># 实体共享读取器 + 并发锁原语 + 技能索引生成</span>
+├── companies/C001/          <span class="c"># 稳定锚（junction/symlink）→ 真实公司目录，改名自愈</span>
+├── C001-AI自动化公司/       <span class="c"># 公司实例：总管 E0000 / 员工 E00xx / 团队 T00x / 项目 P00xx</span>
+│   ├── workbench/           <span class="c">#   工单系统：tasks/ 是真相，kanban.html 是投影</span>
+│   ├── skills/              <span class="c">#   公司级技能（三层技能体系：公司/团队/私有）</span>
+│   └── E0000-AI员工-总管/   <span class="c">#   ← 用户派活从这里进入（把它当工作区打开会话）</span>
+└── company-template/        <span class="c"># 开公司脚手架：create-company 技能一键拉起新公司</span>
+</pre>
+<p class="muted">引用分两层：文档层用 <code>opc://company:C001/...</code> 逻辑符号（resolver 校验，pre-commit 拦截失效引用）；运行时层用 <code>companies/&lt;cid&gt;</code> 稳定锚（浏览器/脚本直开）。公司目录改名后跑一次 <code>--ensure-links</code> 即自愈，consumer 零改动。</p>
+
+<h2>四、机制亮点</h2>
+<div class="grid g2">
+  <div class="card"><span class="tag">命名空间</span><h3>符号引用 + 稳定锚 + 自愈</h3>
+    <ul class="clean">
+      <li>物理路径唯一真相源在 <code>opc.toml</code>，改名/迁移只动一处</li>
+      <li>失效引用由 pre-commit / <code>--doctor</code> 拦截，绝不静默</li>
+      <li>锚断了也能按 company.md 的「公司 ID」扫描发现自愈</li>
+    </ul></div>
+  <div class="card"><span class="tag">质量门禁</span><h3>init() 化的开工门禁</h3>
+    <ul class="clean">
+      <li><code>--doctor</code> 五项自检：Python / 稳定锚 / 钩子 / 命名空间 / 技能披露链接</li>
+      <li>Agent 开工前必过，不绿不许进业务</li>
+      <li>GitHub Actions 三平台 × 双 Python 版本矩阵持续验证</li>
+    </ul></div>
+  <div class="card"><span class="tag">并发协作</span><h3>工位卡 + 锁原语 + 原子取号</h3>
+    <ul class="clean">
+      <li>一个会话 = 一张工位卡，领地清晰、收口合并</li>
+      <li><code>file_lock</code>（O_EXCL + 超时 + 过期抢占）保护台账/建账等热写路径</li>
+      <li><code>--new --auto-id</code>：目录存在性即锁，并发建单不撞号、自动占台账</li>
+    </ul></div>
+  <div class="card"><span class="tag">公司自转</span><h3>心跳巡检 + 通知 + 闭环</h3>
+    <ul class="clean">
+      <li>每日 10 项机器巡检：阻塞解锁 / 认领缺口 / 双账 / 脱期事务 / 升级信箱 / 号池 / 知识库增量…</li>
+      <li>发现异常弹系统通知；只有「升级信箱」是 critical 级，用户只被它打扰</li>
+      <li>patrol-state 闭环态：处置完置 handled，再犯自动重开</li>
+    </ul></div>
+  <div class="card"><span class="tag">技能体系</span><h3>三层技能 + 生成物索引</h3>
+    <ul class="clean">
+      <li>公司级 / 团队级 / 私有三层，SKILL.md frontmatter 是元数据唯一真相</li>
+      <li>触发词（triggers）结构化，<code>--sync-index</code> 生成各层 INDEX，「登记」动作消失</li>
+      <li>渐进式披露：命中触发词才读全文，省 token</li>
+    </ul></div>
+  <div class="card"><span class="tag">扩展性</span><h3>实体注册表 + 开司脚手架</h3>
+    <ul class="clean">
+      <li><code>[entity_types]</code>：加新实体类型 = manifest 加一行，五处消费方自动跟随</li>
+      <li><code>create-company</code> 技能按模板一键开新公司，机制零复制</li>
+      <li><code>--diff-template</code> 双向 diff 防模板与实例漂移</li>
+    </ul></div>
+</div>
+
+<h2>五、容错哲学（P11）</h2>
+<div class="grid g3">
+  <div class="card"><h3>跳过 + 告警</h3><p>坏数据跳过并告警，绝不静默降级污染结果，也不一票否决整体。</p></div>
+  <div class="card"><h3>上板标红</h3><p>status 非法的工单不消失——独立成列、红色渲染，修好后恢复。坏数据必须「看得见」。</p></div>
+  <div class="card"><h3>交叉核验</h3><p>worklog 双账与工单状态逐条核对；失效引用、死链、陈旧数据全部主动暴露。</p></div>
+</div>
+
+<h2>六、快速开始</h2>
+<pre>
+<span class="c"># clone 后一次性初始化（详见 README「系统初始化」）</span>
+python opc_resolver.py --ensure-links   <span class="c"># 重建稳定锚 + 技能披露链接（幂等）</span>
+python opc_resolver.py --doctor         <span class="c"># 五项自检，全绿才开工</span>
+run_boards.bat once                     <span class="c"># 重建看板数据（macOS/Linux: ./run_boards.sh once）</span>
+
+<span class="c"># 日常：想派活，把 companies/C001/E0000-AI员工-总管/ 当工作区打开会话，直接说需求</span>
+</pre>
+<p class="muted">使用手册（怎么派活、怎么和员工对话、机制地图）：见 <a href="USER_GUIDE.html">USER_GUIDE.html</a>；命令与初始化细节见 <code>README.md</code>；设计原则见 <code>PRINCIPLES.md</code>。本文档是快照，以 README / PRINCIPLES 为准。</p>
+
+<footer>OPC 系统总览 · 2026-08-29 生成 · 随机制演进更新 · 数据与结构以仓库实体为准</footer>
+</div>
+</body>
+</html>

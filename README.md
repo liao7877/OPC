@@ -48,9 +48,11 @@ OPC/
 
 | 文件 | 作用 |
 |---|---|
+| [`USER_GUIDE.html`](USER_GUIDE.html) | **用户手册**（浏览器打开）：怎么派活、怎么和员工对话、机制地图、命令速查、常见情况处置。 |
+| [`SYSTEM_GUIDE.html`](SYSTEM_GUIDE.html) | 系统总览（浏览器打开）：对外讲解 OPC 的理念、架构与机制亮点。 |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P26）。搭任何新东西前先通读。 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范：各平台技能目录、渐进式披露、junction 接法。 |
-| [`MECHANISM_PLAN.md`](MECHANISM_PLAN.md) | 运行 / 协作 / 派活机制的设计方案。 |
+| [`MECHANISM_PLAN.md`](MECHANISM_PLAN.md) | 运行 / 协作 / 派活机制的设计方案与评审拍板记录。 |
 
 ---
 
@@ -96,7 +98,7 @@ scripts/link-company.ps1       # Windows
 
 ## 怎么用
 
-**0. 想派活（日常使用入口，小白从这开始）**：把 `companies/C001/E0000-AI员工-总管/`（每家公司各自的 E0000 总管目录）当工作区打开一个 agent 会话——总管的身份、职责、技能会自动加载，用自然语言说需求即可；系统的命名/看板/巡检/门禁维护由机制层与总管兜底，你不需要了解实现，也不需要手动维护任何文件。
+**0. 想派活（日常使用入口，小白从这开始）**：把 `companies/C001/E0000-AI员工-总管/`（每家公司各自的 E0000 总管目录）当工作区打开一个 agent 会话——总管的身份、职责、技能会自动加载，用自然语言说需求即可；系统的命名/看板/巡检/门禁维护由机制层与总管兜底，你不需要了解实现，也不需要手动维护任何文件。完整使用手册（怎么对话/机制地图/FAQ）：浏览器打开 [`USER_GUIDE.html`](USER_GUIDE.html)。
 
 **1. 开一家新公司（推荐走技能）**
 - 加载 `create-company` 技能，按 `company-template/` 脚手架 + `PRINCIPLES.md` 规范拉起新公司目录。
