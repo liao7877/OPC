@@ -457,6 +457,18 @@ def register_heartbeat(root, cid, at="09:00"):
     return (r.returncode == 0), (f"{name}（每日 {at}）" if r.returncode == 0 else r.stderr)
 
 
+def heartbeat_registered(root, cid):
+    """心跳是否已挂（doctor 提示用；查询失败视为未挂，只降级为提示不阻断）。"""
+    if sys.platform.startswith("win"):
+        r = _run_decoded(["schtasks", "/Query", "/TN", heartbeat_task_name(cid)])
+        return r.returncode == 0
+    try:
+        cur = _run_decoded(["crontab", "-l"]).stdout or ""
+    except OSError:
+        return False
+    return f"# {heartbeat_task_name(cid)}" in cur
+
+
 def unregister_heartbeat(root, cid):
     """撤销心跳：Windows 删计划任务；*nix 从 crontab 移除标记块。幂等。"""
     name = heartbeat_task_name(cid)
