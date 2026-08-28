@@ -261,11 +261,14 @@ E:\OPC\
 - 开公司前置修复：`create-company` 的 `home` 改指稳定锚 `companies/<cid>`（消除与 `opc-namespace-design.md` §2 的矛盾）+ 补 macOS/Linux junction 命令；`register-patrol` 任务名按公司隔离（`OPC-Patrol-<cid>`）+ 新增 `register-patrol.sh`。
 - 看板公司名从 `company.md` 实体卡读取（原从目录名倒推，Z 方案锚路径下退化为裸 ID）；公司 ID 提取收敛为 `opc_resolver.extract_company_id` 公开 API（原 6 份副本 2 种语义）。
 
-**已拍板待实施**（沿用第一轮评审 §七·五 / Q2 方案）
-- patrol findings 结构化（dict + severity/suggested_action）与 `patrol-state.json` 待办闭环态——B 阶段地基，A+ 阶段可先不动。
-- `--list-skills` / `--sync-index`：INDEX.md 转「生成物」（Q2 拍板 A 方案，未实施；当前 6 份 INDEX.md 仍是手工维护）。
-- `ensure_links()`：技能披露 junction 纳入 resolver 托管 + doctor 第 5 项检查（Q3 拍板，未实施；当前 doctor 仍不查 `.workbuddy/skills`，门禁对技能披露仍是假绿）。
-- `--diff-template`：C001 ↔ company-template 双向 diff（忽略换行符与占位符）。
+**已拍板待实施**
+- （无——本节原列四项已全部落地，见下）
+
+**第二轮「已拍板待实施」→ 已实施（2026-08-28 晚，第三批）**
+- patrol findings 结构化（dict：no/kind/severity/action/ref/owner/msg，元数据唯一真相 `opc_schema.PATROL_CHECKS`）+ `patrol-state.json` 闭环态（log 审计只增不删 / state 可改，handled→再犯自动 reopened）+ `patrol-pending.md` open 态快照（总管启动第 5 步读它并置 handled）。
+- `opc_model.py --list-skills` / `--sync-index`：技能元数据唯一真相在各 SKILL.md frontmatter（25 份已迁移补 triggers/summary 结构化字段），9 份 `skills/INDEX.md` 全部转生成物（不入库、勿手改）；PRINCIPLES P7 / AGENT_ECOSYSTEM §2.4 / 各 AGENTS.md / dispatch-sop 口径已同步，「登记」动作消失。
+- `opc_resolver.py --ensure-links`：技能披露 junction 纳入 resolver 统一托管（manifest `[platform.workbuddy]` 配置化，层自动发现），`--sync-links` 保留为别名；doctor 第 5 项「OS 级链接完整性」（error 阻断）——根治「门禁假绿」（原断点 1 闭环，负例实测：删链接→doctor 阻断→ensure-links 重建→全绿）。
+- `opc_resolver.py --diff-template`：C001 ↔ 模板双向 diff（忽略换行符与 `<CID>`/`<本司ID>`/`C00x` 占位符），当前 4 处差异均为 Q5 确认的有意保留（AGENTS.md 启动门禁节 / company.md 实体清单 / workflow.md 路径说明 / 说明书标题）。
 
 **待拍板（用户跳过，保持现状）**
 - 并发写锁原语：多会话同时追加同一 worklog 存在「后写覆盖先写」丢更新窗口（原子写只防写一半被读，不防互斥）；工位卡是纪律不是锁。待用户在「纪律够用」与「O_EXCL lockfile 原语」间拍板；拍板前不动写路径。
