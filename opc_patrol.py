@@ -5,8 +5,9 @@ opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
 
 > 2026-08-28 新增（架构评审「公司自转」缺口）：此前所有节奏检测（脱期/升级/阻塞解锁）
 > 都只在"有人触发生成/总管开会话"时才发生——用户三天不来，公司完全静止。
-> 本脚本让公司拥有独立于用户注意力的心跳：挂计划任务/cron 每日一跑，
-> 消费 skills/patrol/SKILL.md 定义的同一份巡检清单（机器与总管共享标准，不漂移）。
+> 本脚本让公司拥有独立于用户注意力的心跳：挂计划任务/cron **每 30 分钟一跑**（2026-08-29
+> 拍板提频；通知自带去重只报新发现，高频不轰炸），消费 skills/patrol/SKILL.md 定义的
+> 同一份巡检清单（机器与总管共享标准，不漂移）。
 
 职责边界（与总管分工）：
   - 本脚本只「发现」：1~6 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
@@ -14,8 +15,8 @@ opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
     例外（2026-08-29 拍板）：看板数据缺失/陈旧时自动重生成（auto_refresh）——浏览器「同步」
     只能重读文件，数据刷新必须由心跳完成，属机械性自愈而非处置决策。
   - 总管「处置」：读 patrol-log / 看板告警，答复、转派、催办、补号。
-  - A+ 报警（2026-08-28 拍板）：有发现时弹系统通知（opc.toml [patrol].notify 可关）；
-    B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
+  - A+ 报警（2026-08-28 拍板）：有「新发现」时弹系统通知（opc.toml [patrol].notify 可关；
+    通知去重：open 态旧待办不重复弹）；B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
 
 用法（cwd 无关）：
     python opc_patrol.py --company C001              # 巡检 + 写 log
@@ -23,11 +24,11 @@ opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
     python opc_patrol.py --company C001 --quiet      # 仅异常时输出（适合 cron）
     python opc_patrol.py --selftest
 
-计划任务示例（Windows，管理员 PowerShell，在公司根执行一次即可注册每日 09:00 心跳）：
+心跳注册（推荐，公司根执行一次；--bootstrap 也会自动挂）：
     schtasks /Create /TN "OPC-Patrol" /SC DAILY /ST 09:00 /TR ^
       "python E:\\OPC\\opc_patrol.py --company C001 --quiet"
-macOS/Linux crontab：
-    0 9 * * * cd /path/to/OPC && python3 opc_patrol.py --company C001 --quiet
+    python opc_patrol.py --register-heartbeat --company C001 --every 30   # 每 30 分钟（默认）
+    # 每日定时（兼容旧行为）：--at 09:00。撤销：--unregister-heartbeat --company C001
 """
 
 import os
@@ -395,13 +396,20 @@ def _notify_windows(title, text):
         "$n.Dispose()\r\n" % (title, text)
     )
     ps = os.path.join(tempfile.gettempdir(), "opc-patrol-notify.ps1")
-    with open(ps, "w", encoding="utf-8-sig", newline="") as fh:
+    with open(ps, "w", encoding="utf-8", newline="") as fh:
         fh.write(script)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.Popen(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
          "-WindowStyle", "Hidden", "-File", ps],
         creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def new_findings(ctx, pre_open):
+    """通知去重（2026-08-29 拍板「提频先去重」）：只返回「新出现」的 finding——
+    fkey 不在既存 open 集合里的才算新。心跳高频化后，未处置的旧待办不再反复弹通知
+    （它们始终可见于 patrol-pending.md），处置后再犯会因 reopened 重新进入新集合。"""
+    return [f for f in sorted(ctx.findings, key=lambda x: x["no"]) if fkey(f) not in pre_open]
 
 
 # ---------------------------------------------------------------------------
@@ -413,10 +421,15 @@ def heartbeat_task_name(cid):
     return f"OPC-Patrol-{cid}"
 
 
-def _heartbeat_cron_line(root, cid, at):
+def _heartbeat_cron_line(root, cid, at=None, every=None):
+    """crontab 行：at="09:00" → 每日定时；every=30 → 每 N 分钟（2026-08-29 拍板默认）。"""
     py = "python3" if not sys.platform.startswith("win") else "python"
-    h, m = at.split(":")
-    return f"{int(m)} {int(h)} * * * cd '{root}' && {py} opc_patrol.py --company {cid} --quiet"
+    if at:
+        h, m = at.split(":")
+        sched = f"{int(m)} {int(h)} * * *"
+    else:
+        sched = f"*/{int(every)} * * * *"
+    return f"{sched} cd '{root}' && {py} opc_patrol.py --company {cid} --quiet"
 
 
 def _run_decoded(cmd, **kw):
@@ -429,34 +442,52 @@ def _run_decoded(cmd, **kw):
     return r
 
 
-def register_heartbeat(root, cid, at="09:00"):
-    """注册每日心跳：Windows 用 schtasks（当前用户级，无需管理员）、
-    macOS/Linux 追加 crontab（幂等，已有同任务则跳过）。
+def register_heartbeat(root, cid, every=30, at=None):
+    """注册心跳（2026-08-29 拍板：默认每 30 分钟，配合通知去重——只报新发现不轰炸）：
+    Windows 用 schtasks（当前用户级，无需管理员）、macOS/Linux 追加 crontab（幂等）。
+    every=N 分钟为默认节奏；at="HH:MM" 则退化为每日定时（兼容旧行为）。
     返回 (ok, msg)。平台差异收敛在此一处（自举化后本函数是唯一实现）。"""
-    if not re.match(r"^\d{1,2}:\d{2}$", at):
-        return False, f"时间格式应为 HH:MM，收到 {at!r}"
     name = heartbeat_task_name(cid)
+    if at:
+        if not re.match(r"^\d{1,2}:\d{2}$", at):
+            return False, f"时间格式应为 HH:MM，收到 {at!r}"
+        sched_desc, win_args, cron = f"每日 {at}", ["schtasks", "/Create", "/TN", name,
+                                                    "/SC", "DAILY", "/ST", at], _heartbeat_cron_line(root, cid, at=at)
+    else:
+        every = max(1, int(every))
+        sched_desc = f"每 {every} 分钟"
+        win_args = ["schtasks", "/Create", "/TN", name,
+                    "/SC", "MINUTE", "/MO", str(every)]
+        cron = _heartbeat_cron_line(root, cid, every=every)
     if sys.platform.startswith("win"):
         py = sys.executable or "python"
         tr = f'"{py}" "{os.path.join(root, "opc_patrol.py")}" --company {cid} --quiet'
-        r = _run_decoded(["schtasks", "/Create", "/TN", name, "/SC", "DAILY",
-                          "/ST", at, "/TR", tr, "/F"])
+        r = _run_decoded(win_args + ["/TR", tr, "/F"])
         ok = r.returncode == 0
         detail = (r.stdout or r.stderr or "").strip().splitlines()
-        return ok, f"{name}（每日 {at}）" + (f"：{detail[-1]}" if detail and not ok else "")
+        return ok, f"{name}（{sched_desc}）" + (f"：{detail[-1]}" if detail and not ok else "")
     # macOS / Linux：crontab 幂等追加
-    mark = f"# {heartbeat_task_name(cid)}"
-    line = _heartbeat_cron_line(root, cid, at)
+    mark = f"# {name}"
     cur = ""
     try:
         cur = _run_decoded(["crontab", "-l"]).stdout or ""
     except OSError as e:
         return False, f"crontab 不可用：{e}"
     if mark in cur:
-        return True, f"{name} 已存在（每日 {at}），跳过"
-    new = (cur.rstrip("\n") + "\n" if cur.strip() else "") + f"{mark}\n{line}\n"
+        # 幂等升级：移除旧标记块（标记行 + 其后一行 cron），再写入当前节奏
+        out, skip = [], False
+        for ln in cur.splitlines():
+            if ln.strip() == mark:
+                skip = True
+                continue
+            if skip:
+                skip = False
+                continue
+            out.append(ln)
+        cur = "\n".join(out)
+    new = (cur.rstrip("\n") + "\n" if cur.strip() else "") + f"{mark}\n{cron}\n"
     r = _run_decoded(["crontab", "-"], input=new.encode("utf-8"))
-    return (r.returncode == 0), (f"{name}（每日 {at}）" if r.returncode == 0 else r.stderr)
+    return (r.returncode == 0), (f"{name}（{sched_desc}）" if r.returncode == 0 else r.stderr)
 
 
 def heartbeat_registered(root, cid):
@@ -577,6 +608,12 @@ def selftest():
     ctxk3 = Ctx(cfg, tmp)
     find(ctxk3)
     check("#8 无新增不再告警", not any(f["no"] == 8 for f in ctxk3.findings))
+    # 通知去重：已在 open 集合里的不再算新（提频安全前提）
+    pre = {fkey(f) for f in ctxk2.findings if f["no"] == 8}
+    fresh = new_findings(ctxk3, pre)
+    check("通知去重：open 项不算新", all(f["no"] != 8 for f in fresh))
+    fresh_all = new_findings(ctxk2, set())
+    check("通知去重：空集合全算新", any(f["no"] == 8 for f in fresh_all))
     # 写日志幂等
     n1 = write_log(ctx, dry=False)
     n2 = write_log(ctx, dry=False)
@@ -631,13 +668,15 @@ def main(argv):
                 print("需要 --company <cid>（多公司时无法自动确定）")
                 return 1
             company = cids[0]
-        at = "09:00"
-        if "--at" in argv:
+        every, at = 30, None
+        if "--every" in argv:
+            every = argv[argv.index("--every") + 1]
+        if "--at" in argv:   # 兼容：给了 --at 则退化为每日定时
             at = argv[argv.index("--at") + 1]
         if "--register-heartbeat" in argv:
-            ok, msg = register_heartbeat(root, company, at)
+            ok, msg = register_heartbeat(root, company, every=every, at=at)
             print(("[ok] " if ok else "[ERR] ") + f"心跳注册：{msg}"
-                  + ("" if ok else f"；撤销：schtasks /Delete /TN {heartbeat_task_name(company)} /F 或编辑 crontab"))
+                  + ("" if ok else f"；撤销：python opc_patrol.py --unregister-heartbeat --company {company}"))
             return 0 if ok else 1
         ok, msg = unregister_heartbeat(root, company)
         print(("[ok] " if ok else "[ERR] ") + f"心跳撤销：{msg}")
@@ -662,15 +701,25 @@ def main(argv):
         print(f"  #{f['no']} [{f['severity']}] {f['msg']}")
     if written:
         print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
+    pre_open = set()
+    if not dry:
+        # 通知去重（2026-08-29 拍板「提频先去重」）：快照 update_state 之前的 open 集合
+        pre_open = {k for k, v in load_state(ctx).items()
+                    if not k.startswith("_") and v.get("status") != "handled"}
     if not dry:
         state = update_state(ctx)
         write_pending(ctx, state)
-        opens = sum(1 for v in state.values() if v.get("status") != "handled")
+        opens = sum(1 for k2, v in state.items()
+                    if not k2.startswith("_") and v.get("status") != "handled")
         print(f"  闭环态已更新：{ctx.state}（open {opens} 项）→ 待办快照 {ctx.pending}")
     if ctx.findings and not dry and _patrol_cfg().get("notify", True):
-        summary = "；".join(f["msg"] for f in sorted(ctx.findings, key=lambda x: x["no"])[:3])
-        if notify_user(ctx, summary):
-            print("  已发系统通知（A+ 报警通道；可在 opc.toml [patrol] notify=false 关闭）")
+        fresh = new_findings(ctx, pre_open)
+        if fresh:
+            summary = "；".join(f["msg"] for f in fresh[:3])
+            if notify_user(ctx, summary):
+                print(f"  已发系统通知（新发现 {len(fresh)} 项；A+ 报警通道，可在 opc.toml [patrol] notify=false 关闭）")
+        else:
+            print("  通知去重：无新发现（open 待办见 patrol-pending.md），不再重复打扰")
     return 1 if ctx.findings else 0
 
 

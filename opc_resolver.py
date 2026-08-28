@@ -874,7 +874,7 @@ def doctor(root=None, auto_fix=True):
             if opc_patrol.heartbeat_registered(root, cid):
                 warns.append(f"公司心跳已挂 ✓（{opc_patrol.heartbeat_task_name(cid)}，每日巡检+系统通知）")
             else:
-                warns.append(f"公司心跳未挂（每日巡检与异常通知不会运行）→ `python opc_patrol.py --register-heartbeat --company {cid}` 或 --bootstrap")
+                warns.append(f"公司心跳未挂（定期巡检与异常通知不会运行）→ `python opc_patrol.py --register-heartbeat --company {cid}` 或 --bootstrap")
     except Exception:
         pass
 
@@ -895,14 +895,14 @@ def doctor(root=None, auto_fix=True):
     return errors, warns
 
 
-def bootstrap(root=None, heartbeat=True, heartbeat_at="09:00"):
+def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
     """一键自举（2026-08-29 拍板「系统自己完成初始化，不依赖用户操作」）：
     新 clone / 新电脑上把全部「事先准备」自动做完——
       ① OS 级链接（稳定锚 + 各层技能披露，ensure_links）
       ② pre-commit 门禁钩子（install_hook）
       ③ 看板数据重建（opc_tickets / opc_dashboards，产物不入库 clone 后必缺）
       ④ 技能索引（opc_model --sync-index，INDEX.md 生成物）
-      ⑤ 公司心跳（Windows 计划任务 / macOS·Linux crontab，按公司隔离；
+      ⑤ 公司心跳（每 30 分钟：Windows 计划任务 / macOS·Linux crontab，按公司隔离；
          heartbeat=False 跳过——唯一的机器级副作用，故可关）
     最后跑 doctor 终检（其自愈段兜底）。返回 (errors, warnings)。
     """
@@ -930,7 +930,7 @@ def bootstrap(root=None, heartbeat=True, heartbeat_at="09:00"):
     if heartbeat and cids:
         import opc_patrol   # 运行时惰性导入（patrol 依赖本模块，避免环）
         for cid in cids:
-            ok, msg = opc_patrol.register_heartbeat(root, cid, heartbeat_at)
+            ok, msg = opc_patrol.register_heartbeat(root, cid, every=heartbeat_every)
             print(("[init] 心跳已挂：" if ok else "[init] 心跳注册失败：")
                   + f"{msg}" + ("" if ok else "（不影响本地使用，可稍后手动挂）"))
     elif not cids:
@@ -938,7 +938,7 @@ def bootstrap(root=None, heartbeat=True, heartbeat_at="09:00"):
 
     errs, ws = doctor(root, auto_fix=True)
     print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
-          + ("" if heartbeat and cids else "（未挂心跳：--heartbeat-time HH:MM / 默认 09:00）"))
+          + ("" if heartbeat and cids else f"（未挂心跳：--heartbeat-every 分钟 / 默认 {heartbeat_every}）"))
     return errs, ws
 
 
@@ -1047,7 +1047,7 @@ if __name__ == "__main__":
     ap.add_argument("--bootstrap", action="store_true",
                     help="一键自举（新 clone/新电脑跑一次）：链接+钩子+看板数据+技能索引+公司心跳，最后 doctor 终检")
     ap.add_argument("--no-heartbeat", action="store_true", help="--bootstrap 跳过心跳注册")
-    ap.add_argument("--heartbeat-time", default="09:00", help="心跳时间 HH:MM（默认 09:00）")
+    ap.add_argument("--heartbeat-every", default="30", help="心跳间隔（分钟，默认 30；配合通知去重只报新发现）")
     ap.add_argument("--diff-template", action="store_true",
                     help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
@@ -1076,7 +1076,7 @@ if __name__ == "__main__":
     elif a.selftest:
         sys.exit(selftest())
     elif a.bootstrap:
-        errs, ws = bootstrap(heartbeat=not a.no_heartbeat, heartbeat_at=a.heartbeat_time)
+        errs, ws = bootstrap(heartbeat=not a.no_heartbeat, heartbeat_every=int(a.heartbeat_every))
         for w in ws:
             print("[i]", w)
         for e in errs:
