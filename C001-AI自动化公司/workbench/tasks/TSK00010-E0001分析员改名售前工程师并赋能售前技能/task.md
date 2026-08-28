@@ -1,7 +1,7 @@
 ---
 id: TSK00010
 title: E0001分析员改名售前工程师并赋能售前技能
-status: review
+status: done
 owner: E0000
 owner_name: 总管
 priority: 中
