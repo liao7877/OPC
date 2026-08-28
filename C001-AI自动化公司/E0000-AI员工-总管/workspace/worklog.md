@@ -43,7 +43,7 @@ updated: 2026-08-27
 wid: W-20260829-001
 date: 2026-08-29
 title: E0001 分析员改名售前工程师并赋能售前技能
-status: 进行中
+status: 已完成
 type: 工单
 ticket: TSK00010
 updated: 2026-08-29
@@ -54,7 +54,7 @@ note: 复盘：本次走了「删旧目录新建+逐文件搜替换」的全量�
 wid: W-20260829-002
 date: 2026-08-29
 title: 机制升级：实体显示名与物理路径解耦（决策 #17，机制维护者代总管落地）
-status: 进行中
+status: 已完成
 type: 工单
 ticket: TSK00010
 updated: 2026-08-29
