@@ -14,6 +14,7 @@
 - **机制改动波及面**：C001 实例 + 其总管(E0000) + company-template 新建模板 + 根文档，四处须同步。
 - **共享读取器**：实体卡 frontmatter 读取统一走 OPC 根 `opc_model.py::parse_frontmatter`（PRINCIPLES P25）。
 - **提交门禁**：提交前 `opc --check` 由 pre-commit 自动跑，拦截失效引用 / 锚点漂移。
+- **跨平台三系统（P30，廖哥明令）**：一切修改与机制设计必须 Windows/macOS/Linux 三系统可运行；平台差异收口在机制层 `sys.platform` 分支，新增行为必须进 selftest 过 CI 三平台矩阵。
 
 ## 关键文件
 | 文件 | 作用 |
@@ -24,3 +25,4 @@
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范 |
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
 | `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
+| `opc_board_server.py` | 本地看板服务（决策 #18）：`/api/sync` 让「同步」按钮即时重算数据 + 数据源 watch + 开机自启（`--register`）；看板请从 `http://127.0.0.1:8765/dashboard.html` 打开 |
