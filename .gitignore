@@ -31,4 +31,4 @@ tasks-data.json
 *.pem
 *.key
 
-skills/INDEX.md
+**/skills/INDEX.md
