@@ -30,6 +30,6 @@
 ## 身份信息（AGENTS.md 自描述字段）
 - 编号：E00x【替换】
 - 岗位：【岗位名】【替换】
-- 归属团队：T001-AI开发团队（引用制，可在多个团队；团队负责人以 roster「角色」列 lead 为准）
+- 归属团队：T001（引用制，可在多个团队；团队负责人以 roster「角色」列 lead 为准）
 - 工作区：./workspace/（含 sessions/ 工位卡区、worklog.md 工作留痕、worklog-archive/ 年度归档）
 - 记忆：./memory/（MEMORY.md 合并区 + inbox/ 并发分片区）

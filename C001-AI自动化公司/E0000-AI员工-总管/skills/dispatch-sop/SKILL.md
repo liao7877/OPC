@@ -62,18 +62,29 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
 ## 新建员工 SOP（2026-08-27 定稿，必须按新标准，禁止老结构）
 > 模板：`opc://company:C001/templates/employee-template/`（标准骨架，含全部机制文件与占位符）。
 
-1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E0003-AI员工-岗位/`
-2. **复制模板**：把 `opc://company:C001/templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
+1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定，登记 roster → 目录 `../E0003/`（裸 ID，显示名进 roster）
+2. **复制模板**：把 `opc://company:C001/templates/employee-template/` 整体复制为 `../E0003/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
 3. **改人设**：编辑 AGENTS.md —— 替换全部【替换】占位符（编号/岗位名/职责/红线）；CLAUDE.md 保持一行 `@AGENTS.md`
 4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description + **triggers** + **summary**，技能元数据唯一真相在此）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析；跑 `python opc_model.py --sync-index` 重生成该员工 `skills/INDEX.md`（生成物，「登记」动作消失）
 5. **建 junction（关键，模板复制不会带过来）**：
    ```powershell
-   New-Item -ItemType Junction -Path "E0003-岗位/.workbuddy/skills" -Target "E0003-岗位/skills"
+   New-Item -ItemType Junction -Path "E0003/.workbuddy/skills" -Target "E0003/skills"
    ```
-   macOS/Linux：`ln -sfn "$(pwd)/E0003-岗位/skills" "E0003-岗位/.workbuddy/skills"`
+   macOS/Linux：`ln -sfn "$(pwd)/E0003/skills" "E0003/.workbuddy/skills"`
    或（推荐，全层幂等重建）：回 OPC 根跑 `python opc_resolver.py --ensure-links`
    验证：`ls -i .workbuddy/skills/<技能>/SKILL.md skills/<技能>/SKILL.md` inode 相同
 6. **登记 roster.md**：追加一行（ID / 岗位 / 目录路径）
 7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原"公司级 skills/INDEX.md"披露层已废弃（公司级技能走平台披露），员工私有技能的 skills/INDEX.md **保留**为披露索引（生成物，--sync-index 重生成），四件套 = 三件套 + 员工私有索引
 
 > ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX(生成物)/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。
+
+## 员工改名 SOP（2026-08-29 决策 #17：显示名与物理路径解耦）
+> 员工目录名 = 裸 ID（E0001），显示名唯一真相在 roster「岗位」列——**改岗位名不动目录**，机械波及为零。
+
+1. **改登记**：roster.md 该员工行「岗位」列改为新岗位名（唯一机械必改项）
+2. **改人设**：该员工 AGENTS.md（标题/岗位字段/职责描述）+ workflow.md 标题；按需落新私有技能（skills/）
+3. **同步看板**：跑 `run_boards.bat once`（或 OPC 根 `python opc_dashboards.py --company C001`）——mydesk/dashboard 显示名自动随 roster 更新
+4. **终检**：OPC 根跑 `python opc_resolver.py --doctor` 全绿（散文里的旧岗位目录名残留会被 --check 拦截，逐条按提示改用 ID）
+5. **留痕**：worklog 记一条 + task messages 留痕（机制/结构类工作不可免记）
+
+> 反模式（#17 前的现状，已废弃）：删旧目录新建目录、逐文件搜替换全名——显示名烧进物理路径导致的全量手术，不再需要。

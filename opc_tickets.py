@@ -325,34 +325,63 @@ def extract_escalations(messages_text):
 
 
 def build_registry(ctx, tasks):
-    """构建 员工/项目 代号→名称 映射（双来源，按优先级合并）：
-      1) 公司根目录扫描（文件系统即真相，总管建的 E*/P* 目录）——权威来源；
-      2) 各工单 task.md 声明的 owner_name / project_name——兜底来源。
-    合并规则：目录优先；仅当某代号在目录中查不到时，才用该工单声明的名称补全。"""
+    """构建 员工/项目 代号→名称 映射（多来源，按优先级合并）：
+      1) 员工：roster「岗位」列（决策 #17：显示名唯一真相，目录 ID-only 后目录名无名称）；
+         项目：project.md「名称」字段语义对应，此处以目录名遗留后缀兜底；
+      2) 公司根目录扫描（遗留带名目录的后缀仍是有效名称来源）；
+      3) 各工单 task.md 声明的 owner_name / project_name——兜底来源。
+    合并规则：前者优先；仅当某代号在前级查不到时，才用后级名称补全。"""
     emp, proj = {}, {}
     reg = opc_resolver.entity_types()   # 前缀唯一真相（2026-08-29 实体注册表）
     pe, pp = reg["employee"], reg["project"]
+    roster_roles = _roster_roles(ctx)
     for name in sorted(os.listdir(ctx.company_dir)) if os.path.isdir(ctx.company_dir) else []:
         full = os.path.join(ctx.company_dir, name)
         if not os.path.isdir(full):
             continue
-        if re.match(rf"^{pe}\d{{3,}}-", name):
-            code = name.split("-", 1)[0]
-            label = name.split("-", 1)[1] if "-" in name else name
+        m = re.match(rf"^{pe}(\d{{3,}})(?:-|$)", name)
+        if m:
+            code = pe + m.group(1)
+            # 名称优先级：roster 岗位 > 目录遗留后缀（决策 #17）
+            label = roster_roles.get(code) or dir_suffix_label(name)
             if label.startswith("AI员工-"):
                 label = label[len("AI员工-"):]
             emp[code] = label
-        elif re.match(rf"^{pp}\d{{3,}}-", name):
-            code = name.split("-", 1)[0]
-            label = name.split("-", 1)[1] if "-" in name else name
-            proj[code] = label
-    # 来源2：工单声明兜底（引用了尚未建目录的代号时也能显示名称）
+            continue
+        m = re.match(rf"^{pp}(\d{{3,}})(?:-|$)", name)
+        if m:
+            code = pp + m.group(1)
+            proj[code] = dir_suffix_label(name)   # 项目名真相在 project.md「名称」，此处仅遗留后缀兜底
+    # 来源3：工单声明兜底（引用了尚未建目录的代号时也能显示名称）
     for t in tasks:
         if t.get("owner") and t.get("owner_name") and t["owner"] not in emp:
             emp[t["owner"]] = t["owner_name"]
         if t.get("project") and t.get("project_name") and t["project"] not in proj:
             proj[t["project"]] = t["project_name"]
     return emp, proj
+
+
+def dir_suffix_label(dirname):
+    """目录名去 ID 前缀取遗留显示名后缀（P0001 -> 示例项目；E0001 -> E0001）。"""
+    return dirname.split("-", 1)[1] if "-" in dirname else dirname
+
+
+def _roster_roles(ctx):
+    """roster eid -> 岗位（显示名唯一真相源，决策 #17）。仅当 ctx.company_dir
+    就是该公司的真实 home 时读取（自测临时目录无 company.md 时静默跳过）。"""
+    try:
+        cid = opc_resolver.extract_company_id(
+            opc_resolver.read_text(os.path.join(ctx.company_dir, "company.md")))
+        if not cid:
+            return {}
+        cfg = opc_resolver.load_company(cid)
+        if os.path.realpath(cfg.home_abs) != os.path.realpath(ctx.company_dir):
+            return {}
+        import opc_dashboards   # 复用共享 roster 解析器（P25）；运行时惰性导入避免加载环
+        roster = opc_dashboards.parse_roster(cfg.roster_abs, [])
+        return {eid: (v.get("role") or "") for eid, v in roster.items()}
+    except Exception:
+        return {}
 
 
 def generate(ctx):
@@ -650,7 +679,8 @@ def append_worklog_entry(ctx, owner, tid, title, project):
     if not owner:
         return
     emp_dirs = [d for d in os.listdir(ctx.company_dir)
-                if d.startswith(owner + "-") and os.path.isdir(os.path.join(ctx.company_dir, d))]
+                if (d == owner or d.startswith(owner + "-"))
+                and os.path.isdir(os.path.join(ctx.company_dir, d))]
     if not emp_dirs:
         print(f"  [提示] 未找到 {owner} 的员工目录，跳过自动建账（该员工接单时按 worklog-discipline 自行补记）")
         return
@@ -692,8 +722,9 @@ def check_structure(ctx):
         r"^verify_boards\.(js|py)$", r"^(dashboard|目录结构说明书)\.(html|md)$", r"^dashboard-data\.js$",
     )]
     # 实体目录识别用注册表前缀（2026-08-29：加类型/改前缀 = 改 manifest，本函数零改动）
+    # 决策 #17：ID-only（E0001）与遗留带名（E0001 加显示名后缀）均为合法实体目录
     _alts = "|".join(rf"{p}\d{{3,}}" for p in opc_resolver.entity_types().values())
-    entity_re = re.compile(rf"^({_alts})-")
+    entity_re = re.compile(rf"^({_alts})(?:-.+)?$")
     problems = []
     for d in required_dirs:
         if not os.path.isdir(os.path.join(company, d)):
@@ -701,8 +732,8 @@ def check_structure(ctx):
     for f in required_files:
         if not os.path.isfile(os.path.join(company, f)):
             problems.append(f"缺少必需文件：{f}")
-    if not any(n.startswith("E0000-") and os.path.isdir(os.path.join(company, n)) for n in os.listdir(company) if os.path.isdir(os.path.join(company, n))):
-        problems.append("缺少总管目录（E0000-*）")
+    if not any((n == "E0000" or n.startswith("E0000-")) and os.path.isdir(os.path.join(company, n)) for n in os.listdir(company) if os.path.isdir(os.path.join(company, n))):
+        problems.append("缺少总管目录（E0000）")
     known_subdirs = {"workbench": {"tasks", "affairs", "archive"}}  # affairs=常设事务区；archive=历史过程文档存档
     for name in sorted(os.listdir(company)):
         if name.startswith("."):

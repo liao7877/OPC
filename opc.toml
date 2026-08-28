@@ -7,7 +7,7 @@
 # 骨架默认值：所有公司继承，未覆盖字段沿用此处
 workbench = "workbench"
 tasks_data = "workbench/tasks-data.json"
-roster = "E0000-AI员工-总管/roster.md"
+roster = "E0000-AI员工-总管/roster.md"   # 待 E0000 目录改名后改为 "E0000/roster.md"（见 TSK00010 messages）
 affairs = "workbench/affairs"
 page_templates = "page-templates"
 templates = "templates"            # 公司模板目录（新建员工骨架来源；opc://company:<cid>/templates/... 经 key 透传解析）

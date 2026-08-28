@@ -26,6 +26,7 @@
 | 14 | 总管落位赋能 | 新建总管私有技能 `mechanism-sop`：四类落位决策树 + 领地表 + 知识库三分边界/提炼规则；建司时进模板 |
 | 15 | 技能岗位定制 | 三档模式：纯引用 → 增量扩展（私有差异技能）→ 真分叉新建（登记 fork、不再自动跟进）；禁止"复制整份再改"的中间态 |
 | 16 | 制度 vs 技能判定 | 技能=能力（做了更好），制度=义务（必须/禁止/时限/追责/适用范围）；总管判定口诀 + 三种落位组合进 mechanism-sop |
+| 17 | 实体命名解耦 | 实体目录名 = `{前缀}{ID}`（ID-only）；显示名唯一真相：员工=roster「岗位」列，团队/项目=team.md/project.md「名称」字段——改显示名零文件系统波及；门禁新增裸路径散文扫描（--check）|
 
 ---
 
@@ -159,7 +160,7 @@ E:\OPC\
 ├── create-company/SKILL.md          # 建司技能（触发词：建公司/新建公司/创建公司）
 └── company-template/                # 公司模板（从 C001 抽象）
     ├── company.md + 目录结构说明书.md
-    ├── E0000-AI员工-总管/            # 000 号初始总管（模板自带）
+    ├── E0000/            # 000 号初始总管（模板自带）
     ├── skills/（四件套：ticket-system / worklog-discipline / concurrent-work / demand-clarify→总管私有）
     ├── workbench/（生成器 + 看板）/ 公司规章制度/ / 公司知识库/ / templates/
 ```
@@ -283,6 +284,19 @@ E:\OPC\
 - 车道判定口诀（2026-08-29 拍板：验收判据）：「要验收的活建工单，干完就完的直聊；拿不准就建单」写入 ticket-system 技能开头（双车道早有实现：worklog 四型/直聊不填 ticket/核验仅对工单型要求 ticket，但判定条款此前缺文）——补齐员工第一反应的口径不一致缝隙；USER_GUIDE FAQ/机制卡同步。
 - 全自举（2026-08-29 拍板「新电脑 clone 后系统自己完成初始化」）：`opc_resolver.py --bootstrap` 一条命令完成链接+钩子+看板数据+技能索引+**公司心跳注册**（Windows schtasks / crontab，定时逻辑唯一来源收编 `opc_patrol.register_heartbeat`，register-patrol.{ps1,sh} 退化为薄壳）；`--doctor` 升级为「先自愈再检查」（安全幂等项自动补，打印 [fix] 行）——agent 按门禁跑 doctor 即完成自举。心跳是 bootstrap 唯一机器级副作用，`--no-heartbeat` 可关。Windows 本机实跑通过（schtasks 任务 OPC-Patrol-C001 就绪）；README「系统初始化」改写为新电脑三步。
 
+## 十五、实体显示名与物理路径解耦（决策 #17，2026-08-29）
+
+> 来源：E0001「分析员→售前工程师」改名实战复盘。改名执行数小时、逐文件手术，暴露「改名零改动」承诺只覆盖公司级（稳定锚 + `--ensure-links`），实体层完全没通道——显示名被烧进物理目录名（原 `E0001` 目录带「AI员工-分析员」后缀），改显示名=改物理路径=全量引用手术；且散文里的目录名漂移对 `--check` 隐形（只扫 opc:// URI），doctor 全绿但根文档 4 处旧名残留。
+
+**决策**：
+1. **实体目录名 = `{前缀}{ID}`（ID-only）**：E/T/P 实体目录去显示名后缀（存量一次性 `git mv` 迁移）；公司目录例外保留 `C00X-<名称>`（其改名已由稳定锚机制闭环：重跑 `--ensure-links` 即可，引用零改动）。
+2. **显示名唯一真相源**：员工 = roster「岗位」列；团队/项目 = team.md/project.md「名称」字段。生成器（dashboards/tickets）一律从登记字段取显示名，目录名去前缀函数（`dir_label`）降级为遗留兜底。**此后员工改名 = 改 roster 一行岗位 + 改人设文案，junction/看板/引用零波及**。
+3. **兼容规则**：发现/校验正则统一放宽为 `^{前缀}\d{3,}(?:-|$)`——ID-only 与遗留带名目录并存合法（渐进迁移），但显示名永不取自目录名。
+4. **门禁补盲**：`--check` 新增裸路径散文扫描——正文中 `{C|E|T|P}+数字-名称` 形态必须匹配现存目录全名，否则报失效引用（跳过 companies/、company-template/、scripts/、.zcode/ 与 py selftest 夹具）。改名后的散文漂移由机器拦截，不再依赖人眼逐文件翻。
+5. **SOP 落位**：dispatch-sop 新增「员工改名 SOP」（改 roster 岗位 → 改人设 → 重跑看板 → doctor → 留痕）；新建员工 SOP 目录名同步改 ID-only。
+
+**落地物**：opc_resolver.py（`scan_stale_dir_refs` + `diff_template._ENTITY` 放宽）、opc_dashboards.py（`scan_entity_dirs`/roster 取名）、opc_tickets.py（`build_registry`/`append_worklog_entry`/`check_structure`）、opc_patrol.py（三处正则）、opc_model.py（roster 发现）、opc.toml（roster 键 + entity_types 注释）、41 份文档口径同步、C001+template 实体目录 ID-only 迁移。
+
 ---
-*定稿：2026-08-28 · 一问一答 16 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档与制度判定法则）+ 第二轮评审拍板记档（§十四）*
+*定稿：2026-08-28 · 一问一答 17 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档、制度判定法则与实体命名解耦）+ 第二轮评审拍板记档（§十四）*
 

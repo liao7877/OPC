@@ -163,14 +163,16 @@ def scan_entity_dirs(base):
         if not os.path.isdir(os.path.join(base, name)):
             continue
         for etype, pfx in reg.items():
-            if re.match(rf"^{pfx}\d{{3,}}-", name) and etype in buckets:
+            if re.match(rf"^{pfx}\d{{3,}}(?:-|$)", name) and etype in buckets:
                 buckets[etype].append(name)
                 break
     return emp, team, proj
 
 
 def dir_label(dirname, prefix_len):
-    """E0001-AI员工-分析员 -> 分析员（去常量前缀）；P0001-示例项目 -> 示例项目。"""
+    """遗留兜底：从目录名去前缀取显示名（E0001 -> 分析员）。
+    决策 #17 后显示名唯一真相在 roster「岗位」列 / team.md·project.md「名称」字段，
+    本函数仅用于：目录未登记（roster 无此 eid）或目录名带遗留显示名后缀的场景。"""
     label = dirname.split("-", 1)[1] if "-" in dirname else dirname
     if label.startswith("AI员工-"):
         label = label[len("AI员工-"):]
@@ -577,11 +579,12 @@ def generate_all(ctx):
         if d is None:
             print(f"  [警告] roster 登记 {eid} 但公司根下无目录，已忽略")
             continue
-        name = dir_label(d, 1)
+        # 显示名唯一真相 = roster「岗位」列（决策 #17）；目录未登记才退目录名（遗留兼容）
+        name = (r or {}).get("role") or dir_label(d, 1)
         registered = r is not None
         if not registered:
             print(f"  [警告] 员工目录 {d} 未在 roster.md 登记，看板标记「未登记」")
-        role = (r or {}).get("role") or name
+        role = name
         status = (r or {}).get("status") or ("未登记" if not registered else "在职")
         teams = (r or {}).get("teams") or []
         rank = (r or {}).get("rank") or ""
@@ -934,15 +937,15 @@ def selftest():
             fh.write("# T001\n- 团队 ID：T001\n- 名称：开发\n")
         with open(os.path.join(base, "E0001-分析员", "workspace", "worklog.md"), "w", encoding="utf-8") as fh:
             fh.write("---\nwid: W1\ndate: 2026-08-27\ntitle: 干活\ntype: 直聊\nstatus: 进行中\nupdated: 2026-08-27\n---\n")
-        os.makedirs(os.path.join(base, "E0000-AI员工-总管"), exist_ok=True)
-        with open(os.path.join(base, "E0000-AI员工-总管", "roster.md"), "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.join(base, "E0000"), exist_ok=True)
+        with open(os.path.join(base, "E0000", "roster.md"), "w", encoding="utf-8") as fh:
             fh.write("| 员工 ID | 路径 | 岗位 | 状态 | 团队 | 备注 |\n|---|---|---|---|---|---|\n"
                      "| E0001 | E0001-分析员/ | 分析员 | 在职 | T001 | x |\n")
         with open(os.path.join(wb, "tasks-data.json"), "w", encoding="utf-8") as fh:
             json.dump({"tasks": [{"id": "TSK1", "title": "x", "status": "in_progress", "owner": "E0001", "project": "P1",
                                   "blocked_by": []}],
                        "employees": {}, "projects": {}, "status_meta": {"in_progress": "进行中"}}, fh)
-        roster_rel = os.path.join("E0000-AI员工-总管", "roster.md")
+        roster_rel = os.path.join("E0000", "roster.md")
         cfg = opc_resolver.CompanyConfig("C888", tmp, {})
         ctx = Ctx(cfg, base, os.path.join(base, "page-templates"), os.path.join(wb, "tasks-data.json"),
                   roster_rel, os.path.join(wb, "affairs"))

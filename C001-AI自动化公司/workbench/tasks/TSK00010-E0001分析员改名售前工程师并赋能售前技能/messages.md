@@ -6,7 +6,7 @@
 
 ## 2026-08-29 E0000（完工待审）
 - 完成事项：
-  1. 目录改名 `E0001-AI员工-分析员/` → `E0001-AI员工-售前工程师/`；重建断掉的 `.workbuddy/skills` junction
+  1. 目录改名 `E0001/` → `E0001/`；重建断掉的 `.workbuddy/skills` junction
   2. roster.md：路径/岗位/备注更新；预留岗位「需求分析师」注记同步（分析能力已由 E0001 承接，澄清入口仍在总管）
   3. E0001 人设重写：AGENTS.md（角色定位=售前工程师，补素养基线七条；公司级技能引用行原样保留）+ workflow.md（主流程 + 需求分析五步法分支 A + 售前方案六步法分支 B）
   4. 新增私有技能 `skills/presales-requirement-analysis/SKILL.md`（用户提供蓝本全文落地，补 frontmatter）；`data-analysis-template` 与 skills/README.md 措辞同步
@@ -23,3 +23,17 @@
   2. 方法论步骤：唯一权威在 skill §2（2.1 五步法 / 2.2 六步法）；workflow.md 从 70 行压到 42 行，A/B 分支只留编排与产出物指向
   3. skill 章节重编号（§一~§七），workflow 交叉引用同步（§2.1/§2.2/§4.1/§6 已验证有效）
 - 效果：skill 286→266 行、workflow 70→42 行；同一内容不再存在两份需同时加载的副本。
+
+## 2026-08-29 E0000（并发迁移协同 + 收尾）
+- 用户推动全公司实体目录裸 ID 化（E0001/E0002/T001/P0001~P0004），检测到另一会话并行施工（roster/company.md/说明书/opc.toml 05:54 批量更新）。本会话立即停改权威文件防踩踏，只做只读侦察 + 补缺：
+  1. dispatch-sop 新建员工 SOP 4 处改裸 ID 口径（对方漏的唯一一处）
+  2. 散文引用统一 `ID（名称）` 格式（auto-rules/E0002 workflow×4/P0001 workflow×2）
+  3. doctor [fix] 自愈披露 junction ×3（新目标为相对路径，抗改名）
+  4. 清除 E0001/E0002 内空 workbench 残留目录
+  5. 审计去重收尾：E0001 workflow 头部并发约定摘要改指针；skills/README 技能清单改指向 INDEX.md
+  6. 经验已沉淀总管 memory/MEMORY.md（四条五要素）；总管 AGENTS.md 启动流程补"读自己的 MEMORY.md"（原来只有员工有此要求）
+- 待办：E0000-AI员工-总管 → E0000 物理改名（opc.toml/roster 已由对方备好，目录被运行中会话占用）。
+
+## 2026-08-29 机制维护者
+- 决策 #17（实体显示名与物理路径解耦）已落地：E/T/P 实体目录 ID-only 迁移（E0001/E0002/T001/P0001~P0004），显示名唯一真相=roster 岗位列；--check 新增裸路径散文门禁；dispatch-sop 增「员工改名 SOP」；MECHANISM_PLAN §十五 记档。
+- **待办（E0000 目录改名顺延）**：3 个 ZCode 会话进程 cwd 占用 `E0000-AI员工-总管/`，无法改名。用户关闭这些会话后执行：① `git mv "C001-AI自动化公司/E0000-AI员工-总管" "C001-AI自动化公司/E0000"`；② opc.toml roster 键改 `"E0000/roster.md"`；③ OPC 根跑 `python opc_resolver.py --doctor`。机制对遗留名完全兼容，不改名也不影响运行。

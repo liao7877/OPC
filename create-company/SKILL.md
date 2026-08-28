@@ -24,12 +24,12 @@ description: 在 OPC 组织根下快速创建新 AI 公司实例。触发词：�
    ```powershell
    # Windows（junction，普通用户可建）：
    New-Item -ItemType Junction -Path "C00x-<名称>\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\skills"
-   New-Item -ItemType Junction -Path "C00x-<名称>\E0000-AI员工-总管\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\E0000-AI员工-总管\skills"
+   New-Item -ItemType Junction -Path "C00x-<名称>\E0000\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\E0000\skills"
    ```
    ```bash
    # macOS / Linux（symlink，注意用绝对路径）：
    ln -sfn "<绝对路径>/C00x-<名称>/skills" "C00x-<名称>/.workbuddy/skills"
-   ln -sfn "<绝对路径>/C00x-<名称>/E0000-AI员工-总管/skills" "C00x-<名称>/E0000-AI员工-总管/.workbuddy/skills"
+   ln -sfn "<绝对路径>/C00x-<名称>/E0000/skills" "C00x-<名称>/E0000/.workbuddy/skills"
    ```
 3. **改名落位**：总管目录若带【替换】占位符则按模板规范替换；company.md 的三处 `<本司ID>` 占位符（公司 ID / 目录结构说明书路径 / 目录树）全部替换为新 ID，并填公司名/业务域——**漏改会导致与新公司并列出现重复 ID**（`--check` 门禁会拦）；
 4. **首跑验证**（机制代码在 OPC 根，公司目录无生成器）：

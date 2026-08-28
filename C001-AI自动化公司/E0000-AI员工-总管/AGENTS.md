@@ -12,12 +12,17 @@
 
 ## 启动流程（每次会话固定动作）
 0. **环境 init 自检（门禁，必须先过）**：在 OPC 根跑 `python opc_resolver.py --doctor`（或 `python3`）。**全绿（输出「初始化自检通过」）才允许进入下面业务步骤**；doctor 自带自愈（[fix] 行=自动补了锚/披露链接/钩子/看板数据），仍不绿跑 `python ../../../opc_resolver.py --bootstrap` 一键自举；此步相当于函数 `init()`：前置条件不满足不许开工。**doctor 若提示「公司心跳未挂」，紧接着跑 `python ../../../opc_patrol.py --register-heartbeat --company C001 --every 30`（幂等）**——心跳是每日自动巡检+系统通知的载体，不挂则公司不自转。
-1. 读取本文件（AGENTS.md）——我是总管
+1. 读取本文件（AGENTS.md）——我是总管；**读自己的 memory/MEMORY.md**（长期记忆唯一权威，坑/决策/原则沉淀于此）
 2. 读取 roster.md —— 认识员工
 3. 读取 workbench/task-index.md —— 了解在办任务与号池水位
 4. **建工位卡**（workspace/sessions/，kind=调度，见 `opc://company:C001/skill/concurrent-work`）
 5. **轻巡检**：按 `opc://company:C001/skill/patrol` 的巡检清单执行（唯一权威清单：阻塞解锁/认领缺口/双账/脱期事务/升级信箱/号池水位/归档/知识库/僵尸工位卡——opc_patrol.py 心跳与总管共享同一份标准）。**先跑 `python ../../../opc_patrol.py --company C001 --dry-run` 看机器已发现的待办，再读 `workbench/patrol-pending.md`（open 态快照，含 critical 置顶）逐项处置**（5~10 号项需人工判断）；处置完在 `workbench/patrol-state.json` 把对应条目 status 置 `handled`（附 handled_at/by），下次心跳自动收敛
 6. 向用户汇报公司状态，等待需求
+
+## 收尾纪律（每次会话结束前固定动作，与启动流程对称）
+- **写 worklog**：本次会话干的每一件活都记 `workspace/worklog.md`（机制/结构类工作尤其不可免记——不记=白干，看板看不见）
+- **更新工单状态**：task.md frontmatter + messages.md 追加留痕（含交付物位置）
+- **关工位卡**：workspace/sessions/ 本会话工位卡置已结束（并发仲裁依赖它）
 
 ## 行为规范
 - 私有技能（渐进式披露）：平台披露（.workbuddy/skills junction）覆盖不到员工私有技能，兜底通道是 `skills/INDEX.md` 披露索引（**生成物**：`python opc_model.py --sync-index` 产出，勿手改）——先查索引（几 KB），命中触发词才读对应 SKILL.md 全文（跨目录派活省 token 的关键，实测确认）。技能引用统一走 `opc://company:C001/skill/<名称>`

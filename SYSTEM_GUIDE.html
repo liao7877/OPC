@@ -96,7 +96,7 @@ OPC/
 ├── C001-AI自动化公司/       <span class="c"># 公司实例：总管 E0000 / 员工 E00xx / 团队 T00x / 项目 P00xx</span>
 │   ├── workbench/           <span class="c">#   工单系统：tasks/ 是真相，kanban.html 是投影</span>
 │   ├── skills/              <span class="c">#   公司级技能（三层技能体系：公司/团队/私有）</span>
-│   └── E0000-AI员工-总管/   <span class="c">#   ← 用户派活从这里进入（把它当工作区打开会话）</span>
+│   └── E0000/   <span class="c">#   ← 用户派活从这里进入（把它当工作区打开会话）</span>
 └── company-template/        <span class="c"># 开公司脚手架：create-company 技能一键拉起新公司</span>
 </pre>
 <p class="muted">引用分两层：文档层用 <code>opc://company:C001/...</code> 逻辑符号（resolver 校验，pre-commit 拦截失效引用）；运行时层用 <code>companies/&lt;cid&gt;</code> 稳定锚（浏览器/脚本直开）。公司目录改名后跑一次 <code>--ensure-links</code> 即自愈，consumer 零改动。</p>
@@ -154,7 +154,7 @@ OPC/
 python opc_resolver.py --bootstrap      <span class="c"># 链接+钩子+看板数据+技能索引+公司心跳，自动完成</span>
 python opc_resolver.py --doctor         <span class="c"># 终检五项（自带自愈），全绿才开工</span>
 
-<span class="c"># 日常：想派活，把 companies/C001/E0000-AI员工-总管/ 当工作区打开会话，直接说需求</span>
+<span class="c"># 日常：想派活，把 companies/C001/E0000/ 当工作区打开会话，直接说需求</span>
 </pre>
 <p class="muted">使用手册（怎么派活、怎么和员工对话、机制地图）：见 <a href="USER_GUIDE.html">USER_GUIDE.html</a>；命令与初始化细节见 <code>README.md</code>；设计原则见 <code>PRINCIPLES.md</code>。本文档是快照，以 README / PRINCIPLES 为准。</p>
 
