@@ -138,14 +138,14 @@
     });
 
     // ---- 陈旧阈值（默认 10 分钟，localStorage 记忆）----
-    var staleMin = 10;
-    try { staleMin = parseInt(localStorage.getItem("boards-stale-min"), 10) || 10; } catch (e) {}
+    var staleMin = 1560;   // 默认 26 小时（心跳日更节奏；watcher 实时模式可在此调小）
+    try { staleMin = parseInt(localStorage.getItem("boards-stale-min-v2"), 10) || 1560; } catch (e) {}
     var staleInput = document.getElementById("staleMin");
     staleInput.value = staleMin;
     staleInput.addEventListener("change", function () {
       staleMin = Math.max(1, parseInt(staleInput.value, 10) || 10);
       staleInput.value = staleMin;
-      try { localStorage.setItem("boards-stale-min", String(staleMin)); } catch (e) {}
+      try { localStorage.setItem("boards-stale-min-v2", String(staleMin)); } catch (e) {}
       updateStale();
     });
     function updateStale() {
@@ -156,7 +156,7 @@
       var mins = Math.floor((Date.now() - g.getTime()) / 60000);
       if (mins > staleMin) {
         bar.style.display = "block";
-        bar.textContent = "⚠️ 数据已陈旧 " + mins + " 分钟（生成器可能未运行）——内容停留在 " + DATA.generated_at;
+        bar.textContent = "⚠️ 数据已陈旧 " + mins + " 分钟——心跳会自动刷新，点「同步」即可取到新数据；若持续出现请检查心跳任务或跑 run_boards once（内容停留在 " + DATA.generated_at + "）";
       } else bar.style.display = "none";
     }
     setInterval(updateStale, 5000);

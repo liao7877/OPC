@@ -61,6 +61,7 @@ PATROL = {
     "ticket_pool_min": 5,       # 号池剩余 < N 时告警补号
     "worklog_stale_days": 14,   # 进行中 N 天未动 → 风险提示
     "archive_warn_year": None,  # 上一年度热文件提醒归档（None=运行时按当年推导）
+    "regen_stale_minutes": 30,  # 看板数据陈旧超过 N 分钟 → 心跳自动重生成（浏览器「同步」只能重读文件，刷新数据靠心跳）
 }
 
 # ---- 巡检检查项元数据（findings 结构化，2026-08-28 Q1 拍板 A 方案）----
