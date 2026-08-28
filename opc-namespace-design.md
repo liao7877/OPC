@@ -2,7 +2,7 @@
 
 > **定位**：PRINCIPLES 的补充约定，是 P2（单一真相）/ P3（高内聚低耦合）在**「架构常量层」**的具体落地。
 > **创建**：2026-08-28 · **依据**：架构评审（依赖倒置视角）+ PoC 验证。
-> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`scripts/link-company.*`（稳定锚同步）、`scripts/watch-companies.py`（可选监听守护）、`opc_tickets.py` / `opc_dashboards.py`（机制层生成器，2026-08-28 上提 OPC 根）。
+> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`scripts/link-company.*`（稳定锚同步）、`opc_tickets.py` / `opc_dashboards.py`（机制层生成器，2026-08-28 上提 OPC 根）。
 
 ---
 
@@ -123,8 +123,6 @@ python opc_dashboards.py --company C001    # 生成三级看板数据（--watch 
 
 **手动同步（改名后跑一次）**：`scripts/link-company.ps1`（Windows）/ `scripts/link-company.sh`（*nix），内部即调 `opc_resolver.py --sync-links`。
 
-**可选监听守护（未来启用）**：`scripts/watch-companies.py` —— watchdog 监听 OPC 根 rename/move/create/delete → 防抖 2s → 调 `--sync-links`。它只是「触发器外壳」，不含任何发现逻辑（全在 resolver），故「加监听 = 写个 20 行包装」。依赖 `pip install watchdog`。
-
 **pre-commit 分发**：钩子源文件已入库 `scripts/pre-commit`（/bin/sh + `python3` 兜底，Windows/macOS/Linux 原生可跑）。git 不追踪 `.git/`，clone 后重装：`cp scripts/pre-commit .git/hooks/`（或 `git config core.hooksPath scripts/`）。
 
 ---
@@ -139,7 +137,7 @@ python opc_dashboards.py --company C001    # 生成三级看板数据（--watch 
   3. 模拟把 `home` 改成不存在名 → resolver 靠 `company.md` 的「公司 ID」**自愈定位**真实目录，`check-links` 全绿、生成器照常生成、配置与脚本零改动；改回真名后一致。
 - **Z 稳定锚（本轮新增）**：
   - `companies/C001` junction 已建，指向真实公司目录；`opc.toml` 的 `home` 改为 `companies/C001`。
-  - `sync_links()` + `scripts/link-company.{ps1,sh}` + `scripts/watch-companies.py` 已实现：靠 `company.md` 的「公司 ID」扫描发现，**零参数**重指锚。`--sync-links` 实跑验证待 shell 恢复后补（逻辑已审阅）。
+  - `sync_links()` + `scripts/link-company.{ps1,sh}` 已实现：靠 `company.md` 的「公司 ID」扫描发现，**零参数**重指锚。`--sync-links` 实跑验证待 shell 恢复后补（逻辑已审阅）。
 
 ### 6.1 全净化完成（2026-08-28，强制全符号化/稳定锚化）
 
@@ -206,7 +204,7 @@ def anchor_prefix(base_dir, subdir):
 | D | pre-commit：接入 `check-links`，提交前阻断失效引用（本仓库已装 `.git/hooks/pre-commit`，其他 clone 需重装） | ✅ 已做 |
 | E | resolver 扩展：补 `skill/team/employee/project` 实体解析 + `org` 范围 + 全文扫描 `check-links` | ✅ 已做 |
 | F | 公司层自愈：`load_company` 加 `_discover_company_home` 扫描发现兜底，手动改公司目录名忘了改 manifest 也能自动定位 | ✅ 已做 |
-| G | Z 稳定锚：`companies/<cid>` junction + `sync_links()` + `scripts/link-company.*` + `watch-companies.py`（按 ID 扫描发现，零参数重指） | ✅ 已实现（待 shell 恢复实跑验证） |
+| G | Z 稳定锚：`companies/<cid>` junction + `sync_links()`/`ensure_links()` + `scripts/link-company.*`（按 ID 扫描发现，零参数重指） | ✅ 已做并实跑（watcher 监听守护已裁撤：ensure-links 幂等重建 + doctor 门禁已足够） |
 | H | 锚点审计：`audit_structure` 把 company.md 维护职责下沉到工具门禁（`--check` / pre-commit 自动覆盖漂移）；`.gitignore` 排除 `companies/` | ✅ 已做 |
 | I | init 门禁：`opc_resolver.py --doctor` 开工前自检（Python/锚/钩子/命名空间/披露链接五项）；README「系统初始化」+ 总管/OPC根/模板 AGENTS 写入启动门禁，clone 后必做清单固化 | ✅ 已做 |
 | J | ensure_links：技能披露 junction 纳入 resolver 托管 + doctor 第 5 项（`[platform.*]` 配置化，负例实测阻断/重建） | ✅ 已做（2026-08-28） |

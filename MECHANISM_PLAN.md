@@ -260,6 +260,8 @@ E:\OPC\
 - 换行符纪律 = **`.gitattributes`**（B7）：`.sh/.py` 强制 LF、`.bat/.ps1` 强制 CRLF，行为随仓库走不随机器。
 - 开公司前置修复：`create-company` 的 `home` 改指稳定锚 `companies/<cid>`（消除与 `opc-namespace-design.md` §2 的矛盾）+ 补 macOS/Linux junction 命令；`register-patrol` 任务名按公司隔离（`OPC-Patrol-<cid>`）+ 新增 `register-patrol.sh`。
 - 看板公司名从 `company.md` 实体卡读取（原从目录名倒推，Z 方案锚路径下退化为裸 ID）；公司 ID 提取收敛为 `opc_resolver.extract_company_id` 公开 API（原 6 份副本 2 种语义）。
+- 巡检 #8「知识库增量」机器化（2026-08-29 拍板）：心跳扫 `公司知识库/methods/` 与各项目 `knowledge/`，新增条目提示总管评审提炼；基线存 patrol-state `_meta`，首跑不告警。
+- 裁撤（2026-08-29 拍板）：`scripts/watch-companies.py`（watchdog 依赖违反 P13 且从未启用，ensure-links + doctor 已覆盖其职责）、`SYSTEM_GUIDE.html`（可视化快照与机制文档漂移，根文档入口收敛为 6 份）。
 
 **已拍板待实施**
 - （无——本节原列四项已全部落地，见下）

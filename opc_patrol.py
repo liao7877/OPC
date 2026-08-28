@@ -66,6 +66,7 @@ class Ctx:
         self.pending = os.path.join(self.wb, "patrol-pending.md")   # open 态待办快照（生成物）
         self.today = datetime.date.today()
         self.findings = []   # [dict]：{no, kind, severity, action, ref, owner, msg}（B 阶段处置的地基）
+        self.kb_count = None  # #8 知识库条目计数（find() 填充，update_state 推进基线用）
 
 
 def _mk(no, msg, ref="", owner=""):
@@ -185,6 +186,22 @@ def find(ctx):
         if n:
             ctx.findings.append(_mk(7, f"{name} 热文件含 {n} 条 {stale_year} 年条目，建议归档", ref=name))
 
+    # 8) 知识库增量（B6 闭环，2026-08-29 拍板机器化）：methods/ 与各项目 knowledge/
+    #    新条目 → 提示总管评审提炼（技能/制度/common 三选一）。基线存 patrol-state
+    #    的 _meta（非 finding），首跑建基线不告警；基线随心跳推进，open 待办由
+    #    总管处置后置 handled 收敛。
+    state8 = load_state(ctx)
+    base_count = (state8.get("_meta") or {}).get("knowledge_baseline")
+    kb = _count_knowledge(ctx)
+    ctx.kb_count = kb
+    if base_count is None:
+        state8.setdefault("_meta", {})["knowledge_baseline"] = kb
+        save_state(ctx, state8)          # 首跑建基线，不告警
+    elif kb > base_count:
+        ctx.findings.append(_mk(8, f"知识库新增 {kb - base_count} 条待评审（现 {kb} 条，基线 {base_count}）："
+                                   f"methods/ 与各项目 knowledge/——总管三选一：提炼成技能/制度/common，或归档",
+                                ref="knowledge"))
+
     # 9) 僵尸工位卡（工作中但 3 天未动）
     cutoff = (ctx.today - datetime.timedelta(days=3)).strftime("%Y%m%d")
     for name in sorted(os.listdir(ctx.base)) if os.path.isdir(ctx.base) else []:
@@ -245,6 +262,22 @@ def write_log(ctx, dry):
     return len(new_lines)
 
 
+def _count_knowledge(ctx):
+    """知识库条目计数：公司知识库/methods/ + 各项目 P*/knowledge/ 下的 .md 文件数。"""
+    n = 0
+    methods = os.path.join(ctx.base, "公司知识库", "methods")
+    if os.path.isdir(methods):
+        for root, _dirs, files in os.walk(methods):
+            n += sum(1 for f in files if f.endswith(".md"))
+    if os.path.isdir(ctx.base):
+        for name in sorted(os.listdir(ctx.base)):
+            kdir = os.path.join(ctx.base, name, "knowledge")
+            if re.match(r"^P\d{3,}-", name) and os.path.isdir(kdir):
+                for root, _dirs, files in os.walk(kdir):
+                    n += sum(1 for f in files if f.endswith(".md"))
+    return n
+
+
 def load_state(ctx):
     try:
         with open(ctx.state, encoding="utf-8") as fh:
@@ -282,6 +315,10 @@ def update_state(ctx):
             cur["status"] = "reopened"
             cur["reopened_at"] = day
             changed = True
+    # #8 基线推进：本轮心跳已把当前知识库计数落账（open 待办仍在 state 里等处置）
+    if getattr(ctx, "kb_count", None) is not None:
+        state.setdefault("_meta", {})["knowledge_baseline"] = ctx.kb_count
+        changed = True
     if changed or not os.path.isfile(ctx.state):
         save_state(ctx, state)
     return state
@@ -290,7 +327,8 @@ def update_state(ctx):
 def write_pending(ctx, state):
     """open 态待办快照 patrol-pending.md：总管启动第 5 步读它（比全量日志轻），
     处置完在 state 置 handled，下次心跳本文件自动收敛。"""
-    opens = [(k, v) for k, v in state.items() if v.get("status") != "handled"]
+    opens = [(k, v) for k, v in state.items()
+             if not k.startswith("_") and v.get("status") != "handled"]   # _meta=机器态，非待办
     order = {"critical": 0, "warn": 1, "info": 2}
     opens.sort(key=lambda kv: (order.get(kv[1].get("severity"), 3),
                                kv[1].get("no", 99), kv[0]))
@@ -419,8 +457,9 @@ def selftest():
     check("findings 结构化（kind/action/ref）", all(f.get("kind") and f.get("action") and "ref" in f for f in ctx.findings))
     # 闭环态：open → handled → 同问题再犯 reopened（A 方案 ③）
     state = update_state(ctx)
-    check("state 初始全 open", state and all(v["status"] == "open" for v in state.values()))
-    k5 = [k for k, v in state.items() if v["no"] == 5][0]
+    check("state 初始全 open", state and all(v.get("status") == "open"
+                                             for k, v in state.items() if not k.startswith("_")))
+    k5 = [k for k, v in state.items() if not k.startswith("_") and v["no"] == 5][0]
     state[k5]["status"] = "handled"; state[k5]["handled_at"] = "2026-08-28"; save_state(ctx, state)
     ctx2 = Ctx(cfg, tmp)
     find(ctx2)
@@ -429,6 +468,22 @@ def selftest():
     write_pending(ctx2, state2)
     pend = _read(ctx2.pending)
     check("pending 快照含 critical 置顶", "#5 [critical]" in pend)
+    # #8 知识库增量：首跑建基线 → 新增 → 告警 → 基线随心跳推进
+    mdir = os.path.join(tmp, "公司知识库", "methods")
+    os.makedirs(mdir, exist_ok=True)
+    ctxk = Ctx(cfg, tmp)
+    find(ctxk)
+    check("#8 首跑建基线不告警", not any(f["no"] == 8 for f in ctxk.findings))
+    with open(os.path.join(mdir, "经验条目.md"), "w", encoding="utf-8") as fh:
+        fh.write("经验")
+    ctxk2 = Ctx(cfg, tmp)
+    find(ctxk2)
+    check("#8 新增条目告警", any(f["no"] == 8 for f in ctxk2.findings))
+    st8 = update_state(ctxk2)
+    check("#8 基线随心跳推进", (st8.get("_meta") or {}).get("knowledge_baseline") == 1)
+    ctxk3 = Ctx(cfg, tmp)
+    find(ctxk3)
+    check("#8 无新增不再告警", not any(f["no"] == 8 for f in ctxk3.findings))
     # 写日志幂等
     n1 = write_log(ctx, dry=False)
     n2 = write_log(ctx, dry=False)
