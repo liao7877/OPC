@@ -154,14 +154,14 @@
 
 <h2 id="s6">⑥ 命令速查（99% 情况你只需要前两条）</h2>
 <pre>
-<span class="c"># —— 初始化（换机器 / 新 clone 后各跑一次）——</span>
-python opc_resolver.py --ensure-links    <span class="c"># 重建全部 OS 级链接（稳定锚+技能披露），幂等</span>
-python opc_resolver.py --doctor          <span class="c"># 开工自检五项，全绿 = 可以正常使用</span>
-run_boards.bat once                      <span class="c"># 重建看板数据（macOS/Linux: ./run_boards.sh once）</span>
+<span class="c"># —— 新电脑 / 新 clone（一条命令全搞定，含心跳定时任务）——</span>
+python opc_resolver.py --bootstrap       <span class="c"># 一键自举：链接+钩子+看板数据+技能索引+每日心跳</span>
+python opc_resolver.py --doctor          <span class="c"># 终检五项，全绿 = 可以正常使用（自带自愈）</span>
+run_boards.bat once                      <span class="c"># 可选：手动重建看板（bootstrap 已自动做过；macOS/Linux: ./run_boards.sh once）</span>
 
-<span class="c"># —— 挂心跳（每台机器一次性；之后每天自动巡检+通知）——</span>
-powershell -ExecutionPolicy Bypass -File register-patrol.ps1        <span class="c"># Windows</span>
-./register-patrol.sh                                                <span class="c"># macOS / Linux</span>
+<span class="c"># —— 心跳管理（默认 09:00，异常弹系统通知）——</span>
+python opc_patrol.py --register-heartbeat --company C001 --at 09:00   <span class="c"># 手动挂（bootstrap 已自动挂）</span>
+python opc_patrol.py --unregister-heartbeat --company C001            <span class="c"># 撤销</span>
 
 <span class="c"># —— 总管/员工日常用（你不用记）——</span>
 python opc_tickets.py --company C001 --new --auto-id 标题 --owner E0001   <span class="c"># 原子取号建单+占台账</span>
@@ -178,7 +178,7 @@ python opc_resolver.py --diff-template                                   <span c
   <tr><th style="width:34%">情况</th><th>怎么办</th></tr>
   <tr><td>看板上有<b>红牌工单</b></td><td>它的 status 写了非法值（坏数据会上板不隐藏）。跟总管说「把 XX 工单状态修正一下」即可。</td></tr>
   <tr><td>弹了系统通知「[高优] 升级」</td><td>有员工在工单里举手求助（<span class="pill crit">critical</span>，唯一会打扰你的项）。开总管会话说「处理一下巡检待办」，总管会按 <code>patrol-pending.md</code> 逐项处置。</td></tr>
-  <tr><td>换了电脑 / 重新 clone 了仓库</td><td>跑 §6 前三条命令即可，链接与数据全部自动重建；然后跑 <code>--doctor</code> 确认全绿。</td></tr>
+  <tr><td>换了电脑 / 重新 clone 了仓库</td><td>跑 <code>python opc_resolver.py --bootstrap</code> 一条命令即可——链接、钩子、看板数据、技能索引、心跳定时任务全部自动重建并终检。</td></tr>
   <tr><td>想改公司/员工/项目目录名</td><td>随便改。改完在 OPC 根跑一次 <code>python opc_resolver.py --ensure-links</code>，所有引用自愈。</td></tr>
   <tr><td>觉得某个员工能力不对/缺技能</td><td>对总管说「给 E0001 加一个 XX 技能」——总管按落位 SOP 建技能、更新索引，你不用碰文件。</td></tr>
   <tr><td>同一个活想多人/多会话并行</td><td>直接开多个会话。工位卡 + 锁保证不互相覆盖；谁持卡谁有权改单子状态。</td></tr>

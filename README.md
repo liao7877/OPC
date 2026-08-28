@@ -56,43 +56,38 @@ OPC/
 
 ---
 
-## 系统初始化（首次运行必做）
+## 系统初始化（新电脑三步，约 2 分钟）
 
-> **这套框架能跑，前提是下面几步都做了。** 任何 AI agent 开工前必须先跑 `python opc_resolver.py --doctor`（init 自检门禁），全绿才进业务；不绿按本节补齐。机制详情见 [`opc-namespace-design.md`](opc-namespace-design.md) §5 跨平台。
+> **这条流水线已高度自举**：第 2 步一条命令自动完成全部「事先准备」，不依赖你懂机制。任何 AI agent 开工前必须先跑 `--doctor`（自带自愈，见下），全绿才进业务。机制详情见 [`opc-namespace-design.md`](opc-namespace-design.md) §5 跨平台。
 
-**前置条件（缺一不可）**
-1. **Python ≥ 3.11** —— resolver 依赖标准库 `tomllib`。Windows 一般用 `python --version`，macOS/Linux 一般用 `python3 --version`（下文以 `python3` 示例，按你的平台替换）。
-   > ⚠️ 看板数据（`*-data.js` / `tasks-data.json`）不入库：clone 后跑一次下面「验证」里的生成命令即重建。
-2. **重建 OS 级链接（稳定锚 + 技能披露）** —— `companies/` 锚与各层 `.workbuddy/skills` 披露链接都不入库（symlink/junction 不进 git），clone 后是空的，必须建：
-   - Windows：`scripts/link-company.ps1`
-   - macOS / Linux：`scripts/link-company.sh`（内部调 `python3 opc_resolver.py --ensure-links`）
-   - 公司目录改名后重跑一次即可自动重指向（零参数，靠 company.md「公司 ID」发现；披露链接一并幂等重建）。
-3. **恢复 pre-commit 门禁**（提交前拦截失效引用，开发期便利）：`cp scripts/pre-commit .git/hooks/` 或 `git config core.hooksPath scripts/`。
-4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描 / 技能披露链接五项），再跑一次 `run_boards once` 重建看板数据。
+1. **装 Python ≥ 3.11**（唯一硬前提，resolver 依赖标准库 `tomllib`）：Windows 用 `python --version` 验证，macOS/Linux 用 `python3 --version`（下文按你的平台替换 `python3`/`python`）。
+2. **一键自举**：在 OPC 根执行 `python opc_resolver.py --bootstrap`，它会自动完成——
+   - 重建稳定锚 `companies/<cid>` 与各层技能披露链接（OS 级链接不入库，clone 后必缺）；
+   - 安装 pre-commit 门禁钩子（提交前拦截失效引用）；
+   - 重建看板数据与技能索引（产物不入库，clone 后必缺）；
+   - **注册公司心跳**（每日定时巡检 + 异常系统通知；Windows 写计划任务、macOS/Linux 写 crontab，任务名 `OPC-Patrol-<公司ID>`，默认 09:00）。
+     - 心跳是唯一的机器级副作用：`--no-heartbeat` 跳过、`--heartbeat-time 14:00` 改时间、`python opc_patrol.py --unregister-heartbeat --company C001` 撤销。
+3. **验证**：`python opc_resolver.py --doctor` 输出 `[ok] 初始化自检通过` 即可正常使用（doctor 自带自愈，会先打印 `[fix]` 行告诉你自动补了什么，再检查五项：Python 版本 / 稳定锚 / 钩子 / 命名空间 / 技能披露链接）。
 
 ```bash
-# 最常用：init 自检（agent 开工前必跑；Windows 把 python3 换成 python）
-python3 opc_resolver.py --doctor
-# 输出 [ok] 初始化自检通过：可正常开工   ← 才允许开工
+# —— 新电脑全流程（三条）——
+python3 opc_resolver.py --bootstrap     # 一键自举（含心跳；Windows 把 python3 换成 python）
+python3 opc_resolver.py --doctor        # 终检，全绿才开工
+run_boards.bat once                     # 可选：手动重建看板数据（bootstrap 已做过；macOS/Linux: ./run_boards.sh once）
 
-# 各模块内置自测（不碰真实数据）
+# —— 各模块内置自测（不碰真实数据，排查问题时用）——
 python3 opc_resolver.py --selftest && python3 opc_model.py --selftest
-python3 opc_tickets.py --selftest && python3 opc_dashboards.py --selftest
+python3 opc_tickets.py --selftest && python3 opc_dashboards.py --selftest && python3 opc_patrol.py --selftest
 
-# 重建看板数据（在任一公司根执行；或 python3 ../opc_tickets.py --company C001）
-./run_boards.sh once           # macOS / Linux / Git-Bash
-run_boards.bat once            # Windows
-
-# 首次 clone / 改名后重建锚
-scripts/link-company.sh        # macOS / Linux
-scripts/link-company.ps1       # Windows
+# —— 公司目录改名/迁移后（引用自愈）——
+python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公司 ID」扫描发现，幂等
 ```
 
 **跨平台说明**
-- 稳定锚：Windows 用 junction（`mklink /J`，普通用户可建）；macOS/Linux 用 symlink（`os.symlink`，普通用户可建）。二者对浏览器/OS 透明，运行时层 HTML 双击即用。
+- 稳定锚：Windows 用 junction（`mklink /J`，普通用户可建）；macOS/Linux 用 symlink（`os.symlink`）。二者对浏览器/OS 透明，运行时层 HTML 双击即用。
 - `.ps1` 脚本必须以 UTF-8 **带 BOM** 落盘（Windows PowerShell 5.1 对无 BOM 的 UTF-8 中文按 GBK 误读会语法错）。
-- 文档层 `opc://` 由 `opc_resolver.py` 解析（纯标准库，三平台一致），`--check` 门禁已实跑验证。
-- ⚠️ Windows 侧已实跑；macOS/Linux 的 `os.symlink` 分支逻辑正确但**未在真机实测**——首次在 Mac/Linux 跑请务必执行上面的 `--doctor` 验证命令确认。
+- 心跳定时逻辑唯一来源在 `opc_patrol.py`（`register-patrol.ps1/.sh` 只是薄壳）；Windows 计划任务为当前用户级，无需管理员。
+- ✅ Windows 已实跑全流程；macOS/Linux 分支逻辑正确，且已纳入 GitHub Actions 三平台矩阵持续验证（每次 push 自动跑 bootstrap 等价流程）。
 
 ---
 
