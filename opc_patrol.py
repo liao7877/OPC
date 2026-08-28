@@ -402,6 +402,87 @@ def _notify_windows(title, text):
         creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# ---------------------------------------------------------------------------
+# 心跳注册（2026-08-29 拍板：自举化——register-patrol.{ps1,sh} 收敛为本模块的
+# 薄壳，定时逻辑单一来源；--bootstrap 会自动调用，不依赖用户记得挂）
+# ---------------------------------------------------------------------------
+
+def heartbeat_task_name(cid):
+    return f"OPC-Patrol-{cid}"
+
+
+def _heartbeat_cron_line(root, cid, at):
+    py = "python3" if not sys.platform.startswith("win") else "python"
+    h, m = at.split(":")
+    return f"{int(m)} {int(h)} * * * cd '{root}' && {py} opc_patrol.py --company {cid} --quiet"
+
+
+def _run_decoded(cmd, **kw):
+    """subprocess + 本地编码解码：schtasks/crontab 输出是系统 ANSI 代码页
+    （中文 Windows 为 GBK），text=True 的 UTF-8 强解会炸（CI/本机实测）。"""
+    r = subprocess.run(cmd, capture_output=True, check=False, **kw)
+    enc = "mbcs" if sys.platform.startswith("win") else "utf-8"
+    r.stdout = (r.stdout or b"").decode(enc, "replace")
+    r.stderr = (r.stderr or b"").decode(enc, "replace")
+    return r
+
+
+def register_heartbeat(root, cid, at="09:00"):
+    """注册每日心跳：Windows 用 schtasks（当前用户级，无需管理员）、
+    macOS/Linux 追加 crontab（幂等，已有同任务则跳过）。
+    返回 (ok, msg)。平台差异收敛在此一处（自举化后本函数是唯一实现）。"""
+    if not re.match(r"^\d{1,2}:\d{2}$", at):
+        return False, f"时间格式应为 HH:MM，收到 {at!r}"
+    name = heartbeat_task_name(cid)
+    if sys.platform.startswith("win"):
+        py = sys.executable or "python"
+        tr = f'"{py}" "{os.path.join(root, "opc_patrol.py")}" --company {cid} --quiet'
+        r = _run_decoded(["schtasks", "/Create", "/TN", name, "/SC", "DAILY",
+                          "/ST", at, "/TR", tr, "/F"])
+        ok = r.returncode == 0
+        detail = (r.stdout or r.stderr or "").strip().splitlines()
+        return ok, f"{name}（每日 {at}）" + (f"：{detail[-1]}" if detail and not ok else "")
+    # macOS / Linux：crontab 幂等追加
+    mark = f"# {heartbeat_task_name(cid)}"
+    line = _heartbeat_cron_line(root, cid, at)
+    cur = ""
+    try:
+        cur = _run_decoded(["crontab", "-l"]).stdout or ""
+    except OSError as e:
+        return False, f"crontab 不可用：{e}"
+    if mark in cur:
+        return True, f"{name} 已存在（每日 {at}），跳过"
+    new = (cur.rstrip("\n") + "\n" if cur.strip() else "") + f"{mark}\n{line}\n"
+    r = _run_decoded(["crontab", "-"], input=new.encode("utf-8"))
+    return (r.returncode == 0), (f"{name}（每日 {at}）" if r.returncode == 0 else r.stderr)
+
+
+def unregister_heartbeat(root, cid):
+    """撤销心跳：Windows 删计划任务；*nix 从 crontab 移除标记块。幂等。"""
+    name = heartbeat_task_name(cid)
+    if sys.platform.startswith("win"):
+        r = _run_decoded(["schtasks", "/Delete", "/TN", name, "/F"])
+        return (r.returncode == 0), f"{name}" + ("（已删除）" if r.returncode == 0 else "（不存在或删除失败）")
+    mark = f"# {heartbeat_task_name(cid)}"
+    try:
+        cur = _run_decoded(["crontab", "-l"]).stdout or ""
+    except OSError as e:
+        return False, f"crontab 不可用：{e}"
+    if mark not in cur:
+        return True, f"{name}（本就未注册）"
+    out, skip = [], False
+    for ln in cur.splitlines():
+        if ln.strip() == mark:
+            skip = True
+            continue
+        if skip:
+            skip = False
+            continue
+        out.append(ln)
+    r = _run_decoded(["crontab", "-"], input=("\n".join(out) + "\n").encode("utf-8"))
+    return (r.returncode == 0), f"{name}（已从 crontab 移除）"
+
+
 def selftest():
     import tempfile
     ok = True
@@ -494,6 +575,29 @@ def selftest():
 def main(argv):
     if "--selftest" in argv:
         return selftest()
+    root = opc_resolver._find_root()
+    # 心跳注册/撤销（--bootstrap 与 register-patrol 薄壳共用此入口）
+    if "--register-heartbeat" in argv or "--unregister-heartbeat" in argv:
+        company = None
+        if "--company" in argv:
+            company = argv[argv.index("--company") + 1]
+        if not company:
+            cids = opc_resolver.all_company_ids(root)
+            if len(cids) != 1:
+                print("需要 --company <cid>（多公司时无法自动确定）")
+                return 1
+            company = cids[0]
+        at = "09:00"
+        if "--at" in argv:
+            at = argv[argv.index("--at") + 1]
+        if "--register-heartbeat" in argv:
+            ok, msg = register_heartbeat(root, company, at)
+            print(("[ok] " if ok else "[ERR] ") + f"心跳注册：{msg}"
+                  + ("" if ok else f"；撤销：schtasks /Delete /TN {heartbeat_task_name(company)} /F 或编辑 crontab"))
+            return 0 if ok else 1
+        ok, msg = unregister_heartbeat(root, company)
+        print(("[ok] " if ok else "[ERR] ") + f"心跳撤销：{msg}")
+        return 0 if ok else 1
     company = None
     if "--company" in argv:
         company = argv[argv.index("--company") + 1]

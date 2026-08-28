@@ -769,17 +769,75 @@ def _hook_installed(root):
     return False
 
 
-def doctor(root=None):
+def install_hook(root=None):
+    """安装 pre-commit 门禁（自举化）：把 scripts/pre-commit 复制到 .git/hooks/
+    并加执行位。幂等（覆盖写）。返回 (ok, msg)。"""
+    root = root or _find_root()
+    src = os.path.join(root, "scripts", "pre-commit")
+    if not os.path.isfile(src):
+        return False, f"找不到 {src}"
+    hooks_dir = os.path.join(root, ".git", "hooks")
+    os.makedirs(hooks_dir, exist_ok=True)
+    dst = os.path.join(hooks_dir, "pre-commit")
+    with open(src, "rb") as f:
+        data = f.read()
+    with open(dst, "wb") as f:
+        f.write(data)
+    if not sys.platform.startswith("win"):
+        os.chmod(dst, 0o755)
+    return True, dst
+
+
+def _repair(root):
+    """doctor 自愈段（2026-08-29 拍板「系统自己完成初始化」）：凡是「安全 + 幂等 +
+    可自动补」的前置条件，检查前先修——agent 按门禁跑 doctor 的那一刻，
+    缺锚建锚、缺披露链接建链接、缺钩子装钩子、缺看板数据重生成。
+    返回修复动作列表（供 doctor 打印 [fix] 行）。"""
+    fixed = []
+    ok, err = ensure_links(root)
+    fixed += [f"OS 级链接：{m}" for m in ok if "无需改动" not in m]
+    fixed += [f"OS 级链接（异常）：{m}" for m in err]
+    if not _hook_installed(root):
+        hok, hmsg = install_hook(root)
+        if hok:
+            fixed.append(f"pre-commit 门禁已装：{hmsg}")
+        else:
+            fixed.append(f"pre-commit 门禁安装失败：{hmsg}")
+    # 看板数据缺失 → 重生成（仅缺产物时，避免每次 doctor 都重算）
+    py = sys.executable or "python"
+    for cid in all_company_ids(root):
+        try:
+            cfg = load_company(cid)
+        except Exception:
+            continue
+        if not os.path.isfile(cfg.tasks_data_abs) and os.path.isdir(cfg.workbench_abs):
+            for mod in ("opc_tickets.py", "opc_dashboards.py"):
+                r = subprocess.run([py, os.path.join(root, mod), "--company", cid],
+                                   cwd=root, capture_output=True, text=True, check=False)
+                if r.returncode == 0:
+                    fixed.append(f"看板数据已重建（{cid} ← {mod}）")
+                else:
+                    fixed.append(f"看板数据重建失败（{mod}）：{(r.stderr or r.stdout).strip().splitlines()[-1:]}")
+    return fixed
+
+
+def doctor(root=None, auto_fix=True):
     """系统初始化自检（init gate）：检查「系统正常跑」的前置条件。
 
-    返回 (errors, warnings)。用于 agent 开工前门禁——全绿才进入业务；
-    不绿按 README「系统初始化」章节补齐（建锚 / 装钩子 / 修失效引用）。
+    返回 (errors, warnings)。用于 agent 开工前门禁——全绿才进入业务。
+    自愈（2026-08-29 拍板「系统自己完成初始化」）：auto_fix=True（默认）时，
+    检查前先自动补齐安全幂等项（锚 / 技能披露链接 / pre-commit 钩子 / 缺失的
+    看板数据），修复动作以 [fix] 行打印——新 clone 后 agent 跑一次 doctor
+    即完成自举，不再依赖用户手补。
     退出码：有 error 则 1（阻断），仅 warning 则 0（放行）。
     """
     root = root or _find_root()
     if root is None:
         return ["未找到 opc.toml（OPC 根）——先在 OPC 仓库根目录运行"], []
     errors, warns = [], []
+    if auto_fix:
+        for m in _repair(root):
+            print("[fix]", m)
 
     # 1. Python 版本 ≥ 3.11（tomllib 依赖）
     if sys.version_info < (3, 11):
@@ -795,19 +853,19 @@ def doctor(root=None):
     for cid in cids:
         link = os.path.join(root, "companies", cid)
         if not os.path.lexists(link):
-            errors.append(f"稳定锚缺失：companies/{cid} 不存在 → 跑 `python opc_resolver.py --sync-links`")
+            errors.append(f"稳定锚缺失：companies/{cid} 不存在 → 跑 `python opc_resolver.py --bootstrap`")
         else:
             real = os.path.realpath(link)
             if not os.path.isdir(real):
-                errors.append(f"稳定锚失效：companies/{cid} 未指向有效目录 → 跑 `python opc_resolver.py --sync-links`")
+                errors.append(f"稳定锚失效：companies/{cid} 未指向有效目录 → 跑 `python opc_resolver.py --bootstrap`")
             else:
                 warns.append(f"稳定锚 companies/{cid} -> {real} ✓")
 
-    # 3. pre-commit 门禁（开发期便利，warn 不阻断运行时）
+    # 3. pre-commit 门禁（自愈段已尝试安装；仍缺则提示手动）
     if _hook_installed(root):
         warns.append("pre-commit 门禁已装 ✓")
     else:
-        warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ `cp scripts/pre-commit .git/hooks/`")
+        warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
     # 4. 命名空间全文扫描（核心，失效即阻断）
     iss = check_links()
@@ -824,6 +882,53 @@ def doctor(root=None):
         warns.append("技能披露链接完整 ✓")
 
     return errors, warns
+
+
+def bootstrap(root=None, heartbeat=True, heartbeat_at="09:00"):
+    """一键自举（2026-08-29 拍板「系统自己完成初始化，不依赖用户操作」）：
+    新 clone / 新电脑上把全部「事先准备」自动做完——
+      ① OS 级链接（稳定锚 + 各层技能披露，ensure_links）
+      ② pre-commit 门禁钩子（install_hook）
+      ③ 看板数据重建（opc_tickets / opc_dashboards，产物不入库 clone 后必缺）
+      ④ 技能索引（opc_model --sync-index，INDEX.md 生成物）
+      ⑤ 公司心跳（Windows 计划任务 / macOS·Linux crontab，按公司隔离；
+         heartbeat=False 跳过——唯一的机器级副作用，故可关）
+    最后跑 doctor 终检（其自愈段兜底）。返回 (errors, warnings)。
+    """
+    root = root or _find_root()
+    if root is None:
+        print("[ERR] 未找到 opc.toml（OPC 根）——请在 OPC 仓库根运行")
+        return ["未找到 opc.toml"], []
+    print("[init] OPC 自举开始……")
+    py = sys.executable or "python"
+    cids = all_company_ids(root)
+
+    # ① ② doctor 自愈段统一做（幂等，结果随终检打印）；这里先补数据与索引：
+    for cid in cids:
+        for mod in ("opc_tickets.py", "opc_dashboards.py"):
+            r = subprocess.run([py, os.path.join(root, mod), "--company", cid],
+                               cwd=root, capture_output=True, text=True, check=False)
+            tail = (r.stdout or r.stderr or "").strip().splitlines()
+            print(f"[init] {mod} --company {cid} ->", "ok" if r.returncode == 0
+                  else f"FAILED（{tail[-1] if tail else r.returncode}）")
+    r = subprocess.run([py, os.path.join(root, "opc_model.py"), "--sync-index"],
+                       cwd=root, capture_output=True, text=True, check=False)
+    print("[init] opc_model --sync-index ->", "ok" if r.returncode == 0 else "FAILED")
+
+    # ⑤ 心跳（唯一机器级副作用；默认注册，可 --no-heartbeat 关闭）
+    if heartbeat and cids:
+        import opc_patrol   # 运行时惰性导入（patrol 依赖本模块，避免环）
+        for cid in cids:
+            ok, msg = opc_patrol.register_heartbeat(root, cid, heartbeat_at)
+            print(("[init] 心跳已挂：" if ok else "[init] 心跳注册失败：")
+                  + f"{msg}" + ("" if ok else "（不影响本地使用，可稍后手动挂）"))
+    elif not cids:
+        print("[init] 无公司，跳过心跳与看板重建")
+
+    errs, ws = doctor(root, auto_fix=True)
+    print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
+          + ("" if heartbeat and cids else "（未挂心跳：--heartbeat-time HH:MM / 默认 09:00）"))
+    return errs, ws
 
 
 # ---------------------------------------------------------------------------
@@ -927,7 +1032,11 @@ if __name__ == "__main__":
     ap.add_argument("--company", default=None, help="公司 id（--check 默认遍历全部公司）")
     ap.add_argument("--resolve", help="解析单个 opc:// URI 并打印绝对路径")
     ap.add_argument("--doctor", action="store_true",
-                    help="系统初始化自检（init gate）：检查 Python 版本/稳定锚/pre-commit/命名空间/技能披露，全绿才开工")
+                    help="系统初始化自检（init gate，带自愈）：自动补齐锚/披露链接/钩子/缺失看板数据后检查五项，全绿才开工")
+    ap.add_argument("--bootstrap", action="store_true",
+                    help="一键自举（新 clone/新电脑跑一次）：链接+钩子+看板数据+技能索引+公司心跳，最后 doctor 终检")
+    ap.add_argument("--no-heartbeat", action="store_true", help="--bootstrap 跳过心跳注册")
+    ap.add_argument("--heartbeat-time", default="09:00", help="心跳时间 HH:MM（默认 09:00）")
     ap.add_argument("--diff-template", action="store_true",
                     help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
@@ -955,6 +1064,13 @@ if __name__ == "__main__":
             print("  [ok] 双向零实质差异")
     elif a.selftest:
         sys.exit(selftest())
+    elif a.bootstrap:
+        errs, ws = bootstrap(heartbeat=not a.no_heartbeat, heartbeat_at=a.heartbeat_time)
+        for w in ws:
+            print("[i]", w)
+        for e in errs:
+            print("[✗]", e)
+        sys.exit(1 if errs else 0)
     elif a.sync_links or getattr(a, "ensure_links", False):
         ok, err = ensure_links()
         for line in ok:

@@ -4,9 +4,10 @@
 > 公司级 agent 入口在各公司 `AGENTS.md`（如 `C001-AI自动化公司/AGENTS.md`）；本文件管「组织根这一层」。
 
 ## 启动门禁（init · 任何 agent 开工前必过）
-- 在 OPC 根跑 `python opc_resolver.py --doctor`（Windows 用 `python`，macOS/Linux 用 `python3`）：**全绿（输出「初始化自检通过」）才允许开工**；不绿按 [`README.md`「系统初始化」](README.md) 补齐——典型是稳定锚缺失（跑 `scripts/link-company.{ps1,sh}` 重建 `companies/<cid>`）或 pre-commit 未装（`cp scripts/pre-commit .git/hooks/`）。
+- 在 OPC 根跑 `python opc_resolver.py --doctor`（Windows 用 `python`，macOS/Linux 用 `python3`）：**全绿（输出「初始化自检通过」）才允许开工**。doctor **自带自愈**：缺锚/缺技能披露链接/缺钩子/缺看板数据会在检查前自动补齐（打印 `[fix]` 行）——新 clone 后跑一次 doctor 即完成自举。
+- 仍不绿时跑 `python opc_resolver.py --bootstrap`（一键自举：链接+钩子+看板数据+技能索引+**公司心跳定时任务**），再跑 doctor 终检；人工补齐仅用于 bootstrap 也修不了的场景（如权限）。
 - 这相当于函数 `init()`：命名空间符号化 + 稳定锚物理入口 + 提交门禁是系统正常跑的硬前置，未达标不许进入业务。
-- 改名公司目录后，重跑 `scripts/link-company.{ps1,sh}` 即可自动重指向，无需改任何其他文件。
+- 改名公司目录后，重跑 `python opc_resolver.py --ensure-links`（或 scripts/link-company.{ps1,sh}）即可自动重指向，无需改任何其他文件。
 
 ## 组织级铁律（与 PRINCIPLES 一致，速记）
 - **命名空间**：物理路径唯一真相源在 `opc.toml`；跨文件引用统一 `opc://company:<cid>/...`（文档层，resolver 校验）或 `companies/<cid>/` 稳定锚（运行时层）。禁止裸写 `../` 或绝对路径（PRINCIPLES P26）。
