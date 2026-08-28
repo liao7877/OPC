@@ -11,6 +11,8 @@ opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
 职责边界（与总管分工）：
   - 本脚本只「发现」：1~6 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
     （追加式、幂等去重），并打印待办清单；不做任何处置决策。
+    例外（2026-08-29 拍板）：看板数据缺失/陈旧时自动重生成（auto_refresh）——浏览器「同步」
+    只能重读文件，数据刷新必须由心跳完成，属机械性自愈而非处置决策。
   - 总管「处置」：读 patrol-log / 看板告警，答复、转派、催办、补号。
   - A+ 报警（2026-08-28 拍板）：有发现时弹系统通知（opc.toml [patrol].notify 可关）；
     B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
@@ -584,6 +586,36 @@ def selftest():
     return 0 if ok else 1
 
 
+def auto_refresh(ctx, dry):
+    """心跳数据自愈（2026-08-29 拍板）：看板数据缺失或陈旧（> PATROL.regen_stale_minutes）
+    → 自动重生成。浏览器「同步」只能重读数据文件、跑不了生成器——数据刷新靠心跳，
+    陈旧横幅才会在下一次同步后消失。dry-run / 刷新失败不阻断巡检（#10 会报告陈旧）。"""
+    if dry:
+        return
+    stale_min = PATROL.get("regen_stale_minutes", 30)
+    need = os.path.isdir(ctx.wb)
+    if need and os.path.isfile(ctx.tasks_data):
+        try:
+            age = (datetime.datetime.now()
+                   - datetime.datetime.fromtimestamp(os.path.getmtime(ctx.tasks_data))).total_seconds() / 60
+            need = age > stale_min
+        except OSError:
+            need = True
+    if not need:
+        return
+    import subprocess
+    py = sys.executable or "python"
+    root = os.path.dirname(os.path.abspath(__file__))
+    for mod in ("opc_tickets.py", "opc_dashboards.py"):
+        r = subprocess.run([py, os.path.join(root, mod), "--company", ctx.cid],
+                           cwd=root, capture_output=True, text=True, check=False)
+        if r.returncode == 0:
+            print(f"  [自愈] 看板数据已自动刷新（{mod}，数据陈旧 > {stale_min} 分钟）")
+        else:
+            tail = (r.stderr or r.stdout or "").strip().splitlines()
+            print(f"  [警告] 看板自动刷新失败（{mod}）：{tail[-1] if tail else r.returncode}——检查 #10 陈旧告警")
+
+
 def main(argv):
     if "--selftest" in argv:
         return selftest()
@@ -614,9 +646,10 @@ def main(argv):
     if "--company" in argv:
         company = argv[argv.index("--company") + 1]
     ctx = resolve_ctx(company)
-    find(ctx)
     dry = "--dry-run" in argv
     quiet = "--quiet" in argv
+    auto_refresh(ctx, dry)          # 数据自愈在前：find() 的工单类检查消费的是新鲜投影
+    find(ctx)
     if not ctx.findings:
         if not quiet:
             print(f"[patrol] {ctx.today} 巡检完成：无异常 ✓")
