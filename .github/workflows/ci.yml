@@ -22,6 +22,9 @@ jobs:
       - name: 重建稳定锚（clone 后必做，同时验证各平台链接分支）
         run: python opc_resolver.py --sync-links
 
+      - name: 命名空间自检详情（诊断：打印具体失效引用，便于定位平台差异）
+        run: python opc_resolver.py --check || true
+
       - name: init 自检门禁（全绿才允许继续）
         run: python opc_resolver.py --doctor
 
