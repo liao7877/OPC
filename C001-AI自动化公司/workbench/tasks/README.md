@@ -104,7 +104,7 @@ handoffs: [{"from":"E0002","to":"E0003","at":"2026-08-27","reason":"开发完成
 ## 7. 输入物（inputs）—— 开工需要的外部材料
 
 - 用**引用**，不复制文件（避免两份真相漂移）
-- 路径相对 `workbench/`：项目文件写 `opc://company:C001/project/P0001/xxx.md`；上游工单交付物写 `tasks/TSK00001-xxx/deliverables/xxx.md`
+- 路径相对 `workbench/`：项目文件写 `opc://company:C001/project/<PID>/<文件>`；上游工单交付物写 `tasks/TSK00001-xxx/deliverables/xxx.md`
 - **上一手的交付物就是下一手的输入物**——流转时把上游交付物列为你的输入
 
 ```yaml
@@ -142,7 +142,7 @@ completed_at: 2026-08-27   # 实际完成时间，必须填
 
 ## 10. 红线（不要做）
 
-1. **不要改看板文件**：`workbench/kanban.html`、`generate_tasks.py`、`KANBAN_*.md` 是廖哥与前端/后端 Agent 的领地，你只维护 `tasks/` 下的工单文件
+1. **不要改看板文件**：`workbench/kanban.html`、OPC 根的 `opc_tickets.py`/`opc_dashboards.py`、`KANBAN_*.md` 是廖哥与前端/后端 Agent 的领地，你只维护 `tasks/` 下的工单文件
 2. **不要复制输入物进工单**：保持引用（§7）
 3. **不要自造编号 / 非规范目录**：`TSKxxx-` 前缀 + 模板字段，不自由发挥
 4. **不要删 messages.md 历史**：追加式，历史即审计
@@ -151,13 +151,13 @@ completed_at: 2026-08-27   # 实际完成时间，必须填
 
 > 我只认 `workbench/tasks/TSKxxx-标题/` 下的文件；按本手册维护 `task.md`（+messages/deliverables/logs）；改完文件看板自动更新，我不用管看板怎么实现。
 
-## 12. 快捷命令（generate_tasks.py）
+## 12. 快捷命令（OPC 根 opc_tickets.py，从公司根 `../../` 回根调用）
 
 | 命令 | 作用 |
 |---|---|
-| `python generate_tasks.py` | 手动生成看板数据 |
-| `python generate_tasks.py --watch` | 监听 tasks/ 变动自动重跑（日常建议挂着） |
-| `python generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]` | **一键生成规范工单模板目录**（推荐建单方式，避免手抄出错） |
-| `python generate_tasks.py --selftest` | **内置自测**（解析/校验/容错 9 项用例），全过退出码 0 |
+| `python ../../../opc_tickets.py --company C001` | 手动生成看板数据 |
+| `./run_boards.sh` / `run_boards.bat` | 统一入口：生成 + 双 watcher（日常建议挂着） |
+| `python ../../../opc_tickets.py --company C001 --new TSKxxx 标题 [--owner E0001] [--project P0001]` | **一键生成规范工单模板目录**（推荐建单方式，避免手抄出错） |
+| `python ../../../opc_tickets.py --selftest` | **内置自测**（解析/校验/容错用例），全过退出码 0 |
 
 > 注意：`--watch` 保持**单个实例**即可（双开会互相覆盖写）；文件轮询为 1 秒级感知，极端同秒并发改动可能延迟 1 秒才上板，属正常。

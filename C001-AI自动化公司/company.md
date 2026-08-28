@@ -9,6 +9,7 @@
 - 公司 ID：C001
 - 公司名：AI自动化公司
 - 根目录：本目录
+- 机制基线：company-template v2（2026-08-28；对照 `../company-template/CHANGELOG.md` 决定是否跟进机制升级）
 
 ## 组织架构
 - 团队：T001-AI开发团队
@@ -41,7 +42,7 @@
 
 ## 工单系统（看板 + 生成器 + 公司级技能）
 - **看板**：`workbench/kanban.html`（双击即开；数据从 tasks/ 自动生成并 ≤3 秒同步；分组/筛选/详情/流转轨迹/逾期标记）
-- **生成器**：`workbench/generate_tasks.py`（`--new` 建单模板 / `--watch` 自动重跑 / `--selftest` 内置自检）
+- **生成器**：机制代码上提 OPC 根——`opc_tickets.py`（工单）/ `opc_dashboards.py`（三级看板）；公司内统一入口 `run_boards.bat|.sh`（`--new` 建单 / `--watch` 自动重跑 / `--selftest` 内置自检 调根模块）
 - **状态机**：backlog → in_progress → review → done；旁路 failed / paused / cancelled
 - **公司级技能**：`skills/ticket-system/SKILL.md` —— 工单操作全流程自解释（建单/流转/完成/告警/红线），**员工 AGENTS.md 引用即生效，无需培训**
 - **规范权威**：员工执行以 `skills/ticket-system/SKILL.md` 为准；参考手册 `workbench/tasks/README.md`；架构设计 `workbench/KANBAN_ARCHITECTURE.md`

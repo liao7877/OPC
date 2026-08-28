@@ -7,13 +7,13 @@
 - 员工 ID：E0001
 - 岗位：分析员
 - 归属团队：T001-AI开发团队（引用制，可在多个团队）
-- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 opc-namespace-design.md）；原 `../../companies/C001/skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），命中触发词再读对应 SKILL.md 全文，勿整份预加载；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
+- 私有技能（渐进式披露）：私有技能披露走本目录 `skills/INDEX.md` 索引——先查索引，命中触发词才读 SKILL.md 全文，勿整份预加载；公司级技能直引（下方引用行）；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
 - 工单协作（公司级技能）：`opc://company:C001/skill/ticket-system` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
 - 工作自记录（公司级技能）：`opc://company:C001/skill/worklog-discipline` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
 - 并发协作（公司级技能）：`opc://company:C001/skill/concurrent-work` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态
 - 工作流：见 workflow.md
 - 工作区：./workspace/
-- 记忆：./memory/（开工前先读 MEMORY.md；沉淀写 memory/inbox/<卡号>.md，收口合并）
+- 记忆：./memory/（**唯一权威记忆**，开工先读 MEMORY.md；沉淀写 memory/inbox/<卡号>.md，收口合并；`.workbuddy/` 里的平台记忆只是缓存——有价值条目收口时必须回写 memory/，换平台不丢）
 
 ## 职责
 1. 承接总管派发的分析类任务

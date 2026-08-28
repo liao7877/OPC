@@ -40,7 +40,7 @@ T001…/notices.md         决定归属       改模板后跑一次生成器即�
 workbench/tasks/…/task.md ←工单数据
 ```
 
-- 生成器：`workbench/generate_tasks.py`（工单，留在 workbench）+ `generate_dashboard.py`（三级切片+交叉核验，公司根），均带 `--selftest`。
+- 生成器（2026-08-28 机制上提 OPC 根）：`opc_tickets.py`（工单）+ `opc_dashboards.py`（三级切片+交叉核验），公司内经 `run_boards` 薄壳调用，均带 `--selftest`。
 - **交叉核验（自动告警，出现在公司级"风险"模块和本人 mydesk）**：工单型 worklog 缺 ticket、引用不存在工单、在途工单没记 worklog、worklog 已完成但工单没关单等双账不一致。
 - 统计口径：完成率 = 已完成/全部有效条目（累计）；在途 = 计划中+进行中；进行中超 14 天未更新进"停滞预警"。
 

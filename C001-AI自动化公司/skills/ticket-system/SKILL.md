@@ -30,11 +30,11 @@ description: 公司工单系统自解释技能。触发词：建工单、创建�
    - **号池自助取号（用户直派时，入口 B）**：用户直接让你建单时，打开 `opc://company:C001/workbench/task-index.md` 找「预留号池」段（总管维护的 reserved 号段），**重读 → 取最靠前的未占用号 → 立即在台账把该号标记为「已占用(你的工单标题)」→ 保存**，然后建单。整个动作一气呵成（防并发撞号：先占号后建单，台账写完才算占到）。号池空了 → 回复用户"请总管补充号池"，不自造编号。
 2. **推荐方式（一条命令生成规范模板）**：
    ```
-   python ../../../companies/C001/workbench/generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]
+   python ../../../opc_tickets.py --company C001 --new TSKxxx 标题 [--owner E0001] [--project P0001]
    ```
    会自动创建 `opc://company:C001/workbench/tasks/TSKxxx-标题/task.md` 模板（frontmatter 已填好）。
 3. **手动方式**：建目录 + 写 task.md（模板见 §9）。
-4. 填好 `owner`/`project`/`priority`/`due` 等字段后，运行 `python ../../../companies/C001/workbench/generate_tasks.py` 让它上板（若挂了 `--watch` 则自动，无需手动）。
+4. 填好 `owner`/`project`/`priority`/`due` 等字段后，运行 `python ../../../opc_tickets.py --company C001` 让它上板（若挂了 `--watch` 则自动，无需手动）。
 
 ## 1.5 认领（接到工单时的固定动作）
 
@@ -49,6 +49,22 @@ description: 公司工单系统自解释技能。触发词：建工单、创建�
 **拉通道分级自主权**（发现漏接单后）：
 - `priority: 高` 的工单 → **自动开工**：认领后直接推进（改 in_progress 并执行）；
 - `priority: 中/低` → 只补认领（worklog「计划中」+ 回执），等总管或用户指令再动工。
+
+## 1.55 用户直派取号（入口 B 自助建单——并发安全协议）
+
+用户直接派活给你、但还没有工单号时，**自助取号**流程（先占台账后建单，防撞号）：
+
+1. **领号（原子操作，三步一气呵成）**：
+   a. 读 `workbench/task-index.md` 的「预留号池」段，取第一个未勾选的编号；
+   b. 立即把该行 `- [ ] TSKxxxxx` 改为 `- [x] TSKxxxxx（<你的E号> <日期> 已领）`；
+   c. **写完并保存才算占到号**——用临时文件+原子替换（禁盲追加），改前重读一遍最新版，发现你要的号刚被人勾走就换下一个。
+2. **建单**：`python <OPC根>/opc_tickets.py --company <本司ID> --new <领到的号> "<标题>" --owner <你的E号>`，task.md 备注写 `来源: 用户直派`；
+3. **登记**：在台账「工单登记」表追加一行（ID/标题/承接/来源="用户直派"/创建时间）；
+4. **认领**：按 §1.5 建 worklog 条目；
+5. **上报备案**：向总管 messages 或巡检可见处留一行（`入口B建单 TSKxxxxx`）——总管巡检核对号池取用与实际工单对齐（取号未建 = 领号未动工，会跟进）。
+
+> **边界**：没有号池余量时**不要自造编号**——向总管要号（升级通道），总管补号段后你再取。
+> **多会话并发**：同时只有一个会话允许在写台账（见 concurrent-work 工位卡；台账写权 = 唯一在岗的会话）。
 
 ## 1.6 前置阻塞（blocked_by）
 
@@ -79,6 +95,19 @@ blocked_by: [TSK00007, TSK00009]   # 单行；前置工单全部 done 前，本�
 
 **纪律**：升级不滥用——能自查/selftest 解决的不升；升级前先把上下文写清楚（总管不在你的会话里，看不到过程，messages 就是他的眼睛）。
 
+## 1.66 超时升级（升级没人管怎么办）
+
+升级/阻塞不是无限等待——**超时自动升层**，避免工单无声卡死：
+
+| 停留层 | 超时 | 自动动作 |
+|---|---|---|
+| 等 lead | 2 个工作日 | 越过 lead 直接升级总管（messages 记录"超时升级"） |
+| 等总管 | 3 个工作日 | 工单标 `paused` + escalate 注明「等待用户拍板」，看板黄条对用户可见 |
+| 等用户 | 无限 | **唯一合法的无限等待**：决策权在用户，看板持续展示，总管每会话汇报时必提 |
+
+- 超时判定以 messages.md 最后一条记录的日期为准（patrol 心跳 #5 会提醒总管处理升级，#2 提醒认领缺口）；
+- 你不需要发明新规则：到点就按上表动作，把等待变成显式的、可见的、有主的。
+
 ## 1.7 父单与子单（需求闭环）
 
 一个需求拆成多个工单时，总管先建**父单**（`type: 需求`，owner=总管，正文存 PRD/总验收标准），各子单 frontmatter 加一行 `parent: TSKxxx`。
@@ -106,13 +135,22 @@ handoffs: [{"from":"E0002","to":"E0003","at":"2026-08-27","reason":"开发完成
 - **铁律**：最后一条 `handoffs.to` 必须等于当前 `owner`；**换人不改状态**（状态由当前负责人自行推进）。
 - 交接原因写清楚，这是审计轨迹（看板详情会渲染「流转轨迹」时间轴）。
 
+## 3.5 员工离职/长休 → 在途工单转移协议
+
+roster 状态改为 `离职/休假` 时，其名下非终态工单**不允许悬空**：
+
+1. **休假**：工单可保持现状（owner 不变），但须挂 `paused` + messages 注明预计返回日期；
+2. **离职**：总管牵头在 1 个工作日内完成转移——每张非终态工单按 §3 流转（改 owner + handoffs 追加 `reason: "离职转移"`），下游依赖（blocked_by 指向这些单的）逐个知会；
+3. **接管人认领**：新 owner 按 §1.5 认领，messages 补看交接要点（现状/卡点/下一步）；
+4. **总管巡检兜底**：patrol #2 的认领缺口检查会抓住任何漏转移的工单。
+
 ## 4. 输入物（开工需要的外部材料）
 
 ```yaml
 inputs: [{"name":"PRD 需求规格","path":"tasks/TSK00001-xxx/deliverables/PRD.md"}]
 ```
 
-- **引用不复制**（避免两份真相漂移）；路径相对 `workbench/`：项目文件写 `opc://company:C001/project/P0001/x.md`，上游工单交付物写 `tasks/TSKxxx-…/deliverables/…`。
+- **引用不复制**（避免两份真相漂移）；路径相对 `workbench/`：项目文件写 `opc://company:C001/project/<PID>/<文件>`，上游工单交付物写 `tasks/TSKxxx-…/deliverables/…`。
 - **上一手的交付物就是下一手的输入物**——流转时把上游交付物列为你的输入。
 - 路径失效 → 生成器告警 + 看板详情标「⚠️ 路径失效」，及时修。
 
@@ -152,14 +190,14 @@ completed_at: 2026-08-27
 
 ## 7. 红线（不要做）
 
-1. **不要改看板/生成器文件**：`workbench/kanban.html`、`generate_tasks.py`、`KANBAN_*` 是廖哥与前端/后端 Agent 的领地，你只维护 `workbench/tasks/` 下的工单文件。
+1. **不要改看板/生成器文件**：`workbench/kanban.html`、OPC 根的 `opc_tickets.py`/`opc_dashboards.py`、`KANBAN_*` 是廖哥与前端/后端 Agent 的领地，你只维护 `workbench/tasks/` 下的工单文件。
 2. **不要复制输入物进工单**（保持引用）。
 3. **不要自造编号 / 非规范目录**（`TSKxxx-` 前缀 + 模板字段）。
 4. **不要删 messages.md 历史**（追加式，历史即审计）。
 
 ## 8. 自检（收工前）
 
-- 改完文件后：`python ../../../companies/C001/workbench/generate_tasks.py --selftest`（生成器自检 11 项，全过退出码 0）。
+- 改完文件后：`python ../../../opc_tickets.py --selftest`（生成器自检，全过退出码 0）。
 - 确认上板：打开 `workbench/kanban.html` 看卡片是否出现/变化（或地址栏加 `?selftest=1` 跑前端自测）。
 
 ## 9. task.md 完整模板
@@ -192,7 +230,7 @@ blocked_by: []            ← 有前置工单才填：[TSK00007, TSK00009]（单
 
 1. **建单**（编号先找总管分配，确认后执行）：
    ```
-   python ../../../companies/C001/workbench/generate_tasks.py --new TSK00010 搭建日志系统 --owner E0001 --project P0001
+   python ../../../opc_tickets.py --company C001 --new TSK00010 搭建日志系统 --owner E0001 --project P0001
    ```
 2. **开工**：打开 `opc://company:C001/workbench/tasks/TSK00010-搭建日志系统/task.md`，把 `status` 改成 `in_progress`、`priority: 高`、填 `due: 2026-08-30`，顺手更新 `updated`。
 3. **干完**：交付物放 `deliverables/`，在 `messages.md` **追加**完成备注，`status: review`（交总管/下一手审核）。
@@ -202,7 +240,7 @@ blocked_by: []            ← 有前置工单才填：[TSK00007, TSK00009]（单
    ```
    > 铁律：最后一条 `handoffs.to` 必须等于新 `owner`；**换人不改状态**。
 5. **完成**（E0002 做完）：`status: done` + `completed_at: 2026-08-29`（必填，否则告警）。
-6. **自检**：`python ../../../companies/C001/workbench/generate_tasks.py --selftest`，全过即收工。
+6. **自检**：`python ../../../opc_tickets.py --selftest`，全过即收工。
 
 > 每一步改完文件，看板 ≤3 秒自动更新；你全程只动 `opc://company:C001/workbench/tasks/TSK00010-…/` 下的文件，不碰看板/生成器。
 
