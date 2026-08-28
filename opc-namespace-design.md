@@ -96,7 +96,7 @@ opc://<scope>/<type>/<id>/<sub>
 - `resolve(uri)` → `opc://...` 解析为绝对路径；实体与子路径逐级校验存在性（`opc://company:C001/skill/<名>/SKILL.md` 直达文件）；实体类型与编号前缀强校验（team↔T、project↔P、employee↔E）；解析失败一律抛错。
 - `check_links(cid)` → ① manifest key 物理存在 + ② 全文 opc:// 引用可解析 + ③ 结构审计（company.md 锚点缺失/ID 无效/与 opc.toml 不符）；任一失效报 issue 列表。
 - `audit_structure()` → 结构审计（见上 ③）；可单独调用，亦被 `check_links` 内含。
-- `sync_links()` → **稳定锚同步中枢**：对每个公司，按 `home`（优先）或 `company.md` 的「公司 ID」扫描发现真实位置，把 `companies/<cid>` 重指过去。零参数、零手动输入。**手动脚本与未来 watcher 都只调它**（DIP：业务智能单一来源）。
+- `ensure_links()` → **OS 级链接同步中枢**（2026-08-28 Q3 拍板，`sync_links` 收敛为其别名）：①按 `home`（优先）或 `company.md` 的「公司 ID」扫描发现真实位置，把 `companies/<cid>` 重指过去；②按 manifest `[platform.*]` 配置重建各层技能披露链接（层自动发现，新员工/团队自动覆盖）。零参数、零手动输入、幂等。**手动脚本与未来 watcher 都只调它**（DIP：业务智能单一来源）。
 
 `CompanyConfig` 即**依赖倒置容器**：高层只依赖 `opc://` 符号，物理路径细节在此注入。
 
@@ -117,7 +117,7 @@ python opc_tickets.py --company C001       # 生成工单看板数据（--dir <�
 python opc_dashboards.py --company C001    # 生成三级看板数据（--watch 监听 / --verify 校验）
 ```
 
-**🚦 init 自检门禁（`--doctor`，2026-08-28 新增）**：任何 agent 开工前必须跑 `python opc_resolver.py --doctor`，检查四项——①Python ≥3.11（`tomllib` 依赖）②稳定锚 `companies/<cid>` 存在且指向真实目录 ③pre-commit 门禁已装 ④`--check` 命名空间扫描自洽。全绿（输出「初始化自检通过」）才允许进入业务；不绿按 README「系统初始化」补齐（建锚 / 装钩子 / 修失效引用）。此步相当于函数 `init()`：前置条件不满足不许开工。详见 README「系统初始化」。
+**🚦 init 自检门禁（`--doctor`，2026-08-28 新增）**：任何 agent 开工前必须跑 `python opc_resolver.py --doctor`，检查五项——①Python ≥3.11（`tomllib` 依赖）②稳定锚 `companies/<cid>` 存在且指向真实目录 ③pre-commit 门禁已装 ④`--check` 命名空间扫描自洽 ⑤技能披露链接完整（`check_disclosure_links`，缺失/断链 error 阻断，根治「门禁假绿」）。全绿（输出「初始化自检通过」）才允许进入业务；不绿按 README「系统初始化」补齐（建锚 / 装钩子 / 修失效引用）。此步相当于函数 `init()`：前置条件不满足不许开工。详见 README「系统初始化」。
 
 **跨平台**：`opc_resolver.py` 仅标准库（`os/re/sys/tomllib/subprocess`），无 Windows 专属 import；Windows 跑 `scripts/link-company.ps1`、macOS/Linux 跑 `scripts/link-company.sh`，二者都只是调 `opc_resolver.py --sync-links`。`companies/` 锚目录已 gitignore，clone 后首次跑 link-company 即重建。⚠️ 稳定锚 Windows 用 junction（`mklink /J`）、macOS/Linux 用 symlink（`os.symlink`），二者对浏览器/OS 透明；Windows 侧已实跑，macOS/Linux 的 `os.symlink` 分支逻辑正确但**未在真机实测**。
 
@@ -188,7 +188,7 @@ def anchor_prefix(base_dir, subdir):
 
 用户要求：系统要正常跑的前置工作必须固化成「开工前必过的门禁」，相当于函数 `init()`——前置不满足不许进入业务。落地：
 
-- `opc_resolver.py` 新增 `--doctor`：检查 Python≥3.11 / 稳定锚 `companies/<cid>` / pre-commit 钩子 / 命名空间扫描四项，全绿才放行（exit 0），有缺失 exit 1 并打印补齐指引。
+- `opc_resolver.py` 新增 `--doctor`：检查 Python≥3.11 / 稳定锚 / pre-commit 钩子 / 命名空间扫描 / 技能披露链接五项，全绿才放行（exit 0），有缺失 exit 1 并打印补齐指引。
 - **治理文件全部写入该门禁**（波及面四处同步）：
   - 总管 `E0000-AI员工-总管/AGENTS.md` 启动流程**第 0 步** = 环境 init 自检（C001 实例 + company-template 模板均改）。
   - 新建 **OPC 根 `AGENTS.md`**（组织级治理入口）：规定任何在 OPC 根工作的 agent 开工前必跑 `--doctor`。
@@ -208,7 +208,9 @@ def anchor_prefix(base_dir, subdir):
 | F | 公司层自愈：`load_company` 加 `_discover_company_home` 扫描发现兜底，手动改公司目录名忘了改 manifest 也能自动定位 | ✅ 已做 |
 | G | Z 稳定锚：`companies/<cid>` junction + `sync_links()` + `scripts/link-company.*` + `watch-companies.py`（按 ID 扫描发现，零参数重指） | ✅ 已实现（待 shell 恢复实跑验证） |
 | H | 锚点审计：`audit_structure` 把 company.md 维护职责下沉到工具门禁（`--check` / pre-commit 自动覆盖漂移）；`.gitignore` 排除 `companies/` | ✅ 已做 |
-| I | init 门禁：`opc_resolver.py --doctor` 开工前自检（Python/锚/钩子/命名空间四项）；README「系统初始化」+ 总管/OPC根/模板 AGENTS 写入启动门禁，clone 后必做清单固化 | ✅ 已做 |
+| I | init 门禁：`opc_resolver.py --doctor` 开工前自检（Python/锚/钩子/命名空间/披露链接五项）；README「系统初始化」+ 总管/OPC根/模板 AGENTS 写入启动门禁，clone 后必做清单固化 | ✅ 已做 |
+| J | ensure_links：技能披露 junction 纳入 resolver 托管 + doctor 第 5 项（`[platform.*]` 配置化，负例实测阻断/重建） | ✅ 已做（2026-08-28） |
+| K | `--diff-template` 实例↔模板双向 diff（忽略换行/占位符）+ `opc_model --list-skills/--sync-index`（INDEX.md 转生成物） | ✅ 已做（2026-08-28） |
 
 ---
 

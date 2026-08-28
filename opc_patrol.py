@@ -451,6 +451,8 @@ def main(argv):
     if not ctx.findings:
         if not quiet:
             print(f"[patrol] {ctx.today} 巡检完成：无异常 ✓")
+        # 无发现也要刷新待办快照：state 里残留的 open 项（等处置）保持可见，处置完即收敛
+        write_pending(ctx, load_state(ctx))
         return 0
     written = write_log(ctx, dry)
     print(f"[patrol] {ctx.today} 巡检发现 {len(ctx.findings)} 项待办：")
