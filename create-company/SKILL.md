@@ -20,26 +20,34 @@ description: 在 OPC 组织根下快速创建新 AI 公司实例。触发词：�
 ## 二、建司流程
 
 1. **复制母本**：整个 `company-template/` 复制为 `C00x-<名称>/`（含 .workbuddy 结构；junction 复制后会退化为实体目录，下一步重建）。**CHANGELOG.md 留在模板目录不复制**（它是模板自身的演进记录，各公司在 `company.md` 记「机制基线」版本号对照即可）；
-2. **重建 junction**（关键，母版里是绝对路径指向模板自身）：
+2. **重建 junction**（关键，母版里是绝对路径指向模板自身；跨平台二选一）：
    ```powershell
+   # Windows（junction，普通用户可建）：
    New-Item -ItemType Junction -Path "C00x-<名称>\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\skills"
    New-Item -ItemType Junction -Path "C00x-<名称>\E0000-AI员工-总管\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\E0000-AI员工-总管\skills"
+   ```
+   ```bash
+   # macOS / Linux（symlink，注意用绝对路径）：
+   ln -sfn "<绝对路径>/C00x-<名称>/skills" "C00x-<名称>/.workbuddy/skills"
+   ln -sfn "<绝对路径>/C00x-<名称>/E0000-AI员工-总管/skills" "C00x-<名称>/E0000-AI员工-总管/.workbuddy/skills"
    ```
 3. **改名落位**：总管目录若带【替换】占位符则按模板规范替换；company.md 的三处 `<本司ID>` 占位符（公司 ID / 目录结构说明书路径 / 目录树）全部替换为新 ID，并填公司名/业务域——**漏改会导致与新公司并列出现重复 ID**（`--check` 门禁会拦）；
 4. **首跑验证**（机制代码在 OPC 根，公司目录无生成器）：
    ```
+   python opc_resolver.py --sync-links     # 建稳定锚 companies/C00x（先建锚再自检）
+   python opc_resolver.py --doctor         # init 自检门禁，全绿才进业务
    python opc_tickets.py --company C00x --selftest
    python opc_tickets.py --company C00x --check-structure
    python opc_tickets.py --company C00x && python opc_dashboards.py --company C00x
    ```
-   （在 OPC 根执行）三项全过 = 骨架可用；
+   （在 OPC 根执行；Windows 用 `python`，macOS/Linux 用 `python3`）全过 = 骨架可用；
 5. **000 号总管入职**（见 §三）。
 
 ## 三、000 号总管入职动作（首次会话）
 
 1. 读 `AGENTS.md`（我是总管）→ 读 `roster.md`（此刻只有我自己）→ 读 `目录结构说明书.md`（认清领地）；
 2. 确认 junction 四件套有效（公司级 + 总管级）；
-3. 跑一次 `run_boards.bat once`（数据链路打通）；
+3. 跑一次 `run_boards once`（Windows 用 `run_boards.bat once`，macOS/Linux/Git-Bash 用 `./run_boards.sh once`，数据链路打通）；
 4. 向用户报到：汇报公司骨架就绪 + 请用户给第一个需求/或先搭团队；
 5. 后续团队/员工/项目全部按 `skills/dispatch-sop/SKILL.md`（新建员工 SOP、规章制度落实 SOP）+ `skills/mechanism-sop/SKILL.md`（落位决策树）推进，把公司运转起来。
 
@@ -47,11 +55,12 @@ description: 在 OPC 组织根下快速创建新 AI 公司实例。触发词：�
 
 > 机制：物理路径唯一真相源下沉到 `opc.toml`（OPC 根）。新建公司必须落地，否则后续改名 / 巡检无据可依。
 
-1. **写公司段**：在 `opc.toml` 追加（继承 DEFAULT 骨架，仅写偏离字段）：
+1. **写公司段**：在 `opc.toml` 追加（继承 DEFAULT 骨架，仅写偏离字段）。**home 必须指向稳定锚，禁止直写真实目录名**（`opc-namespace-design.md` §2 铁律——直写目录名会让公司失去改名自愈保护）：
    ```toml
    [company.C00x]
-   home = "C00x-<名称>"
+   home = "companies/C00x"
    ```
+   写完回 OPC 根跑一次 `scripts/link-company.ps1`（Windows）或 `scripts/link-company.sh`（macOS/Linux）建稳定锚（零参数，按 company.md 的公司 ID 自动发现真实目录）。
 2. **引用用符号**：公司内 `AGENTS.md` / `SKILL.md` / 看板模板一律用 `opc://company:C00x/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；
 3. **首跑验证补一项**（接 §二.4）：建司三步跑完后，回到 OPC 根跑 `python opc_resolver.py --check`（链接器自检），全绿 = 命名空间自洽；
 4. **总管入职补一项**（接 §三.1）：读 `opc-namespace-design.md` 认清机制——改名只动 `opc.toml` 一行、引用走 `opc://`、定期 `opc check-links` 巡检失效引用。
