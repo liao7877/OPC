@@ -106,11 +106,13 @@ opc://<scope>/<type>/<id>/<sub>
 
 ```bash
 cd OPC根
-python opc_resolver.py --doctor           # 🚦 init 自检门禁：开工前先跑，全绿才进业务
+python opc_resolver.py --doctor           # 🚦 init 自检门禁：开工前先跑，全绿才进业务（5 项：Python/锚/钩子/命名空间/技能披露链接）
 python opc_resolver.py --check            # 全文扫描 opc:// 引用，全绿=自洽
 python opc_resolver.py --selftest         # resolver 内置回归测试
 python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对路径
-python opc_resolver.py --sync-links        # 重指 companies/<cid> 到真实目录（零参数）
+python opc_resolver.py --ensure-links      # 同步全部 OS 级链接（稳定锚 + 各层技能披露；幂等，clone/改名/换机后跑一次）
+python opc_resolver.py --diff-template     # 实例公司 ↔ company-template 双向 diff（忽略换行符与 <CID> 占位符）
+python opc_model.py --sync-index           # 重生成各层 skills/INDEX.md（生成物；--list-skills 实时查看）
 python opc_tickets.py --company C001       # 生成工单看板数据（--dir <公司根> 亦可）
 python opc_dashboards.py --company C001    # 生成三级看板数据（--watch 监听 / --verify 校验）
 ```
