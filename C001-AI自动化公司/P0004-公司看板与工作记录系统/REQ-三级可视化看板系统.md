@@ -13,7 +13,7 @@
 |---|---|---|
 | D1 | 与 v1 的关系 | **扩展不推翻**：v1 的公司级驾驶舱 + 个人工作台 + worklog 机制全部保留；新增团队级；页面落位方案按本文档执行（覆盖 v1 §4/§6 中集中式布局的描述） |
 | D2 | 数据源策略 | 三级看板**各有自有数据源**，与工单系统**联动但不是其翻版**。工单看板仅作为视觉风格与静态生成技术方案的参考 |
-| D3 | 页面落位 | 三级目录各放各的 HTML，本地双击即开：公司级 `../../companies/C001/dashboard.html`、团队级 `T001/teamboard.html`、个人级 `E000x-AI员工-岗位/mydesk.html`（工具随看板走：生成器/模板/入口脚本在公司根，workbench/ 只归工单系统） |
+| D3 | 页面落位 | 三级目录各放各的 HTML，本地双击即开：公司级 `../../companies/C001/dashboard.html`、团队级 `T001-AI开发团队/teamboard.html`、个人级 `E000x-AI员工-岗位/mydesk.html`（工具随看板走：生成器/模板/入口脚本在公司根，workbench/ 只归工单系统） |
 | D4 | 项目归属 | `project.md` frontmatter 新增 `team: T001` 字段（可多值），引用制，与组织架构风格一致 |
 | D5 | 团队级内容 | 基础三件套（成员卡墙+团队统计+项目视图）+ 团队动态流 + 公告周报区 + 团队资产索引 |
 | D6 | 工单联动 | 全选三项：①各级跳转入口 ②个人台嵌入"我的在途工单" ③公司/团队级的"项目维度工单统计" |
@@ -41,7 +41,7 @@
 
 顶部放"工单协作视图"入口按钮 → 打开 `kanban.html`（联动①）。右侧沿用暗亮双主题切换（默认暗，localStorage 记忆）。
 
-### 3.2 团队级·团队视图（`T001/teamboard.html`）
+### 3.2 团队级·团队视图（`T001-AI开发团队/teamboard.html`）
 
 | # | 模块 | 内容 | 数据源 |
 |---|---|---|---|
@@ -50,7 +50,7 @@
 | T3 | 项目视图 | 归属本队的项目卡（读 project.md `team` 字段反查）+ 项目维度工单统计（联动③） | company 根 `project.md` 扫描 + `tasks-data.json` |
 | T4 | 团队动态流 | 仅本队成员的 worklog 时间线 | 成员切片聚合 |
 | T5 | 公告与周报 | 团队公告栏 + 周报汇总；内容由总管/项目经理维护 `team.md` 或专门文件（§四 F2 定义契约） | `team.md` 及团队目录约定文件 |
-| T6 | 资产索引 | 团队 skills/文档索引展示（现有 team-dev-standards 等） | `T001/skills/` 目录扫描 |
+| T6 | 资产索引 | 团队 skills/文档索引展示（现有 team-dev-standards 等） | `T001-AI开发团队/skills/` 目录扫描 |
 
 ### 3.3 个人级·个人工作台（`E000x-AI员工-岗位/mydesk.html`，每员工一份，员工目录根）
 
@@ -82,7 +82,7 @@
 
 ### 4.3 新增：团队公告文件（T5 数据源）
 
-- 位置：`T001/notices.md`（由总管/项目经理维护）。
+- 位置：`T001-AI开发团队/notices.md`（由总管/项目经理维护）。
 - 命名说明：有意避开 `board.md`——E0000 下存在正在退役的老 `board.md`（工单看板遗物），同名不同物必生混淆。
 - 格式：frontmatter 块式公告 `{title, date, author}` + 正文；具体字段随 TSK 实现细化，遵循"轻量解析、坏块跳过告警"的家规。
 
@@ -108,7 +108,7 @@
 1. **单一生成器，一次扫描，分头产出**：递归扫描 company 根所有实体（roster / E*/worklog.md / T*/team.md+notices.md / P*/project.md）+ 复用工单产物 `tasks-data.json`（联动②③的数据来源，**不再重复解析 tasks/**，避免两套解析逻辑漂移；生成器检测 tasks-data.json 过期时告警提示先跑 generate_tasks.py）。
 2. **产出的数据文件**：
    - `../../companies/C001/dashboard-data.js` → `window.DASHBOARD_DATA`（全量；dashboard.html 同在公司根）
-   - `T001/teamboard-data.js` → `window.TEAMBOARD_DATA`（该公司下所有团队的切片包，前端按参数取用；单团队目录固定取自身 tid）
+   - `T001-AI开发团队/teamboard-data.js` → `window.TEAMBOARD_DATA`（该公司下所有团队的切片包，前端按参数取用；单团队目录固定取自身 tid）
    - 每个 `E000x…/mydesk-data.js` → `window.MYDESK_DATA`（单人数据 + 其工单切片；mydesk.html 在员工目录根）
 3. **同步机制**：沿用 `--watch` 轮询 ≤3 秒重跑；页面轮询 data.js 自动刷新。**提供统一入口**（如一个脚本顺序拉起 generate_tasks 与 generate_dashboard 两个 watcher，避免两个常驻进程各自维护）。
 4. **交叉核验（A2 拍板）**：worklog `type:工单` 条目与 tasks-data.json 逐条核对——①ticket 引用不存在 → ⚠️；②员工名下存在非终态工单但其 worklog 无对应进行中条目、或反之有"进行中"工单型条目但对应工单已 done/ cancelled → ⚠️ 提示双账不同步；核验只告警不阻断、不改数。
@@ -148,7 +148,7 @@
 5. **团队 teamboard.html**（T1~T6）；
 6. **保活第②层**（原 TSK00020）：统一入口脚本 `run_boards.bat` + Windows 计划任务注册说明；总管 SOP 加"开工先跑生成器"兜底（③层）。
 
-> 实施完成后的使用与维护说明统一写入 `P0004/README.md`。
+> 实施完成后的使用与维护说明统一写入 `P0004-公司看板与工作记录系统/README.md`。
 
 ### 维护约定（第三轮补充）
 

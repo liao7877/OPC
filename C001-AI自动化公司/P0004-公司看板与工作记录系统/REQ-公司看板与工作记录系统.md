@@ -105,7 +105,7 @@ updated: 2026-08-27
 | 用途 | 路径 | 维护方 |
 |---|---|---|
 | 员工工作数据（真相） | `E00x-岗位/workspace/worklog.md` | 各员工自维护 |
-| 员工身份（岗位/在职） | `E0000/roster.md` | 总管 |
+| 员工身份（岗位/在职） | `E0000-AI员工-总管/roster.md` | 总管 |
 | 三级看板生成器（v2） | `../../companies/C001/generate_dashboard.py`（公司根，工具随看板走） | 开发 |
 | 数据产物（离线可读） | `../../companies/C001/dashboard-data.js` + 各实体目录切片（见 v2 §5） | 生成器产出 |
 | 看板 | 公司级 `../../companies/C001/dashboard.html`；团队级 `T*/teamboard.html`；个人级 `E*/mydesk.html` | 开发 |

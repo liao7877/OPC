@@ -80,7 +80,7 @@ New-Item -ItemType Junction -Path "{层级}\.workbuddy\skills" -Target "{层级}
 
 **平台渐进式披露是"工作区级"**：平台只扫**当前会话工作区**的 `.workbuddy/skills`（+ 用户级 `~/.workbuddy/skills`），与"这个 Agent 逻辑上代表谁"无关。
 
-**子 Agent（派活/调用）默认继承父会话工作区**：总管在 `E0000/` 工作区开子 Agent 派活给 E0001 → 子 Agent 扫的是 `E0000/.workbuddy/skills`（总管级），**不会自动切到 E0001 目录披露 E0001 私有技能**。
+**子 Agent（派活/调用）默认继承父会话工作区**：总管在 `E0000-AI员工-总管/` 工作区开子 Agent 派活给 E0001 → 子 Agent 扫的是 `E0000-AI员工-总管/.workbuddy/skills`（总管级），**不会自动切到 E0001-售前工程师 目录披露 E0001 私有技能**。
 
 两条正确通道：
 

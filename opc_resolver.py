@@ -96,7 +96,21 @@ class CompanyConfig:
 
     @property
     def roster_abs(self):
-        return self._abs("roster")
+        p = self._abs("roster")
+        if os.path.exists(p):
+            return p
+        # 自愈兜底（决策 #17）：manifest 的 roster 键写死总管物理目录名，总管目录
+        # 被改名/迁移后失效——按总管 ID（{员工前缀}0000）前缀扫描现场发现。
+        # 实体逻辑锚（ID 前缀扫描）同样兜住机制自身的最后一条物理路径依赖。
+        reg = entity_types(self.root)
+        epre = reg.get("employee", "E")
+        home = self.home_abs
+        if os.path.isdir(home):
+            for e in sorted(os.listdir(home)):
+                if re.match(rf"^{epre}0{{4,}}(?:-|$)", e) \
+                        and os.path.isfile(os.path.join(home, e, "roster.md")):
+                    return os.path.join(home, e, "roster.md")
+        return p   # 自愈无果：返回原路径，让门禁按失效引用报出
 
     @property
     def roster_rel(self):
@@ -495,7 +509,7 @@ def scan_stale_dir_refs(root=None):
     if not live:
         return []
     prefixes = "".join(sorted(set(entity_types(root).values()) | {"C"}))
-    pat = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}+")
+    pat = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
     issues = []
     skip_dirs = {".git", "node_modules", ".workbuddy", "companies",
                  "company-template", "scripts", ".zcode"}
@@ -507,6 +521,9 @@ def scan_stale_dir_refs(root=None):
             if not fn.lower().endswith(exts):
                 continue
             fp = os.path.join(dirpath, fn)
+            rel = os.path.relpath(fp, root)
+            if _heal_excluded(rel):
+                continue   # 历史留痕区（worklog/memory/archive）豁免：旧名是历史事实，不进门禁
             for i, line in _iter_prose_lines(fp):
                 for m in pat.finditer(line):
                     name = m.group(0)
@@ -514,10 +531,252 @@ def scan_stale_dir_refs(root=None):
                         continue
                     seen.add(name)
                     issues.append(
-                        f"散文裸路径失效：{name} @ {os.path.relpath(fp, root)}:{i}"
-                        f"（不匹配任何现存目录名；实体显示名已与目录解耦，"
-                        f"请改用 ID（如 E0001）或 opc:// 符号）")
+                        f"散文裸路径失效：{name} @ {rel}:{i}"
+                        f"（不匹配任何现存目录名；若是刚改名，跑 `python opc_resolver.py "
+                        f"--heal-entity-refs` 一键改写全文旧名）")
     return issues
+
+
+# ---------------------------------------------------------------------------
+# 实体改名与自愈（决策 #17，2026-08-29 修订）：保留自解释目录名（{ID}-{说明}），
+# 「改名零改动」由两半构成——
+#   引用半边 = 实体 ID 逻辑锚（前缀扫描发现）：opc:// 引用、看板生成、实体卡发现
+#             在物理目录改名后天然透明，零动作自愈；
+#   机械半边 = 本模块：OS 链接重建 / roster 登记列同步 / 看板数据重生成 / 散文旧名
+#             按 ID 映射改写（--rename-entity 一条龙；手动改名后跑 --heal-entity-refs）。
+# 历史留痕区（worklog / memory / archive）只报不改——旧名是历史事实，「只增不删」。
+# ---------------------------------------------------------------------------
+
+_HEAL_PROTECT_DIRS = {"memory", "archive"}          # 历史留痕区目录名（目录树任一层命中即排除）
+_HEAL_PROTECT_FILES = {"worklog.md"}                # 历史留痕文件名
+_HEAL_SKIP_DIRS = {".git", ".workbuddy", "node_modules", "companies",
+                   ".zcode", "company-template"}    # 非组织文档/受管锚/模板母版
+_HEAL_SKIP_EXT_GENERATED = ("-data.js", "tasks-data.json")
+_DIRNAME_CHARS = r"[A-Za-z0-9_\u4e00-\u9fff\-]"     # 与散文扫描同口径
+
+
+def _all_entity_dir_names(root):
+    """全部公司 {实体ID: 现存目录名}（跨公司同 ID 需唯一才可自动改写）。"""
+    out = {}
+    prefixes = sorted(set(entity_types(root).values()))
+    for cid in all_company_ids(root):
+        try:
+            home = load_company(cid).home_abs
+        except Exception:
+            continue
+        if not os.path.isdir(home):
+            continue
+        for e in sorted(os.listdir(home)):
+            m = re.match(rf"^({'|'.join(prefixes)})(\d{{3,}})(?:-|$)", e)
+            if m and os.path.isdir(os.path.join(home, e)):
+                out.setdefault(m.group(1) + m.group(2), set()).add(e)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _heal_excluded(path_rel):
+    parts = path_rel.replace("\\", "/").split("/")
+    if any(p in _HEAL_PROTECT_DIRS for p in parts):
+        return True
+    if os.path.basename(path_rel) in _HEAL_PROTECT_FILES:
+        return True
+    if any(p.startswith("workspace") and p.endswith("worklog.md") for p in parts):
+        return True
+    return False
+
+
+def rewrite_stale_entity_names(root=None, dry_run=False):
+    """散文旧名自愈：正文中已不存在的实体目录名，按 ID 前缀映射到现存目录名后改写。
+    现存目录名受保护（先占位后还原），不会误改前缀重叠的活名；.py 的 selftest
+    夹具区跳过（与散文扫描同口径，夹具假名是测试数据）。
+    返回 (done:[(file, old, new)], skipped:[(file, old, reason)], unmapped:[old])。
+    unmapped = 无同 ID 现存目录的旧名（多半是假设性示例/历史残留），留门禁报人工处置。"""
+    root = root or _find_root()
+    if root is None:
+        return [], [], []
+    live_by_id = _all_entity_dir_names(root)
+    live_names = {n for v in live_by_id.values() for n in v}
+    prefixes = "".join(sorted(set(entity_types(root).values())))
+    stale_re = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
+    id_re = re.compile(r"^([A-Z])\d{3,}")
+    exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
+    file_records = []   # (fp, rel, lines, scanned)
+    all_stale = set()
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _HEAL_SKIP_DIRS]
+        for fn in files:
+            if not fn.lower().endswith(exts) or fn.endswith(_HEAL_SKIP_EXT_GENERATED):
+                continue
+            fp = os.path.join(dirpath, fn)
+            rel = os.path.relpath(fp, root)
+            try:
+                text = _read_file(fp)
+            except Exception:
+                continue
+            if not text:
+                continue
+            lines = text.splitlines(keepends=True)
+            scanned = {i: ln for i, ln in _iter_prose_lines(fp) if i <= len(lines)}
+            hits = set()
+            for ln in scanned.values():
+                hits.update(m.group(0) for m in stale_re.finditer(ln))
+            hits = {h for h in hits if h not in live_names}
+            if hits:
+                file_records.append((fp, rel, lines, scanned))
+                all_stale |= hits
+    mapping, unmapped = {}, []
+    for old in sorted(all_stale, key=len, reverse=True):
+        m = id_re.match(old)
+        cands = live_by_id.get(m.group(0), []) if m else []
+        if len(cands) == 1 and cands[0] != old:
+            mapping[old] = cands[0]
+        else:
+            unmapped.append(old)
+    done, skipped = [], []
+    prot_names = sorted(live_names, key=len, reverse=True)
+    tokens = {n: f"\x00{i}\x00" for i, n in enumerate(prot_names)}
+    for fp, rel, lines, scanned in file_records:
+        changed = False
+        for i, ln in scanned.items():
+            new_ln = ln
+            for name in prot_names:
+                if name in new_ln:
+                    new_ln = new_ln.replace(name, tokens[name])
+            for old, new in mapping.items():
+                if old in new_ln:
+                    new_ln = new_ln.replace(old, new)
+                    if _heal_excluded(rel):
+                        skipped.append((rel, old, "历史留痕区（只报不改）"))
+                        new_ln = new_ln.replace(new, old)   # 还原，历史区不动
+                    else:
+                        done.append((rel, old, new))
+            for name in prot_names:
+                if tokens[name] in new_ln:
+                    new_ln = new_ln.replace(tokens[name], name)
+            if new_ln != ln:
+                lines[i - 1] = new_ln
+                changed = True
+        if changed and not dry_run:
+            with open(fp, "w", encoding="utf-8", newline="") as fh:
+                fh.write("".join(lines))
+    return done, skipped, unmapped
+
+
+def _sync_roster_paths(root, cid=None, dry_run=False):
+    """roster「路径」列与现存实体目录名同步（改目录名后登记列自动跟）。"""
+    root = root or _find_root()
+    actions = []
+    for c in ([cid] if cid else all_company_ids(root)):
+        try:
+            cfg = load_company(c)
+        except Exception:
+            continue
+        rp = cfg.roster_abs
+        if not os.path.isfile(rp):
+            continue
+        live = {k: v[0] for k, v in _all_entity_dir_names(root).items() if len(v) == 1}
+        text = _read_file(rp)
+        changed = False
+        out_lines = []
+        for line in text.splitlines(keepends=True):
+            m = re.match(r"^(\|\s*([CTPE]\d{3,})\s*\|)\s*([^|]*)\|", line)
+            if m:
+                eid = m.group(2)
+                new_dir = live.get(eid)
+                cell = m.group(3).strip()
+                if new_dir and cell not in (new_dir + "/", new_dir):
+                    line = line.replace(f"| {cell} |", f"| {new_dir}/ |", 1)
+                    changed = True
+                    actions.append(f"{os.path.relpath(rp, root)}: {eid} 路径列 -> {new_dir}/")
+            out_lines.append(line)
+        if changed and not dry_run:
+            with open(rp, "w", encoding="utf-8", newline="") as fh:
+                fh.write("".join(out_lines))
+    return actions
+
+
+def heal_entity_refs(root=None, dry_run=False):
+    """改名后一键自愈（手动改名或 --rename-entity 之后跑，幂等）：
+    ① OS 级链接（稳定锚 + 技能披露）重建；② 散文旧名按 ID 映射改写（历史区只报不改）；
+    ③ roster「路径」列同步；④ 看板数据重生成。返回 (actions, skipped, issues)。"""
+    root = root or _find_root()
+    actions, skipped = [], []
+    okl, errl = ensure_links(root)
+    actions += [f"链接: {m}" for m in okl if "无需改动" not in m]
+    actions += [f"链接（异常）: {m}" for m in errl]
+    done, skip2, unmapped = rewrite_stale_entity_names(root, dry_run=dry_run)
+    actions += [f"散文: {o} -> {n} @ {rel}" for rel, o, n in done]
+    skipped += [f"{o} @ {rel}（{why}）" for rel, o, why in skip2]
+    actions += _sync_roster_paths(root, dry_run=dry_run)
+    if not dry_run:
+        py = sys.executable or "python"
+        base = os.path.dirname(os.path.abspath(__file__))
+        for mod, extra in (("opc_tickets.py", None), ("opc_dashboards.py", None),
+                           ("opc_model.py", "--sync-index")):
+            cids = all_company_ids(root)
+            args = [py, os.path.join(base, mod)]
+            if extra:
+                args.append(extra)
+            elif cids:
+                args += ["--company", cids[0]]
+            r = subprocess.run(args, cwd=base, capture_output=True, text=True, check=False)
+            actions.append(f"重生成 {mod}: {'ok' if r.returncode == 0 else 'FAILED'}")
+    issues = check_links(root=root)
+    return actions, skipped, issues + [f"未映射旧名（人工处置）: {o}" for o in unmapped]
+
+
+def rename_entity(root, eid, new_label, dry_run=False):
+    """实体改名一条龙（决策 #17 的「零改动」交付面）：用户/总管只跑这一条。
+    git mv 改物理目录名 → heal_entity_refs 消化其余全部机械动作。
+    opc:// 引用层不在此列——ID 逻辑锚使其本来就无需任何改动。"""
+    root = root or _find_root()
+    reg = entity_types(root)
+    etypes = {v: k for k, v in reg.items()}
+    m = re.match(rf"^({'|'.join(reg.values())})(\d{{3,}})$", eid)
+    if not m:
+        raise ValueError(f"{eid} 不是合法实体 ID（应为 {'/'.join(reg.values())}+数字，如 E0001）")
+    if not new_label or re.search(r'[\\/:*?"<>|]', new_label):
+        raise ValueError(f"新说明非法：{new_label!r}（不含 \\/:*?\"<>|）")
+    cids = all_company_ids(root)
+    cid, dir_name = None, None
+    for c in cids:
+        try:
+            home = load_company(c).home_abs
+        except Exception:
+            continue
+        hit = [e for e in sorted(os.listdir(home))
+               if (e == eid or e.startswith(eid + "-")) and os.path.isdir(os.path.join(home, e))]
+        if len(hit) > 1:
+            raise ValueError(f"{eid} 目录歧义：{hit}")
+        if hit:
+            cid, dir_name = c, hit[0]
+            break
+    if dir_name is None:
+        raise FileNotFoundError(f"未找到实体 {eid}（扫描各公司根无 {eid}-* 目录）")
+    new_name = eid + "-" + new_label
+    if new_name == dir_name:
+        return [f"{eid} 已是 {new_name}，无需改名"], [], []
+    # git mv / os.rename 必须走真实物理目录（companies/<cid> 锚路径 git 不当目录跟踪）
+    home_real = _discover_company_home(cid, root) or load_company(cid).home_abs
+    old_abs = os.path.join(home_real, dir_name)
+    new_abs = os.path.join(home_real, new_name)
+    if os.path.exists(new_abs):
+        raise FileExistsError(f"目标目录已存在：{new_abs}")
+    actions = [f"{cid}: {dir_name} -> {new_name}"]
+    if dry_run:
+        actions.append("(dry-run：未执行，重跑去掉 --dry-run 生效)")
+        return actions, [], []
+    if os.path.isdir(os.path.join(root, ".git")):
+        r = subprocess.run(["git", "mv", old_abs, new_abs], cwd=root,
+                           capture_output=True, text=True, check=False)
+        if r.returncode != 0:
+            raise OSError(f"git mv 失败（目录被占用或未入库？）：{r.stderr.strip() or r.stdout.strip()}"
+                          f"——若是权限占用，关闭占用该目录的会话/程序后重试")
+    else:
+        os.rename(old_abs, new_abs)
+    actions.append(f"git mv 完成：{dir_name} -> {new_name}")
+    healed, skipped, issues = heal_entity_refs(root)
+    actions += healed
+    return actions, skipped, issues
 
 
 def check_links(cid=None, root=None):
@@ -533,7 +792,8 @@ def check_links(cid=None, root=None):
             for key in ["workbench", "tasks_data", "roster",
                         "affairs", "page_templates", "skills"]:
                 try:
-                    p = cfg._abs(key)
+                    # roster 走自愈版解析（总管目录改名后按 ID 前缀扫描兜底）
+                    p = cfg.roster_abs if key == "roster" else cfg._abs(key)
                 except KeyError:
                     issues.append(f"未定义符号：opc://company:{c}/{key}")
                     continue
@@ -1163,6 +1423,12 @@ if __name__ == "__main__":
     ap.add_argument("--heartbeat-every", default="30", help="心跳间隔（分钟，默认 30；配合通知去重只报新发现）")
     ap.add_argument("--diff-template", action="store_true",
                     help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
+    ap.add_argument("--rename-entity", nargs=2, metavar=("E0001", "新说明"),
+                    help="实体改名一条龙：git mv 物理目录 → 重建链接 → 同步 roster → 重跑看板 → 全文旧名改写 → 门禁验证（决策 #17）")
+    ap.add_argument("--heal-entity-refs", action="store_true",
+                    help="改名后自愈（手动改目录名后跑）：重建链接 + 全文旧名按 ID 映射改写（历史留痕区只报不改）+ roster 同步 + 看板重生成")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="配合 --rename-entity/--heal-entity-refs：只演示将做什么，不落盘")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
     a = ap.parse_args()
 
@@ -1186,6 +1452,33 @@ if __name__ == "__main__":
                 print(f"    - {rel}")
         if not (r["diff"] or r["only_company"] or r["only_template"]):
             print("  [ok] 双向零实质差异")
+    elif a.rename_entity:
+        try:
+            acts, skipped, issues = rename_entity(None, a.rename_entity[0], a.rename_entity[1], dry_run=a.dry_run)
+        except Exception as e:
+            print(f"[ERR] {e}")
+            sys.exit(1)
+        print("[改名一条龙]")
+        for m in acts:
+            print("  -", m)
+        for m in skipped:
+            print("  [历史区·未改]", m)
+        for i in issues:
+            print("  [!]", i)
+        print("[ok] 改名完成" + ("（含全文旧名改写与看板重生成）" if not issues else f"（遗留 {len(issues)} 项见上）"))
+    elif a.heal_entity_refs:
+        acts, skipped, issues = heal_entity_refs(dry_run=a.dry_run)
+        print("[改名后自愈]" + ("（dry-run）" if a.dry_run else ""))
+        for m in acts:
+            print("  -", m)
+        for m in skipped:
+            print("  [历史区·未改]", m)
+        if issues:
+            print(f"[!] 门禁遗留 {len(issues)} 项：")
+            for i in issues:
+                print("  -", i)
+            sys.exit(1)
+        print("[ok] 自愈完成：链接/散文旧名/roster/看板全部同步")
     elif a.selftest:
         sys.exit(selftest())
     elif a.bootstrap:

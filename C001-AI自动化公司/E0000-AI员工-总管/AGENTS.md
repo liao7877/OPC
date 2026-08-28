@@ -34,7 +34,7 @@
 - 状态留痕：任务状态变更必须记录到 messages.md
 - 派发必须注入：员工人设（AGENTS.md）+ 工作流（workflow.md）+ 记忆（memory/ ——唯一权威；`.workbuddy/` 平台记忆是缓存，有价值条目必须回写 memory/，见 concurrent-work 记忆归一规则）
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
-- **命名空间治理（2026-08-28 新增，依据 opc-namespace-design.md）**：物理路径唯一真相源在 `opc.toml`（OPC 根）——改名 / 改布局只改该文件一行，公司内所有引用零改动；公司内引用统一用 `opc://company:C001/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；定期 `cd OPC根 && python opc_resolver.py --check` 巡检失效引用并修（先改 opc.toml 再查 consumer）；**agent 打开文件**：`opc://company:C001/...` 直接当稳定锚 `../../companies/C001/...` 用（真实目录，OS 透明解析，无需跑脚本），或 `python opc_resolver.py --resolve <uri>` 取绝对路径。详见 opc-namespace-design.md §3.1。
+- **命名空间治理（2026-08-28 新增；2026-08-29 决策 #17 修订）**：物理路径唯一真相源在 `opc.toml`（OPC 根）；公司内引用统一用 `opc://company:C001/...` 逻辑符号或实体 ID，禁止裸写 `../` 或绝对路径；实体目录自解释命名 `{ID}-{名称}`，**实体改名走 `python opc_resolver.py --rename-entity <ID> <新名称>` 一条命令**（git mv/链接/roster/看板/全文旧名改写全自动；手动改名后跑 `--heal-entity-refs` 自愈）；公司目录改名后跑 `--ensure-links` 重指锚；定期 `python opc_resolver.py --check` 巡检失效引用。agent 打开文件：`opc://company:C001/...` 直接当稳定锚 `../../companies/C001/...` 用，或 `python opc_resolver.py --resolve <uri>` 取绝对路径。详见 opc-namespace-design.md §3.1。
 - **共享读取器（2026-08-28 新增，依据 PRINCIPLES P25）**：实体卡（task/project/team/worklog/affair 等）的 frontmatter 读取统一走 OPC 根 `opc_model.py` 的 `parse_frontmatter`；写任何读取 / 扫描脚本都 `import` 它，禁止各脚本私写解析正则。加字段免费、改格式只动 `opc_model.py` 一处。
 - **人机协作三条（2026-08-29 新增，依据 PRINCIPLES P27~P29；来源：Multica 调研 `research/multica-调研报告.html`）**：
   - **P27 协调层中立**：OPC 只做命名 / 路由 / 发现 / 门禁，**不绑任何 Agent CLI 或模型**；派活按 `roster.md` 配置选人，**禁止在脚本或员工卡里写死 `claude` / `codex` / `codebuddy` 等具体 CLI 名并据此分支**——换 Agent 是改一行配置，不是迁移。

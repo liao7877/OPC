@@ -58,5 +58,5 @@ status: 进行中
 type: 工单
 ticket: TSK00010
 updated: 2026-08-29
-note: 实体目录 ID-only 迁移 + 显示名唯一真相=roster 岗位列 + --check 裸路径散文门禁；此后员工改名按 dispatch-sop「员工改名 SOP」执行
+note: 决策 #17 终版（用户拍板）：保留自解释目录名 + --rename-entity 一条命令 + 散文门禁 + 心跳链接自愈；员工改名 SOP 已改命令化
 ---

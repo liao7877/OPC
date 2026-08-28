@@ -7,7 +7,7 @@
 # 骨架默认值：所有公司继承，未覆盖字段沿用此处
 workbench = "workbench"
 tasks_data = "workbench/tasks-data.json"
-roster = "E0000-AI员工-总管/roster.md"   # 待 E0000 目录改名后改为 "E0000/roster.md"（见 TSK00010 messages）
+roster = "E0000-AI员工-总管/roster.md"   # 总管目录改名后失效时，resolver 按总管 ID 前缀扫描自愈定位
 affairs = "workbench/affairs"
 page_templates = "page-templates"
 templates = "templates"            # 公司模板目录（新建员工骨架来源；opc://company:<cid>/templates/... 经 key 透传解析）
@@ -27,7 +27,7 @@ notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS 
 # actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
 
 # ---- 实体类型注册表（2026-08-29 拍板：前缀唯一真相，resolver/生成器/巡检/结构自检统一消费）----
-# 加新实体类型（如 customer = "X"）= 加一行；改前缀同理。公司实体目录命名约定 {前缀}{数字}-<名称>。
+# 加新实体类型（如 customer = "X"）= 加一行；改前缀同理。公司实体目录命名约定 {前缀}{数字}-<名称>（目录自解释；改名走 opc_resolver --rename-entity，引用层按 ID 前缀扫描免疫改名）。
 [entity_types]
 employee = "E"
 team = "T"

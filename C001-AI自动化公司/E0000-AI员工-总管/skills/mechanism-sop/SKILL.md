@@ -28,7 +28,7 @@ triggers: [机制, 制度, 新想法怎么落地, 放哪里, 建目录, 落位, 
 
 ### 类1 · 新实体
 
-新目录（命名：`{前缀}{序号}` ID-only，决策 #17——显示名进登记字段不进目录名；C/T 三位、E/P 四位、TSK 五位）+ 实体卡（company/team/project/task.md 或 AGENTS.md）+ **登记**：
+新目录（命名：`{前缀}{序号}-{名称}`，目录自解释；C/T 三位、E/P 四位、TSK 五位；改名走 --rename-entity 一条龙）+ 实体卡（company/team/project/task.md 或 AGENTS.md）+ **登记**：
 - 员工 → 复制 `opc://company:C001/templates/employee-template/`（四件套：AGENTS.md/CLAUDE.md/skills INDEX/junction，见 dispatch-sop 新建员工 SOP）→ 登 roster.md
 - 工单 → `--new` 建单 → 登 task-index.md；拆分出的子单挂 `parent`
 - 团队 → 建 T00x 目录（team.md + notices.md + skills/）→ roster 相关员工「团队」列登记
