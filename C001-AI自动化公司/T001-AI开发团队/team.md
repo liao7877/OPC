@@ -6,7 +6,7 @@
 ## 团队信息
 - 团队 ID：T001
 - 名称：AI开发团队
-- 成员：以 `opc://company:C001/employee/E0000/roster.md`「团队」列为准（当前：E0001 分析员、E0002 项目经理）
+- 成员：以 `opc://company:C001/employee/E0000/roster.md`「团队」列为准（当前：E0001 售前工程师、E0002 项目经理）
 - 负责人（lead）：E0002-项目经理（roster「角色」列为准；统筹团队 workflow 撰写、团队级技能审定、组内派单互审；成员可提案、lead 定稿）
 
 ## 团队资料

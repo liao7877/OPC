@@ -38,3 +38,13 @@ ticket: TSK00007
 project: P0002
 updated: 2026-08-27
 ---
+
+---
+wid: W-20260829-001
+date: 2026-08-29
+title: E0001 分析员改名售前工程师并赋能售前技能
+status: 待审
+type: 工单
+ticket: TSK00010
+updated: 2026-08-29
+---

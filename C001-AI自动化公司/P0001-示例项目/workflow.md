@@ -12,7 +12,7 @@
   next: step 2
 - step: 2
   action: 任务执行
-  role: 按任务类型匹配员工（E0001-分析员等）
+  role: 按任务类型匹配员工（E0001-售前工程师等）
   input: 任务目录 task.md
   output: 任务目录 deliverables/
   next: step 3
