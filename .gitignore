@@ -19,6 +19,12 @@ Thumbs.db
 # 注意：Windows 上 git 默认 core.symlinks=false，提交 symlink 会退化成文本文件、clone 后失效，故必须忽略。
 companies/
 
+# 看板数据产物（投影：真相在 *.md / tasks/，clone 后跑 run_boards once 重建）
+# generated_at 每次生成必变，入库 = 永久噪音 diff + 合并冲突，故不追踪
+*-data.js
+tasks-data.json
+*.tmp
+
 # 环境变量/凭据（防御性，正常不存在）
 .env
 .env.*
