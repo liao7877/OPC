@@ -65,8 +65,8 @@ OPC/
    - 重建稳定锚 `companies/<cid>` 与各层技能披露链接（OS 级链接不入库，clone 后必缺）；
    - 安装 pre-commit 门禁钩子（提交前拦截失效引用）；
    - 重建看板数据与技能索引（产物不入库，clone 后必缺）；
-   - **注册公司心跳**（每日定时巡检 + 异常系统通知；Windows 写计划任务、macOS/Linux 写 crontab，任务名 `OPC-Patrol-<公司ID>`，默认 09:00）。
-     - 心跳是唯一的机器级副作用：`--no-heartbeat` 跳过、`--heartbeat-time 14:00` 改时间、`python opc_patrol.py --unregister-heartbeat --company C001` 撤销。
+   - **注册公司心跳**（每 30 分钟自动巡检 + 数据自愈 + 异常系统通知；Windows 写计划任务、macOS/Linux 写 crontab，任务名 `OPC-Patrol-<公司ID>`，间隔可改：`--heartbeat-every 15`）
+     - 心跳是唯一的机器级副作用：`--no-heartbeat` 跳过、`--heartbeat-every 60` 改间隔、`python opc_patrol.py --unregister-heartbeat --company C001` 撤销。通知自带去重：只报新发现，已在待办里的不再弹。
 3. **验证**：`python opc_resolver.py --doctor` 输出 `[ok] 初始化自检通过` 即可正常使用（doctor 自带自愈，会先打印 `[fix]` 行告诉你自动补了什么，再检查五项：Python 版本 / 稳定锚 / 钩子 / 命名空间 / 技能披露链接）。
 
 ```bash
