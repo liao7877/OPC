@@ -398,6 +398,66 @@ def sync_links(root=None):
     return ok, err
 
 
+def _read_file(p):
+    """读取文本文件，失败返回空串（用于钩子/配置探测）。"""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def doctor(root=None):
+    """系统初始化自检（init gate）：检查「系统正常跑」的前置条件。
+
+    返回 (errors, warnings)。用于 agent 开工前门禁——全绿才进入业务；
+    不绿按 README「系统初始化」章节补齐（建锚 / 装钩子 / 修失效引用）。
+    退出码：有 error 则 1（阻断），仅 warning 则 0（放行）。
+    """
+    root = root or _find_root()
+    if root is None:
+        return ["未找到 opc.toml（OPC 根）——先在 OPC 仓库根目录运行"], []
+    errors, warns = [], []
+
+    # 1. Python 版本 ≥ 3.11（tomllib 依赖）
+    if sys.version_info < (3, 11):
+        errors.append(f"Python 版本过低 {sys.version.split()[0]}，需 ≥3.11（opc_resolver 依赖 tomllib）")
+    else:
+        warns.append(f"Python {sys.version.split()[0]} ≥3.11 ✓")
+
+    # 2. 稳定锚 companies/<cid> 存在且指向真实目录（运行时层物理入口）
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    cids = [k for k in g.get("company", {}) if k != "DEFAULT"]
+    if not cids:
+        warns.append("opc.toml 无 [company.<cid>] 段（无公司需建锚）")
+    for cid in cids:
+        link = os.path.join(root, "companies", cid)
+        if not os.path.lexists(link):
+            errors.append(f"稳定锚缺失：companies/{cid} 不存在 → 跑 `python opc_resolver.py --sync-links`")
+        else:
+            real = os.path.realpath(link)
+            if not os.path.isdir(real):
+                errors.append(f"稳定锚失效：companies/{cid} 未指向有效目录 → 跑 `python opc_resolver.py --sync-links`")
+            else:
+                warns.append(f"稳定锚 companies/{cid} -> {real} ✓")
+
+    # 3. pre-commit 门禁（开发期便利，warn 不阻断运行时）
+    hook = os.path.join(root, ".git", "hooks", "pre-commit")
+    if os.path.isfile(hook) and "opc_resolver" in _read_file(hook):
+        warns.append("pre-commit 门禁已装 ✓")
+    else:
+        warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ `cp scripts/pre-commit .git/hooks/`")
+
+    # 4. 命名空间全文扫描（核心，失效即阻断）
+    iss = check_links()
+    if iss:
+        errors.append(f"命名空间存在 {len(iss)} 处失效引用 → 跑 `python opc_resolver.py --check` 查看并修")
+    else:
+        warns.append("命名空间全文扫描自洽 ✓")
+
+    return errors, warns
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
@@ -406,6 +466,8 @@ if __name__ == "__main__":
                     help="同步稳定锚：重指向 companies/<cid> 到真实目录（零参数，靠 company.md ID 发现）")
     ap.add_argument("--company", default="C001", help="公司 id")
     ap.add_argument("--resolve", help="解析单个 opc:// URI 并打印绝对路径")
+    ap.add_argument("--doctor", action="store_true",
+                    help="系统初始化自检（init gate）：检查 Python 版本/稳定锚/pre-commit/命名空间，全绿才开工")
     a = ap.parse_args()
 
     if a.resolve:
@@ -419,6 +481,16 @@ if __name__ == "__main__":
         if err:
             sys.exit(1)
         print("[done] 稳定锚同步完成")
+    elif a.doctor:
+        errs, ws = doctor()
+        for w in ws:
+            print("[i]", w)
+        for e in errs:
+            print("[✗]", e)
+        if errs:
+            print(f"[FAIL] 初始化自检未通过（{len(errs)} 项）：先按 README「系统初始化」章节补齐再开工")
+            sys.exit(1)
+        print("[ok] 初始化自检通过：可正常开工")
     elif a.check:
         iss = check_links(a.company)
         if iss:
