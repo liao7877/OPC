@@ -63,11 +63,9 @@ def resolve_ctx(company=None, company_dir=None):
             raise ValueError("需要 --company <cid> 或 --dir <公司根目录>")
         company_dir = os.path.abspath(company_dir)
         md = os.path.join(company_dir, "company.md")
-        txt = opc_resolver._read_file(md)
-        m = re.search(r"公司\s*ID\s*[:：]\s*(\S+)", txt)
-        if not m:
+        company = opc_resolver.extract_company_id(opc_resolver.read_text(md))
+        if not company:
             raise FileNotFoundError(f"{md} 缺「公司 ID」声明，无法反查公司")
-        company = m.group(1).strip()
     cfg = opc_resolver.load_company(company)
     if not os.path.isdir(cfg.home_abs):
         raise FileNotFoundError(
@@ -652,7 +650,7 @@ def check_structure(ctx):
     # 已知一级条目：文件用模式匹配（跨平台入口脚本 .bat/.sh/.ps1/.py 等都认，P2a）
     known_extra_dirs = {".workbuddy", ".tools"}
     known_extra_file_patterns = [re.compile(p) for p in (
-        r"^run_boards\.(bat|sh|command)$", r"^register-task\.ps1$", r"^register-patrol\.ps1$",
+        r"^run_boards\.(bat|sh|command)$", r"^register-task\.ps1$", r"^register-patrol\.(ps1|sh)$",
         r"^verify_boards\.(js|py)$", r"^(dashboard|目录结构说明书)\.(html|md)$", r"^dashboard-data\.js$",
     )]
     entity_re = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})-")
@@ -778,18 +776,17 @@ def selftest():
     check("集成:parent 解析入 payload", t_by_id.get("TSKI6", {}).get("parent") == "TSKI5")
     check("集成:无阻塞工单 blocked_by 为空数组", t_by_id.get("TSKI2", {}).get("blocked_by") == [])
 
-    # ---- resolve_ctx 反查（--dir 模式）----
+    # ---- resolve_ctx 反查（--dir 模式）——身份提取统一走 resolver.extract_company_id（P25）----
     rtmp = tempfile.mkdtemp(prefix="ctx_it_")
     with open(os.path.join(rtmp, "company.md"), "w", encoding="utf-8") as fh:
-        fh.write("# 测试公司\n- 公司 ID：CXXX\n")
+        fh.write("# 测试公司\n- 公司 ID：CXXX（示例注释也应正确截断）\n")
     wb = os.path.join(rtmp, "workbench")
     os.makedirs(wb, exist_ok=True)
     with open(os.path.join(rtmp, "opc.toml"), "w", encoding="utf-8") as fh:
         fh.write("[company.DEFAULT]\nworkbench = \"workbench\"\ntasks_data = \"workbench/tasks-data.json\"\nroster = \"roster.md\"\naffairs = \"workbench/affairs\"\npage_templates = \"page-templates\"\n")
-    # resolve_ctx 走 load_company（依赖真实 OPC 根），此处只测 _read_file 反查逻辑
-    txt = opc_resolver._read_file(os.path.join(rtmp, "company.md"))
-    m = re.search(r"公司\s*ID\s*[:：]\s*(\S+)", txt)
-    check("resolve 反查公司 ID", m and m.group(1) == "CXXX")
+    txt = opc_resolver.read_text(os.path.join(rtmp, "company.md"))
+    got = opc_resolver.extract_company_id(txt)
+    check("resolve 反查公司 ID（含注释截断）", got == "CXXX")
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 

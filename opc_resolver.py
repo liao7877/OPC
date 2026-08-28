@@ -101,9 +101,12 @@ class CompanyConfig:
         return self._abs("page_templates")
 
 
-def _extract_company_id(text):
+def extract_company_id(text):
     """从 company.md 文本提取「公司 ID」值：去 markdown 加粗、截内联注释
-    （（...）或 (...) 之后不算 ID——允许 ID 行带说明文字而不破坏发现机制）。"""
+    （（...）或 (...) 之后不算 ID——允许 ID 行带说明文字而不破坏发现机制）。
+    公开 API：所有「从 company.md 认公司身份」的 consumer（生成器反查、
+    巡检、计划任务脚本）统一走本函数，禁止各处私写正则（P25/P26），
+    否则「ID 行带注释」这类输入在不同模块解析出不同结果。"""
     m = re.search(r'\*?\*?公司\s*ID\*?\*?\s*[:：]\s*\**\s*(\S+)', text)
     if not m:
         return None
@@ -126,7 +129,7 @@ def _discover_company_home(cid, root):
         md = os.path.join(d, "company.md")
         if not os.path.isfile(md):
             continue
-        got = _extract_company_id(_read_file(md))
+        got = extract_company_id(_read_file(md))
         if got and got == cid:
             return d
     return None
@@ -353,7 +356,7 @@ def audit_structure(root=None):
         if not txt:
             issues.append(f"{entry}/company.md 不可读")
             continue
-        cid = _extract_company_id(txt)
+        cid = extract_company_id(txt)
         if not cid:
             issues.append(f"{entry}/company.md 缺「公司 ID」声明，无法被发现")
             continue
@@ -525,6 +528,11 @@ def _read_file(p):
             return f.read()
     except OSError:
         return ""
+
+
+# 公开别名：跨模块读取文本统一走 read_text（原 _read_file 是私有命名，
+# 却被 tickets/dashboards 当公共契约依赖——抽象泄漏，转正为公开 API）。
+read_text = _read_file
 
 
 def _hook_installed(root):

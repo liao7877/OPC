@@ -43,13 +43,13 @@ if _ROOT not in sys.path:
 import opc_resolver
 from opc_model import parse_frontmatter   # 共享读取器（P25，禁私写正则）
 from opc_schema import (WORKLOG_STATUS, TASK_ACTIVE as ACTIVE_TS,   # 状态机唯一真相源
-                        TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS, PATROL)
+                        TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS, PATROL,
+                        EMPLOYEE_STATUS)
 WORKLOG_STATUS = set(WORKLOG_STATUS)
 AFF_STATUS = set(AFF_STATUS)
 
 PAGE_VERSION = "v1.2"
 STALE_DAYS_DEFAULT = PATROL["worklog_stale_days"]   # 「N 天未动」阈值（opc_schema 统一）
-TODAY = datetime.date.today().strftime("%Y-%m-%d")
 
 
 class Ctx:
@@ -73,11 +73,10 @@ def resolve_ctx(company=None, company_dir=None):
         if not company_dir:
             raise ValueError("需要 --company <cid> 或 --dir <公司根目录>")
         company_dir = os.path.abspath(company_dir)
-        txt = opc_resolver._read_file(os.path.join(company_dir, "company.md"))
-        m = re.search(r"公司\s*ID\s*[:：]\s*(\S+)", txt)
-        if not m:
+        txt = opc_resolver.read_text(os.path.join(company_dir, "company.md"))
+        company = opc_resolver.extract_company_id(txt)
+        if not company:
             raise FileNotFoundError(f"{company_dir}/company.md 缺「公司 ID」声明，无法反查公司")
-        company = m.group(1).strip()
     cfg = opc_resolver.load_company(company)
     # 严格性：home 断链（锚未建/目录被删）时明确报错，绝不静默在 companies/ 锚位
     # 创建真实目录（否则违反「companies/ 仅供锚机制管理」铁律，且数据写进假位置）
@@ -271,8 +270,8 @@ def parse_roster(path, warnings):
                 bad_teams.append(t)   # 形似代号但非法（如 T00O / T-01）
         if bad_teams:
             print(f"  [错误] roster {eid} 团队列含非法代号 {bad_teams}（应为 T+数字），已忽略这些值——若该员工属于某团队请修正 roster")
-        if not re.match(r"^(在职|休假|离职|未登记)$", status):
-            print(f"  [错误] roster {eid} 状态列 {status!r} 不在 在职/休假/离职/未登记 内，按原文保留展示")
+        if status not in EMPLOYEE_STATUS:
+            print(f"  [错误] roster {eid} 状态列 {status!r} 不在 {'/'.join(EMPLOYEE_STATUS)} 内，按原文保留展示")
         roster[eid] = {"role": role, "status": status, "teams": teams, "rank": rank, "note": note}
     return roster
 
@@ -464,14 +463,16 @@ def cross_validate(ctx, emp_entries, tasks):
 
 
 def ticket_stats_by_project(tasks):
-    """项目维度工单统计（联动③）：总数/状态分布/逾期中数。"""
+    """项目维度工单统计（联动③）：总数/状态分布/逾期中数。
+    「今天」函数内实时取（原模块级常量在 watch 长驻进程下会冻结，逾期判定失真）。"""
+    today = datetime.date.today().strftime("%Y-%m-%d")
     out = {}
     for t in tasks:
         pid = t.get("project") or "未关联"
         s = out.setdefault(pid, {"total": 0, "byStatus": {}, "overdue": 0})
         s["total"] += 1
         s["byStatus"][t["status"]] = s["byStatus"].get(t["status"], 0) + 1
-        if t.get("status") in ACTIVE_TS and t.get("due") and t["due"] < TODAY:
+        if t.get("status") in ACTIVE_TS and t.get("due") and t["due"] < today:
             s["overdue"] += 1
     return out
 
@@ -685,11 +686,16 @@ def generate_all(ctx):
     gen_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     common = {"generated_at": gen_at, "page_version": PAGE_VERSION, "config": {"stale_days": STALE_DAYS_DEFAULT}}
 
+    # 公司名：company.md「公司名」为权威（P2 实体卡）；无卡片时才退回目录名。
+    # Z 方案下 base 是稳定锚 companies/<cid>，目录名兜底会退化成裸 ID（历史 bug）。
+    base_name = os.path.basename(base_dir)
+    comp_name = (parse_md_kv(read_text(os.path.join(base_dir, "company.md")), {"公司名": "name"}).get("name")
+                 or (dir_label(base_name, 1) if "-" in base_name else base_name))
+
     # ================= 公司级 dashboard-data.js =================
     dash = {
         **common,
-        "company": {"cid": ctx.cid,
-                    "name": dir_label(os.path.basename(base_dir), 1) if "-" in os.path.basename(base_dir) else os.path.basename(base_dir)},
+        "company": {"cid": ctx.cid, "name": comp_name},
         "employees": [{k: v for k, v in e.items() if k != "entries"} | {
             "mydesk": os.path.join(e["dir"], "mydesk.html").replace(os.sep, "/")} for e in employees],
         "teams": [{**{k: v for k, v in t.items() if k != "members"},
@@ -955,6 +961,8 @@ def selftest():
         base = os.path.join(tmp, "C888-测试公司")
         wb = os.path.join(base, "workbench")
         os.makedirs(wb, exist_ok=True)
+        with open(os.path.join(base, "company.md"), "w", encoding="utf-8") as fh:
+            fh.write("# C888 | 测试\n- 公司 ID：C888\n- 公司名：测试公司甲\n")
         os.makedirs(os.path.join(base, "T001-开发"), exist_ok=True)
         os.makedirs(os.path.join(base, "E0001-分析员", "workspace"), exist_ok=True)
         os.makedirs(os.path.join(base, "page-templates"), exist_ok=True)
@@ -985,6 +993,7 @@ def selftest():
             dj = fh.read()
         check("集成: 公司级动态流", "干活" in dj)
         check("集成: cid 来自 manifest 非目录名解析", '"cid": "C888"' in dj)
+        check("集成: 公司名来自 company.md 实体卡", '"name": "测试公司甲"' in dj)
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
