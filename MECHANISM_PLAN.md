@@ -299,6 +299,7 @@ E:\OPC\
 4. **历史留痕区豁免**：worklog / memory / archive 里的旧目录名只报不改——旧名是历史事实（「只增不删」纪律）。
 5. **门禁补盲**：`--check` 新增裸路径散文扫描——正文 `{前缀}+数字-名称` 必须匹配现存目录全名，否则报失效并提示一键自愈命令（历史区豁免）。改名后的散文漂移由机器拦截，不再依赖人眼逐文件翻。
 6. **roster 发现自愈**：manifest roster 键失效时按总管 ID（`{员工前缀}0000`）前缀扫描兜底——机制自身不再有写死的实体物理路径。
+7. **多公司同 ID 兼容（2026-08-29 补强）**：同 ID 实体分属多家公司是合法形态（公司目录天然隔离，引用层按 `opc://company:<cid>/...` 天然区分）。旧名自动改写按「行内锚前缀（companies/<cid>/）> 文件所在公司 > 全局唯一」四级归司，仍定不了拒绝猜测、报人工给出候选——绝不跨公司误改；`--rename-entity` 显式携带旧名→新名映射 + `--company` 消歧；roster 路径列各公司各同步各的；自愈重生成覆盖全部公司。回归用例进 `--selftest`（case 11）。
 
 **落地物**：opc_resolver.py（`scan_stale_dir_refs` / `rewrite_stale_entity_names` / `_sync_roster_paths` / `heal_entity_refs` / `rename_entity` / roster_abs 自愈）、opc_dashboards.py（目录名为准 + roster 一致性告警）、opc_tickets.py（registry 目录名为准）、opc_patrol.py（心跳链接自愈 + 正则放宽）、dispatch-sop「员工改名 SOP」、41 份文档口径。
 
