@@ -1,0 +1,17 @@
+# OPC 换行符纪律（B7，2026-08-28 评审拍板）：三平台行为由仓库保证，不依赖各机器 core.autocrlf。
+# 原则：bash 类脚本必须 LF（CRLF 会 bad interpreter 直接挂）；Windows 专属脚本必须 CRLF；
+#       文本文件入库统一 LF，由 git 按属性换出。
+* text=auto
+
+*.py    text eol=lf
+*.sh    text eol=lf
+*.md    text
+*.html  text
+*.js    text
+*.json  text
+*.toml  text
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# pre-commit 钩子无扩展名，必须 LF（/bin/sh 直跑）
+scripts/pre-commit text eol=lf
