@@ -32,7 +32,7 @@
 
 ## 一、需求分析师（决策 #1）
 
-**落点**：总管私有技能 `E0000/skills/demand-clarify/`。
+**落点**：总管私有技能 `E0000-AI员工-总管/skills/demand-clarify/`。
 
 - **流程**：接用户原始想法 → 一问一答澄清（一次一个焦点）→ 产出需求文档（PRD：背景/目标/范围/验收标准）→ 需求确认后存档 → 交 ticket-split 进入拆单。
 - **升级预留**：roster 登记规范中预留"需求分析师"岗位定义；升级触发条件 = 并行需求 ≥2 个、或用户要求对话入口与调度分离。届时按员工模板复制建 E00xx，skill 内容平移为人设职责，零返工。
@@ -243,7 +243,7 @@ E:\OPC\
 |---|---|---|
 | 1 | ticket-system 增补：blocked_by / parent / 认领双通道 / 拉通道分级自主权 / **预留号池自助取号 / 用户直派认领与来源留痕** | `skills/ticket-system/SKILL.md` |
 | 2 | 新建 concurrent-work 公司级技能；员工 AGENTS.md 加引用行 + 启动流程建工位卡；worklog-discipline 增归档节；目录建 sessions/、worklog-archive/、memory/inbox/ | 公司 skills/ + 各员工目录 |
-| 3 | dispatch-sop 增补：demand-clarify、ticket-split、编号主会话独占、总管轻巡检、父单创建、**预留号池维护**；**新建 mechanism-sop 技能** | `E0000/skills/dispatch-sop/SKILL.md` + 新建 demand-clarify / ticket-split / mechanism-sop |
+| 3 | dispatch-sop 增补：demand-clarify、ticket-split、编号主会话独占、总管轻巡检、父单创建、**预留号池维护**；**新建 mechanism-sop 技能** | `E0000-AI员工-总管/skills/dispatch-sop/SKILL.md` + 新建 demand-clarify / ticket-split / mechanism-sop |
 | 4 | 生成器升级：blocked_by/parent 解析与告警、"未认领"核验、worklog 全量扫描（含归档）、`--check-structure`、**预留号段占用校验** | `workbench/generate_tasks.py`（B 层） |
 | 5 | 看板升级：🔒 阻塞标记与阻塞链、父单子单进度、含归档筛选 | `kanban.html` / `mydesk.html`（C 层） |
 | 6 | roster 加「角色」列；team.md 增 lead 声明；**project.md 增 owner 字段**；三级 workflow 文件落位 | roster.md / team.md / project.md / 三级 workflow.md |
@@ -286,16 +286,22 @@ E:\OPC\
 
 ## 十五、实体显示名与物理路径解耦（决策 #17，2026-08-29）
 
-> 来源：E0001「分析员→售前工程师」改名实战复盘。改名执行数小时、逐文件手术，暴露「改名零改动」承诺只覆盖公司级（稳定锚 + `--ensure-links`），实体层完全没通道——显示名被烧进物理目录名（原 `E0001` 目录带「AI员工-分析员」后缀），改显示名=改物理路径=全量引用手术；且散文里的目录名漂移对 `--check` 隐形（只扫 opc:// URI），doctor 全绿但根文档 4 处旧名残留。
+> 来源：E0001「分析员→售前工程师」改名实战复盘。改名执行数小时、逐文件手术，暴露「改名零改动」承诺只覆盖公司级（稳定锚 + `--ensure-links`），实体层无通道——显示名烧进物理目录名，改显示名=改物理路径=全量引用手术；且散文目录名漂移对 `--check` 隐形（只扫 opc:// URI），doctor 全绿但根文档 4 处旧名残留。
 
-**决策**：
-1. **实体目录名 = `{前缀}{ID}`（ID-only）**：E/T/P 实体目录去显示名后缀（存量一次性 `git mv` 迁移）；公司目录例外保留 `C00X-<名称>`（其改名已由稳定锚机制闭环：重跑 `--ensure-links` 即可，引用零改动）。
-2. **显示名唯一真相源**：员工 = roster「岗位」列；团队/项目 = team.md/project.md「名称」字段。生成器（dashboards/tickets）一律从登记字段取显示名，目录名去前缀函数（`dir_label`）降级为遗留兜底。**此后员工改名 = 改 roster 一行岗位 + 改人设文案，junction/看板/引用零波及**。
-3. **兼容规则**：发现/校验正则统一放宽为 `^{前缀}\d{3,}(?:-|$)`——ID-only 与遗留带名目录并存合法（渐进迁移），但显示名永不取自目录名。
-4. **门禁补盲**：`--check` 新增裸路径散文扫描——正文中 `{C|E|T|P}+数字-名称` 形态必须匹配现存目录全名，否则报失效引用（跳过 companies/、company-template/、scripts/、.zcode/ 与 py selftest 夹具）。改名后的散文漂移由机器拦截，不再依赖人眼逐文件翻。
-5. **SOP 落位**：dispatch-sop 新增「员工改名 SOP」（改 roster 岗位 → 改人设 → 重跑看板 → doctor → 留痕）；新建员工 SOP 目录名同步改 ID-only。
+**演进记档（两轮，第二轮为终版）**：
+- 第一轮（已否决）：实体目录裸 ID 化（`E0001/`），显示名唯一真相进 roster 岗位列。用户否决——**目录必须自解释**（打开仓库即知谁是谁），纯编号目录不可接受。
+- 终版（实施）：**保留自解释目录名 `{前缀}{序号}-{名称}` + 把改名做成一条命令**。「零改动」的正确解读：引用层零改动（机制保证），机械动作零人工（命令包办）。
 
-**落地物**：opc_resolver.py（`scan_stale_dir_refs` + `diff_template._ENTITY` 放宽）、opc_dashboards.py（`scan_entity_dirs`/roster 取名）、opc_tickets.py（`build_registry`/`append_worklog_entry`/`check_structure`）、opc_patrol.py（三处正则）、opc_model.py（roster 发现）、opc.toml（roster 键 + entity_types 注释）、41 份文档口径同步、C001+template 实体目录 ID-only 迁移。
+**终版决策**：
+1. **目录名为显示名真相**：`{前缀}{序号}-{名称}` 目录自解释；roster「岗位」列须与目录一致，不一致生成器告警（目录名为准）。
+2. **引用层 = ID 逻辑锚**：`opc://` URI 与看板/实体卡发现按 ID 前缀扫描（`{ID}-` 或精确 `{ID}`），物理目录改名天然透明，零动作自愈——这就是公司级稳定锚在实体层的等价物（实体无需 OS 锚树：`companies/<cid>` 是 junction 不可再嵌套，且 ID 扫描已覆盖其收益）。
+3. **机械层 = 一条命令**：`--rename-entity <ID> <新名称>` 一条龙——git mv → 重建稳定锚/技能披露链接 → 同步 roster 路径列 → 重跑看板 → **全文旧目录名按 ID 映射自动改写** → 门禁终检。用户手动在文件管理器改名后，跑 `--heal-entity-refs` 同样一键自愈；心跳巡检（每 30 分钟）也自动重建断链。
+4. **历史留痕区豁免**：worklog / memory / archive 里的旧目录名只报不改——旧名是历史事实（「只增不删」纪律）。
+5. **门禁补盲**：`--check` 新增裸路径散文扫描——正文 `{前缀}+数字-名称` 必须匹配现存目录全名，否则报失效并提示一键自愈命令（历史区豁免）。改名后的散文漂移由机器拦截，不再依赖人眼逐文件翻。
+6. **roster 发现自愈**：manifest roster 键失效时按总管 ID（`{员工前缀}0000`）前缀扫描兜底——机制自身不再有写死的实体物理路径。
+
+**落地物**：opc_resolver.py（`scan_stale_dir_refs` / `rewrite_stale_entity_names` / `_sync_roster_paths` / `heal_entity_refs` / `rename_entity` / roster_abs 自愈）、opc_dashboards.py（目录名为准 + roster 一致性告警）、opc_tickets.py（registry 目录名为准）、opc_patrol.py（心跳链接自愈 + 正则放宽）、dispatch-sop「员工改名 SOP」、41 份文档口径。
+
 
 ---
 *定稿：2026-08-28 · 一问一答 17 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档、制度判定法则与实体命名解耦）+ 第二轮评审拍板记档（§十四）*

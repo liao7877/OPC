@@ -74,8 +74,10 @@ def resolve_ctx(company=None, company_dir=None):
     """--company CID（走 manifest）或 --dir 目录（反查 ID）。返回 Ctx。
     身份反查/断链校验统一走 opc_resolver.resolve_company（D1 收敛）。"""
     cfg = opc_resolver.resolve_company(company, company_dir)
+    # roster 路径取自愈版解析（roster_abs：总管目录改名后按 ID 前缀扫描兜底，决策 #17）
+    roster_rel = os.path.relpath(cfg.roster_abs, cfg.home_abs)
     return Ctx(cfg, cfg.home_abs, cfg.page_templates_abs, cfg.tasks_data_abs,
-               cfg.roster_rel, cfg.affairs_abs)
+               roster_rel, cfg.affairs_abs)
 
 
 # ---------- 基础工具 ----------
@@ -170,9 +172,9 @@ def scan_entity_dirs(base):
 
 
 def dir_label(dirname, prefix_len):
-    """遗留兜底：从目录名去前缀取显示名（E0001 -> 分析员）。
-    决策 #17 后显示名唯一真相在 roster「岗位」列 / team.md·project.md「名称」字段，
-    本函数仅用于：目录未登记（roster 无此 eid）或目录名带遗留显示名后缀的场景。"""
+    """目录名去 ID 前缀取显示名后缀（{ID}-{说明} -> {说明}，如 E0001 带后缀目录取「售前工程师」）。
+    决策 #17 修订：目录后缀即显示名（目录自解释，目录名为准），
+    roster 岗位列与之做一致性告警；裸 ID 目录（无后缀）回退 roster/原目录名。"""
     label = dirname.split("-", 1)[1] if "-" in dirname else dirname
     if label.startswith("AI员工-"):
         label = label[len("AI员工-"):]
@@ -579,11 +581,13 @@ def generate_all(ctx):
         if d is None:
             print(f"  [警告] roster 登记 {eid} 但公司根下无目录，已忽略")
             continue
-        # 显示名唯一真相 = roster「岗位」列（决策 #17）；目录未登记才退目录名（遗留兼容）
-        name = (r or {}).get("role") or dir_label(d, 1)
+        # 显示名以目录名后缀为准（决策 #17 修订：目录自解释）；裸 ID 目录才退 roster 岗位
+        name = dir_label(d, 1)
         registered = r is not None
         if not registered:
             print(f"  [警告] 员工目录 {d} 未在 roster.md 登记，看板标记「未登记」")
+        elif (r.get("role") or "") and r["role"] != name:
+            warnings.append({"scope": "roster", "msg": f"{eid} 显示名不一致：目录后缀「{name}」≠ roster 岗位「{r['role']}」（目录名为准；改名请走 `python opc_resolver.py --rename-entity {eid} 新说明` 同步两者）"})
         role = name
         status = (r or {}).get("status") or ("未登记" if not registered else "在职")
         teams = (r or {}).get("teams") or []

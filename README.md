@@ -36,7 +36,7 @@ OPC/
 │   └── page-templates/      #   dashboard / mydesk / teamboard 模板
 ├── company-template/        # 新公司脚手架：复制即可开一家新公司
 │   ├── company.md / workflow.md / 目录结构说明书.md
-│   ├── E0000/    #   总管岗模板
+│   ├── E0000-AI员工-总管/    #   总管岗模板
 │   └── skills/ / templates/ / workbench/ / page-templates/
 └── create-company/
     └── SKILL.md             # 「开公司」技能：按模板 + 规范一键拉起新公司

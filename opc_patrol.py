@@ -629,6 +629,14 @@ def auto_refresh(ctx, dry):
     陈旧横幅才会在下一次同步后消失。dry-run / 刷新失败不阻断巡检（#10 会报告陈旧）。"""
     if dry:
         return
+    # 链接自愈（决策 #17）：实体/公司目录被手动改名后，稳定锚与技能披露断链
+    # → 心跳幂等重建，无人值守 30 分钟内自愈（改不改目录名都不影响公司运转）。
+    okl, errl = opc_resolver.ensure_links(opc_resolver._find_root())
+    for m in okl:
+        if "无需改动" not in m:
+            print(f"  [自愈] OS 级链接已重建：{m}")
+    for m in errl:
+        print(f"  [警告] OS 级链接自愈失败：{m}——请人工处理")
     stale_min = PATROL.get("regen_stale_minutes", 30)
     need = os.path.isdir(ctx.wb)
     if need and os.path.isfile(ctx.tasks_data):

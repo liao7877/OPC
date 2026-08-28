@@ -38,7 +38,7 @@ root = "."                       # 相对本 manifest 所在目录（= OPC 根�
 [company.DEFAULT]                # 骨架默认值，所有公司继承
 workbench = "workbench"
 tasks_data = "workbench/tasks-data.json"
-roster = "E0000/roster.md"
+roster = "E0000-AI员工-总管/roster.md"
 affairs = "workbench/affairs"
 page_templates = "page-templates"
 
@@ -188,7 +188,7 @@ def anchor_prefix(base_dir, subdir):
 
 - `opc_resolver.py` 新增 `--doctor`：检查 Python≥3.11 / 稳定锚 / pre-commit 钩子 / 命名空间扫描 / 技能披露链接五项，全绿才放行（exit 0），有缺失 exit 1 并打印补齐指引。
 - **治理文件全部写入该门禁**（波及面四处同步）：
-  - 总管 `E0000/AGENTS.md` 启动流程**第 0 步** = 环境 init 自检（C001 实例 + company-template 模板均改）。
+  - 总管 `E0000-AI员工-总管/AGENTS.md` 启动流程**第 0 步** = 环境 init 自检（C001 实例 + company-template 模板均改）。
   - 新建 **OPC 根 `AGENTS.md`**（组织级治理入口）：规定任何在 OPC 根工作的 agent 开工前必跑 `--doctor`。
   - `company-template/AGENTS.md` 加「启动门禁（init · 新建公司继承）」段，新公司自动遵循。
   - `README.md` 新增「系统初始化（首次运行必做）」章节：clone 后必做清单（Python≥3.11 / 建锚 / 装钩子 / 验证）。

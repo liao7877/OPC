@@ -326,11 +326,10 @@ def extract_escalations(messages_text):
 
 def build_registry(ctx, tasks):
     """构建 员工/项目 代号→名称 映射（多来源，按优先级合并）：
-      1) 员工：roster「岗位」列（决策 #17：显示名唯一真相，目录 ID-only 后目录名无名称）；
-         项目：project.md「名称」字段语义对应，此处以目录名遗留后缀兜底；
-      2) 公司根目录扫描（遗留带名目录的后缀仍是有效名称来源）；
-      3) 各工单 task.md 声明的 owner_name / project_name——兜底来源。
-    合并规则：前者优先；仅当某代号在前级查不到时，才用后级名称补全。"""
+      1) 公司根目录扫描（决策 #17 修订：目录自解释，目录名后缀即显示名——目录名为准）；
+      2) roster「岗位」列——仅当目录为裸 ID（无后缀）时兜底；
+      3) 各工单 task.md 声明的 owner_name / project_name——最后兜底。
+    项目显示名以 project.md「名称」字段语义为准（parse_project），此处目录后缀兜底。"""
     emp, proj = {}, {}
     reg = opc_resolver.entity_types()   # 前缀唯一真相（2026-08-29 实体注册表）
     pe, pp = reg["employee"], reg["project"]
@@ -342,16 +341,18 @@ def build_registry(ctx, tasks):
         m = re.match(rf"^{pe}(\d{{3,}})(?:-|$)", name)
         if m:
             code = pe + m.group(1)
-            # 名称优先级：roster 岗位 > 目录遗留后缀（决策 #17）
-            label = roster_roles.get(code) or dir_suffix_label(name)
+            # 名称优先级：目录后缀（目录自解释）> roster 岗位（裸 ID 目录兜底）（决策 #17 修订）
+            label = dir_suffix_label(name)
             if label.startswith("AI员工-"):
                 label = label[len("AI员工-"):]
+            if label == code:
+                label = roster_roles.get(code) or label
             emp[code] = label
             continue
         m = re.match(rf"^{pp}(\d{{3,}})(?:-|$)", name)
         if m:
             code = pp + m.group(1)
-            proj[code] = dir_suffix_label(name)   # 项目名真相在 project.md「名称」，此处仅遗留后缀兜底
+            proj[code] = dir_suffix_label(name)   # 项目名真相在 project.md「名称」，此处仅目录后缀兜底
     # 来源3：工单声明兜底（引用了尚未建目录的代号时也能显示名称）
     for t in tasks:
         if t.get("owner") and t.get("owner_name") and t["owner"] not in emp:
@@ -362,12 +363,12 @@ def build_registry(ctx, tasks):
 
 
 def dir_suffix_label(dirname):
-    """目录名去 ID 前缀取遗留显示名后缀（P0001 -> 示例项目；E0001 -> E0001）。"""
+    """目录名去 ID 前缀取显示名后缀（P0001-示例项目 -> 示例项目；E0001 -> E0001）。"""
     return dirname.split("-", 1)[1] if "-" in dirname else dirname
 
 
 def _roster_roles(ctx):
-    """roster eid -> 岗位（显示名唯一真相源，决策 #17）。仅当 ctx.company_dir
+    """roster eid -> 岗位（裸 ID 目录的显示名兜底源，决策 #17 修订）。仅当 ctx.company_dir
     就是该公司的真实 home 时读取（自测临时目录无 company.md 时静默跳过）。"""
     try:
         cid = opc_resolver.extract_company_id(
