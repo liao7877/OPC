@@ -63,6 +63,24 @@ PATROL = {
     "archive_warn_year": None,  # 上一年度热文件提醒归档（None=运行时按当年推导）
 }
 
+# ---- 巡检检查项元数据（findings 结构化，2026-08-28 Q1 拍板 A 方案）----
+# B 阶段（agent 自动处置）的地基：每项检查的 kind/severity/suggested_action 唯一真相在此。
+# severity：info=处置后留痕即可 | warn=催办 | critical=必须打扰用户。
+# 10 项里只有 #5（升级信箱）是 critical——用户只被它打扰，其余由总管/未来 agent actor 处置。
+PATROL_SEVERITIES = ("info", "warn", "critical")
+PATROL_CHECKS = {
+    1:  {"kind": "unblock",        "severity": "info",     "action": "notify_owner"},
+    2:  {"kind": "claim_gap",      "severity": "warn",     "action": "notify_owner"},
+    3:  {"kind": "reconcile",      "severity": "warn",     "action": "reconcile_worklog"},   # 以 task.md 为准
+    4:  {"kind": "affair_overdue", "severity": "warn",     "action": "notify_owner"},        # 连续 2 周期 → escalate_user
+    5:  {"kind": "escalation",     "severity": "critical", "action": "escalate_user"},
+    6:  {"kind": "pool_low",       "severity": "warn",     "action": "refill_pool"},
+    7:  {"kind": "archive",        "severity": "info",     "action": "archive_worklog"},
+    8:  {"kind": "knowledge",      "severity": "info",     "action": "review_knowledge"},    # ⚠️ 机器侧未实现（见评审 B6）
+    9:  {"kind": "zombie_seat",    "severity": "info",     "action": "close_seat"},
+    10: {"kind": "stale_data",     "severity": "warn",     "action": "regen_boards"},
+}
+
 
 def validate():
     """schema 自洽性检查（--selftest 用）：枚举互斥、顺序完整。"""
@@ -87,4 +105,5 @@ if __name__ == "__main__":
             print("  -", x)
         sys.exit(1)
     print(f"[ok] opc_schema 自洽：task={len(TASK_STATUS)}态 worklog={len(WORKLOG_STATUS)}态 "
-          f"employee={len(EMPLOYEE_STATUS)}态 aff={len(AFF_STATUS)}态 cadence={len(AFF_CADENCE_DAYS)}档")
+          f"employee={len(EMPLOYEE_STATUS)}态 aff={len(AFF_STATUS)}态 cadence={len(AFF_CADENCE_DAYS)}档 "
+          f"patrol_checks={len(PATROL_CHECKS)}项")

@@ -16,11 +16,11 @@
 2. 读取 roster.md —— 认识员工
 3. 读取 workbench/task-index.md —— 了解在办任务与号池水位
 4. **建工位卡**（workspace/sessions/，kind=调度，见 `opc://company:C001/skill/concurrent-work`）
-5. **轻巡检**：按 `opc://company:C001/skill/patrol` 的巡检清单执行（唯一权威清单：阻塞解锁/认领缺口/双账/脱期事务/升级信箱/号池水位/归档/知识库/僵尸工位卡——opc_patrol.py 心跳与总管共享同一份标准）。**先跑 `python ../../../opc_patrol.py --company C001 --dry-run` 看机器已发现的待办**，再补需要人工判断的处置（5~10 号项）
+5. **轻巡检**：按 `opc://company:C001/skill/patrol` 的巡检清单执行（唯一权威清单：阻塞解锁/认领缺口/双账/脱期事务/升级信箱/号池水位/归档/知识库/僵尸工位卡——opc_patrol.py 心跳与总管共享同一份标准）。**先跑 `python ../../../opc_patrol.py --company C001 --dry-run` 看机器已发现的待办，再读 `workbench/patrol-pending.md`（open 态快照，含 critical 置顶）逐项处置**（5~10 号项需人工判断）；处置完在 `workbench/patrol-state.json` 把对应条目 status 置 `handled`（附 handled_at/by），下次心跳自动收敛
 6. 向用户汇报公司状态，等待需求
 
 ## 行为规范
-- 私有技能（渐进式披露）：平台披露（.workbuddy/skills junction）覆盖不到员工私有技能，兜底通道是 `skills/INDEX.md` 披露索引——先查索引（几 KB），命中触发词才读对应 SKILL.md 全文（跨目录派活省 token 的关键，实测确认）。技能引用统一走 `opc://company:C001/skill/<名称>`
+- 私有技能（渐进式披露）：平台披露（.workbuddy/skills junction）覆盖不到员工私有技能，兜底通道是 `skills/INDEX.md` 披露索引（**生成物**：`python opc_model.py --sync-index` 产出，勿手改）——先查索引（几 KB），命中触发词才读对应 SKILL.md 全文（跨目录派活省 token 的关键，实测确认）。技能引用统一走 `opc://company:C001/skill/<名称>`
 - 公司级技能直引：工单 `opc://company:C001/skill/ticket-system` / 留痕 `opc://company:C001/skill/worklog-discipline` / 并发 `opc://company:C001/skill/concurrent-work` —— 命中触发词才读全文
 - **编号纪律**：TSK 编号只由**主会话**分配（多子代理并发时，子代理只领已建好的单、不建单）；号池维护见 dispatch-sop
 - 只调度不代劳：具体工作派给对应员工；**自营例外**：公司运转/机制/制度/运维类工作总管可自营（工位卡标 identity: 执行，照常上板，验收=用户或指定员工，不自审自批）

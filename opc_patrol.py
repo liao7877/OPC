@@ -32,6 +32,7 @@ import os
 import sys
 import re
 import json
+import hashlib
 import datetime
 import subprocess
 
@@ -39,7 +40,7 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 import opc_resolver
-from opc_schema import TASK_TERMINAL, TASK_ACTIVE, PATROL
+from opc_schema import TASK_TERMINAL, TASK_ACTIVE, PATROL, PATROL_CHECKS
 
 
 def _patrol_cfg():
@@ -61,8 +62,26 @@ class Ctx:
         self.tasks_data = os.path.join(self.wb, "tasks-data.json")
         self.dash_data = os.path.join(base, "dashboard-data.js")
         self.log = os.path.join(self.wb, "patrol-log.md")
+        self.state = os.path.join(self.wb, "patrol-state.json")     # 闭环机器态（可改）
+        self.pending = os.path.join(self.wb, "patrol-pending.md")   # open 态待办快照（生成物）
         self.today = datetime.date.today()
-        self.findings = []   # [(check_no, msg)]
+        self.findings = []   # [dict]：{no, kind, severity, action, ref, owner, msg}（B 阶段处置的地基）
+
+
+def _mk(no, msg, ref="", owner=""):
+    """构造结构化 finding：kind/severity/action 来自 opc_schema.PATROL_CHECKS 唯一真相源。"""
+    meta = PATROL_CHECKS.get(no, {})
+    return {"no": no, "kind": meta.get("kind", "other"),
+            "severity": meta.get("severity", "info"),
+            "action": meta.get("action", "notify_owner"),
+            "ref": str(ref or ""), "owner": str(owner or ""), "msg": msg}
+
+
+def fkey(f):
+    """finding 稳定键（state 闭环用）：优先 #编号:引用对象；无 ref 时退消息指纹。"""
+    if f.get("ref"):
+        return f"{f['no']}:{f['ref']}"
+    return "%s:md5:%s" % (f["no"], hashlib.md5(f["msg"].encode("utf-8")).hexdigest()[:8])
 
 
 def resolve_ctx(company):
@@ -117,27 +136,33 @@ def find(ctx):
         if t.get("status") != "backlog" or not t.get("blocked_by"):
             continue
         if all(tmap.get(b, {}).get("status") == "done" for b in t["blocked_by"]):
-            ctx.findings.append((1, f"工单 {t['id']}「{t['title']}」前置已全部完成，仍 backlog——通知 owner={t.get('owner') or '?'} 开工"))
+            ctx.findings.append(_mk(1, f"工单 {t['id']}「{t['title']}」前置已全部完成，仍 backlog——通知 owner={t.get('owner') or '?'} 开工",
+                                    ref=t["id"], owner=t.get("owner") or ""))
 
     # 2) 认领缺口 + 3) 双账不一致（消费 dashboard 的核验告警，机器口径与生成器一致）
     for w in warnings:
         msg = w.get("msg", "")
+        m_ref = re.search(r"TSK\d{4,}|AFF\d{3,}", msg)
+        ref = m_ref.group(0) if m_ref else ""
         if "未认领" in msg:
-            ctx.findings.append((2, msg))
+            ctx.findings.append(_mk(2, msg, ref=ref))
         elif any(k in msg for k in ("未记", "非「进行中」", "已done", "仍未关", "不存在")):
-            ctx.findings.append((3, msg))
+            ctx.findings.append(_mk(3, msg, ref=ref))
 
     # 4) 脱期事务（机器可判定口径与生成器一致）
     for a in dd.get("affairs", []):
         if a.get("never_done"):
-            ctx.findings.append((4, f"事务 {a['id']}「{a['title']}」从未推进（owner={a.get('owner') or '?'}）"))
+            ctx.findings.append(_mk(4, f"事务 {a['id']}「{a['title']}」从未推进（owner={a.get('owner') or '?'}）",
+                                    ref=a["id"], owner=a.get("owner") or ""))
         elif a.get("overdue"):
-            ctx.findings.append((4, f"事务 {a['id']}「{a['title']}」已脱期（{a.get('cadence')}，上次推进 {a.get('last_touched') or '?'}）"))
+            ctx.findings.append(_mk(4, f"事务 {a['id']}「{a['title']}」已脱期（{a.get('cadence')}，上次推进 {a.get('last_touched') or '?'}）",
+                                    ref=a["id"], owner=a.get("owner") or ""))
 
-    # 5) 升级信箱（发现即高优待办）
+    # 5) 升级信箱（发现即高优待办；severity=critical，唯一必须打扰用户的项）
     for t in tasks:
         for esc in t.get("escalations", []):
-            ctx.findings.append((5, f"[高优] 工单 {t['id']}「{t['title']}」有未处理升级：{esc.get('reason')}（owner={t.get('owner') or '?'}）"))
+            ctx.findings.append(_mk(5, f"[高优] 工单 {t['id']}「{t['title']}」有未处理升级：{esc.get('reason')}（owner={t.get('owner') or '?'}）",
+                                    ref=t["id"], owner=t.get("owner") or ""))
 
     # 6) 号池水位
     ti = _read(os.path.join(ctx.wb, "task-index.md"))
@@ -147,7 +172,7 @@ def find(ctx):
         lo, hi = int(m.group(1)), int(m.group(2))
         remaining = sum(1 for n in range(lo, hi + 1) if f"TSK{n:05d}" not in used)
         if remaining < PATROL["ticket_pool_min"]:
-            ctx.findings.append((6, f"预留号池剩余 {remaining} 个（<{PATROL['ticket_pool_min']}），总管补号段"))
+            ctx.findings.append(_mk(6, f"预留号池剩余 {remaining} 个（<{PATROL['ticket_pool_min']}），总管补号段", ref="pool"))
 
     # 7) 归档提醒（热文件含上一年度条目——仅提示计数，交总管处理）
     stale_year = str(ctx.today.year - 1)
@@ -158,7 +183,7 @@ def find(ctx):
         txt = _read(wl)
         n = len(re.findall(r"^date:\s*%s" % stale_year, txt, re.M))
         if n:
-            ctx.findings.append((7, f"{name} 热文件含 {n} 条 {stale_year} 年条目，建议归档"))
+            ctx.findings.append(_mk(7, f"{name} 热文件含 {n} 条 {stale_year} 年条目，建议归档", ref=name))
 
     # 9) 僵尸工位卡（工作中但 3 天未动）
     cutoff = (ctx.today - datetime.timedelta(days=3)).strftime("%Y%m%d")
@@ -181,7 +206,8 @@ def find(ctx):
             except OSError:
                 continue
             if mt.strftime("%Y%m%d") <= cutoff:
-                ctx.findings.append((9, f"{name} 存在疑似僵尸工位卡 {f}（3 天未动），核对会话是否已结束→收口"))
+                ctx.findings.append(_mk(9, f"{name} 存在疑似僵尸工位卡 {f}（3 天未动），核对会话是否已结束→收口",
+                                        ref=f"{name}:{f}"))
 
     # 10) 生成器健康：tasks-data 陈旧
     gen_at = td.get("generated_at", "")
@@ -190,7 +216,8 @@ def find(ctx):
             g = datetime.datetime.strptime(gen_at, "%Y-%m-%d %H:%M:%S")
             age_h = (datetime.datetime.now() - g).total_seconds() / 3600
             if age_h > 24:
-                ctx.findings.append((10, f"看板数据已 {int(age_h)} 小时未刷新（>24h），跑一次 run_boards once 或检查 watcher"))
+                ctx.findings.append(_mk(10, f"看板数据已 {int(age_h)} 小时未刷新（>24h），跑一次 run_boards once 或检查 watcher",
+                                        ref="tasks-data"))
         except ValueError:
             pass
 
@@ -202,8 +229,8 @@ def write_log(ctx, dry):
     day = ctx.today.strftime("%Y-%m-%d")
     existing = _read(ctx.log)
     new_lines = []
-    for no, msg in sorted(ctx.findings):
-        line = f"- [{day}] #{no} {msg}"
+    for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
+        line = f"- [{day}] #{f['no']} {f['msg']}"
         if line not in existing:
             new_lines.append(line)
     if not new_lines or dry:
@@ -216,6 +243,75 @@ def write_log(ctx, dry):
             fh.write("\n")
         fh.write("\n".join(new_lines) + "\n")
     return len(new_lines)
+
+
+def load_state(ctx):
+    try:
+        with open(ctx.state, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def save_state(ctx, state):
+    tmp = ctx.state + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        json.dump(state, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, ctx.state)
+
+
+def update_state(ctx):
+    """闭环机器态 patrol-state.json（A 方案 ③，B 阶段处置闭环的地基）。
+
+    主从（P2）：patrol-log.md 是审计流水只增不删；state 是其派生态，可改、
+    删了可从 log 重建。处置方（总管/未来 agent actor）把条目 status 置
+    "handled"（附 handled_at/by）即闭环；同一问题再犯时本函数重开（reopened）。
+    """
+    state = load_state(ctx)
+    day = ctx.today.strftime("%Y-%m-%d")
+    changed = False
+    for f in ctx.findings:
+        k = fkey(f)
+        cur = state.get(k)
+        if cur is None:
+            state[k] = {"no": f["no"], "kind": f["kind"], "severity": f["severity"],
+                        "action": f["action"], "ref": f["ref"], "owner": f["owner"],
+                        "msg": f["msg"], "status": "open", "first_seen": day}
+            changed = True
+        elif cur.get("status") == "handled":
+            cur["status"] = "reopened"
+            cur["reopened_at"] = day
+            changed = True
+    if changed or not os.path.isfile(ctx.state):
+        save_state(ctx, state)
+    return state
+
+
+def write_pending(ctx, state):
+    """open 态待办快照 patrol-pending.md：总管启动第 5 步读它（比全量日志轻），
+    处置完在 state 置 handled，下次心跳本文件自动收敛。"""
+    opens = [(k, v) for k, v in state.items() if v.get("status") != "handled"]
+    order = {"critical": 0, "warn": 1, "info": 2}
+    opens.sort(key=lambda kv: (order.get(kv[1].get("severity"), 3),
+                               kv[1].get("no", 99), kv[0]))
+    lines = [
+        "# 巡检待办（open 态快照，opc_patrol.py 生成）",
+        "",
+        "> 处置完成后在 patrol-state.json 把对应条目 status 置 \"handled\"（附 handled_at/by），下次心跳本文件自动收敛；审计流水见 patrol-log.md（只增不删）。",
+        "",
+    ]
+    if not opens:
+        lines.append("（当前无 open 待办）")
+    else:
+        lines.append(f"共 {len(opens)} 项：")
+        lines.append("")
+        for k, v in opens:
+            lines.append(f"- #{v.get('no')} [{v.get('severity')}] {v.get('msg')}"
+                         f"（首次发现 {v.get('first_seen', '?')}）key=`{k}`")
+    tmp = ctx.pending + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\n".join(lines) + "\n")
+    os.replace(tmp, ctx.pending)
 
 
 def notify_user(ctx, summary):
@@ -313,13 +409,26 @@ def selftest():
     cfg = opc_resolver.CompanyConfig("C999", tmp, {})
     ctx = Ctx(cfg, tmp)
     find(ctx)
-    msgs = " | ".join(m for _, m in ctx.findings)
-    check("#1 解锁待开工发现", any("TSKA" in m for m in msgs.split(" | ")))
-    check("#4 脱期事务发现", "AFF1" in msgs)
-    check("#5 升级信箱高优", "高优" in msgs and "TSKC" in msgs)
-    check("#2 认领缺口发现", "未认领" in msgs)
-    check("#9 僵尸工位卡发现", "僵尸" in msgs)
-    check("#10 数据陈旧发现", "未刷新" in msgs)
+    msgs = [f["msg"] for f in ctx.findings]
+    check("#1 解锁待开工发现", any("TSKA" in m for m in msgs))
+    check("#4 脱期事务发现", any("AFF1" in m for m in msgs))
+    check("#5 升级信箱 critical", any(f["no"] == 5 and f["severity"] == "critical" for f in ctx.findings))
+    check("#2 认领缺口发现", any("未认领" in m for m in msgs))
+    check("#9 僵尸工位卡发现", any("僵尸" in m for m in msgs))
+    check("#10 数据陈旧发现", any("未刷新" in m for m in msgs))
+    check("findings 结构化（kind/action/ref）", all(f.get("kind") and f.get("action") and "ref" in f for f in ctx.findings))
+    # 闭环态：open → handled → 同问题再犯 reopened（A 方案 ③）
+    state = update_state(ctx)
+    check("state 初始全 open", state and all(v["status"] == "open" for v in state.values()))
+    k5 = [k for k, v in state.items() if v["no"] == 5][0]
+    state[k5]["status"] = "handled"; state[k5]["handled_at"] = "2026-08-28"; save_state(ctx, state)
+    ctx2 = Ctx(cfg, tmp)
+    find(ctx2)
+    state2 = update_state(ctx2)
+    check("再犯重开 reopened", state2[k5]["status"] == "reopened")
+    write_pending(ctx2, state2)
+    pend = _read(ctx2.pending)
+    check("pending 快照含 critical 置顶", "#5 [critical]" in pend)
     # 写日志幂等
     n1 = write_log(ctx, dry=False)
     n2 = write_log(ctx, dry=False)
@@ -345,12 +454,17 @@ def main(argv):
         return 0
     written = write_log(ctx, dry)
     print(f"[patrol] {ctx.today} 巡检发现 {len(ctx.findings)} 项待办：")
-    for no, msg in sorted(ctx.findings):
-        print(f"  #{no} {msg}")
+    for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
+        print(f"  #{f['no']} [{f['severity']}] {f['msg']}")
     if written:
         print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
+    if not dry:
+        state = update_state(ctx)
+        write_pending(ctx, state)
+        opens = sum(1 for v in state.values() if v.get("status") != "handled")
+        print(f"  闭环态已更新：{ctx.state}（open {opens} 项）→ 待办快照 {ctx.pending}")
     if ctx.findings and not dry and _patrol_cfg().get("notify", True):
-        summary = "；".join(m for _, m in sorted(ctx.findings)[:3])
+        summary = "；".join(f["msg"] for f in sorted(ctx.findings, key=lambda x: x["no"])[:3])
         if notify_user(ctx, summary):
             print("  已发系统通知（A+ 报警通道；可在 opc.toml [patrol] notify=false 关闭）")
     return 1 if ctx.findings else 0
