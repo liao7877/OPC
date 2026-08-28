@@ -98,6 +98,8 @@ scripts/link-company.ps1       # Windows
 
 ## 怎么用
 
+**0. 想派活（日常使用入口，小白从这开始）**：把 `companies/C001/E0000-AI员工-总管/`（每家公司各自的 E0000 总管目录）当工作区打开一个 agent 会话——总管的身份、职责、技能会自动加载，用自然语言说需求即可；系统的命名/看板/巡检/门禁维护由机制层与总管兜底，你不需要了解实现，也不需要手动维护任何文件。
+
 **1. 开一家新公司（推荐走技能）**
 - 加载 `create-company` 技能，按 `company-template/` 脚手架 + `PRINCIPLES.md` 规范拉起新公司目录。
 - 或手动复制 `company-template/` 重命名为 `C00X-xxx`，再填 `company.md` / `AGENTS.md`。
@@ -107,7 +109,7 @@ scripts/link-company.ps1       # Windows
 - 建 junction：`` New-Item -ItemType Junction -Path "{层}\.workbuddy\skills" -Target "{层}\skills" ``；
 - **新开会话**后技能被平台渐进式披露（会话启动时扫描，当前会话不刷新）。
 
-**3. 挂公司心跳（推荐，一次性）**——让公司不依赖你的注意力自己转：每天自动巡检（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/僵尸工位卡…），异常写入 `workbench/patrol-log.md`，总管每会话按同一份清单处置：
+**3. 挂公司心跳（推荐，一次性）**——让公司不依赖你的注意力自己转：每天自动巡检（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/僵尸工位卡…），异常写入 `workbench/patrol-log.md` 并**弹系统通知**（A+ 报警通道，`opc.toml [patrol].notify` 可关），总管每会话按同一份清单处置：
 ```bash
 # 公司根执行（自动反查公司 ID）：
 powershell -ExecutionPolicy Bypass -File register-patrol.ps1   # Windows 计划任务
