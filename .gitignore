@@ -30,3 +30,5 @@ tasks-data.json
 .env.*
 *.pem
 *.key
+
+skills/INDEX.md

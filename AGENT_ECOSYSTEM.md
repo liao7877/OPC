@@ -72,7 +72,7 @@ New-Item -ItemType Junction -Path "{层级}\.workbuddy\skills" -Target "{层级}
 
 ### 2.4 关键注意点
 - **技能列表在会话启动时扫描**：junction 建好后需**新会话/重启**才生效，当前会话不刷新
-- **❌ 不要自建手动索引**（如 INDEX.md）：平台披露已接管，双披露会造成干扰项；本方案曾建 INDEX.md 后已废弃删除（2026-08-27）
+- **INDEX.md 是生成物，不是手工索引**：由 `python opc_model.py --sync-index` 从各 SKILL.md frontmatter（triggers/summary）自动生成（勿手改、不入库，2026-08-28 Q2 拍板）；平台披露管「触发」，INDEX 管「跨目录派活的发现」，互补不冲突
 - 平台扫描仅认 `SKILL.md`（frontmatter 规范）；目录下其他文件不会被当技能
 - 公司根 `skills/` 本质是**规范文件层**（PRINCIPLES P10），junction 让它同时获得平台能力，两不冲突
 
