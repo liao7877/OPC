@@ -19,20 +19,20 @@ description: 在 OPC 组织根下快速创建新 AI 公司实例。触发词：�
 
 ## 二、建司流程
 
-1. **复制母本**：整个 `company-template/` 复制为 `C00x-<名称>/`（含 .workbuddy 结构；junction 复制后会退化为实体目录，下一步重建）；
+1. **复制母本**：整个 `company-template/` 复制为 `C00x-<名称>/`（含 .workbuddy 结构；junction 复制后会退化为实体目录，下一步重建）。**CHANGELOG.md 留在模板目录不复制**（它是模板自身的演进记录，各公司在 `company.md` 记「机制基线」版本号对照即可）；
 2. **重建 junction**（关键，母版里是绝对路径指向模板自身）：
    ```powershell
    New-Item -ItemType Junction -Path "C00x-<名称>\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\skills"
    New-Item -ItemType Junction -Path "C00x-<名称>\E0000-AI员工-总管\.workbuddy\skills" -Target "<绝对路径>\C00x-<名称>\E0000-AI员工-总管\skills"
    ```
-3. **改名落位**：总管目录若带【替换】占位符则按模板规范替换；company.md 填公司 ID/名称/业务域；
-4. **首跑验证**：
+3. **改名落位**：总管目录若带【替换】占位符则按模板规范替换；company.md 的三处 `<本司ID>` 占位符（公司 ID / 目录结构说明书路径 / 目录树）全部替换为新 ID，并填公司名/业务域——**漏改会导致与新公司并列出现重复 ID**（`--check` 门禁会拦）；
+4. **首跑验证**（机制代码在 OPC 根，公司目录无生成器）：
    ```
-   cd C00x-<名称>/workbench && python generate_tasks.py --selftest
-   python generate_tasks.py --check-structure
-   cd .. && python generate_dashboard.py
+   python opc_tickets.py --company C00x --selftest
+   python opc_tickets.py --company C00x --check-structure
+   python opc_tickets.py --company C00x && python opc_dashboards.py --company C00x
    ```
-   三项全过 = 骨架可用；
+   （在 OPC 根执行）三项全过 = 骨架可用；
 5. **000 号总管入职**（见 §三）。
 
 ## 三、000 号总管入职动作（首次会话）

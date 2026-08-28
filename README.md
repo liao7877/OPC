@@ -21,9 +21,10 @@ OPC 不是某个具体产品，而是一套**方法论 + 目录规范 + 技能�
 ```
 OPC/
 ├── AGENT_ECOSYSTEM.md      # 多 Agent 平台接入规范（WorkBuddy/Claude Code/Codex 目录、披露机制、junction 接法）
-├── PRINCIPLES.md           # 组织级设计原则（P1~P24：架构哲学/技能体系/工程实践/协作流程/红线）
+├── PRINCIPLES.md           # 组织级设计原则（P1~P26：架构哲学/技能体系/工程实践/协作流程/红线）
 ├── MECHANISM_PLAN.md       # 机制方案（运行 / 协作 / 派活机制的设计与规划）
 ├── SYSTEM_GUIDE.html       # 系统说明（可视化总览，浏览器打开）
+├── opc_resolver.py / opc_model.py / opc_tickets.py / opc_dashboards.py  # 命名空间运行时 + 机制层生成器（公司目录零机制代码）
 ├── companies/C001/          # 示例公司稳定锚（junction→真实公司目录）：完整跑通的 AI 自动化公司
 │   ├── company.md          #   公司档案（定位 / 编制 / 边界）
 │   ├── AGENTS.md / CLAUDE.md # 公司级角色与红线（跨平台兜底）
@@ -32,13 +33,12 @@ OPC/
 │   ├── P0001~P0004/         #   项目目录（实体即目录，归属用字段声明）
 │   ├── workbench/           #   工单看板系统（tasks/ 为唯一真相，看板 HTML 为投影）
 │   ├── skills/              #   公司级技能实体（junction 接入平台披露）
-│   ├── dashboard.html / generate_dashboard.py  # 公司看板生成器
+│   ├── dashboard.html                      # 公司看板（数据由 OPC 根生成器产出）
 │   └── page-templates/      #   dashboard / mydesk / teamboard 模板
 ├── company-template/        # 新公司脚手架：复制即可开一家新公司
 │   ├── company.md / workflow.md / 目录结构说明书.md
 │   ├── E0000-AI员工-总管/    #   总管岗模板
-│   ├── skills/ / templates/ / workbench/ / page-templates/
-│   └── verify_boards.js     #   看板自检脚本
+│   └── skills/ / templates/ / workbench/ / page-templates/
 └── create-company/
     └── SKILL.md             # 「开公司」技能：按模板 + 规范一键拉起新公司
 ```
@@ -49,7 +49,7 @@ OPC/
 
 | 文件 | 作用 |
 |---|---|
-| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P24）。搭任何新东西前先通读。 |
+| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P26）。搭任何新东西前先通读。 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范：各平台技能目录、渐进式披露、junction 接法。 |
 | [`MECHANISM_PLAN.md`](MECHANISM_PLAN.md) | 运行 / 协作 / 派活机制的设计方案。 |
 | [`SYSTEM_GUIDE.html`](SYSTEM_GUIDE.html) | 系统总览说明（双击即用，零依赖）。 |
@@ -61,18 +61,27 @@ OPC/
 > **这套框架能跑，前提是下面几步都做了。** 任何 AI agent 开工前必须先跑 `python opc_resolver.py --doctor`（init 自检门禁），全绿才进业务；不绿按本节补齐。机制详情见 [`opc-namespace-design.md`](opc-namespace-design.md) §5 跨平台。
 
 **前置条件（缺一不可）**
-1. **Python ≥ 3.11** —— resolver 依赖标准库 `tomllib`。`python3 --version` 确认。
+1. **Python ≥ 3.11** —— resolver 依赖标准库 `tomllib`。Windows 一般用 `python --version`，macOS/Linux 一般用 `python3 --version`（下文以 `python3` 示例，按你的平台替换）。
+   > ⚠️ 看板数据（`*-data.js` / `tasks-data.json`）不入库：clone 后跑一次下面「验证」里的生成命令即重建。
 2. **重建稳定锚 `companies/<cid>`** —— `companies/` 不入库（symlink/junction 不进 git），clone 后是空的，必须建：
    - Windows：`scripts/link-company.ps1`
    - macOS / Linux：`scripts/link-company.sh`（内部调 `python3 opc_resolver.py --sync-links`）
    - 公司目录改名后重跑一次即可自动重指向（零参数，靠 company.md「公司 ID」发现）。
 3. **恢复 pre-commit 门禁**（提交前拦截失效引用，开发期便利）：`cp scripts/pre-commit .git/hooks/` 或 `git config core.hooksPath scripts/`。
-4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描四项）。
+4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描四项），再跑一次 `run_boards once` 重建看板数据。
 
 ```bash
-# 最常用：init 自检（agent 开工前必跑）
+# 最常用：init 自检（agent 开工前必跑；Windows 把 python3 换成 python）
 python3 opc_resolver.py --doctor
 # 输出 [ok] 初始化自检通过：可正常开工   ← 才允许开工
+
+# 各模块内置自测（不碰真实数据）
+python3 opc_resolver.py --selftest && python3 opc_model.py --selftest
+python3 opc_tickets.py --selftest && python3 opc_dashboards.py --selftest
+
+# 重建看板数据（在任一公司根执行；或 python3 ../opc_tickets.py --company C001）
+./run_boards.sh once           # macOS / Linux / Git-Bash
+run_boards.bat once            # Windows
 
 # 首次 clone / 改名后重建锚
 scripts/link-company.sh        # macOS / Linux
@@ -81,6 +90,7 @@ scripts/link-company.ps1       # Windows
 
 **跨平台说明**
 - 稳定锚：Windows 用 junction（`mklink /J`，普通用户可建）；macOS/Linux 用 symlink（`os.symlink`，普通用户可建）。二者对浏览器/OS 透明，运行时层 HTML 双击即用。
+- `.ps1` 脚本必须以 UTF-8 **带 BOM** 落盘（Windows PowerShell 5.1 对无 BOM 的 UTF-8 中文按 GBK 误读会语法错）。
 - 文档层 `opc://` 由 `opc_resolver.py` 解析（纯标准库，三平台一致），`--check` 门禁已实跑验证。
 - ⚠️ Windows 侧已实跑；macOS/Linux 的 `os.symlink` 分支逻辑正确但**未在真机实测**——首次在 Mac/Linux 跑请务必执行上面的 `--doctor` 验证命令确认。
 
@@ -97,8 +107,16 @@ scripts/link-company.ps1       # Windows
 - 建 junction：`` New-Item -ItemType Junction -Path "{层}\.workbuddy\skills" -Target "{层}\skills" ``；
 - **新开会话**后技能被平台渐进式披露（会话启动时扫描，当前会话不刷新）。
 
-**3. 跑看板**
-- `opc://company:C001`（`companies/C001` 稳定锚）下 `run_boards.bat`（Windows）/ `run_boards.sh`（Linux）生成 `dashboard.html` 等看板；`workbench/tasks/` 是唯一真相，看板是投影。
+**3. 挂公司心跳（推荐，一次性）**——让公司不依赖你的注意力自己转：每天自动巡检（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/僵尸工位卡…），异常写入 `workbench/patrol-log.md`，总管每会话按同一份清单处置：
+```bash
+# 公司根执行（自动反查公司 ID）：
+powershell -ExecutionPolicy Bypass -File register-patrol.ps1   # Windows 计划任务
+# 或 macOS/Linux crontab：
+0 9 * * * cd /path/to/OPC && python3 opc_patrol.py --company C001 --quiet
+```
+
+**4. 跑看板**
+- 在公司根执行 `run_boards.bat`（Windows）/ `./run_boards.sh`（macOS/Linux/Git-Bash）：薄壳自动反查本公司 ID 并调 OPC 根 `opc_tickets.py` / `opc_dashboards.py` 生成数据；`workbench/tasks/` 是唯一真相，看板是投影（数据文件不入库，删了重跑即重建）。
 
 > 详细跨平台接入与子 Agent 派活机制见 [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md)；原则与红线见 [`PRINCIPLES.md`](PRINCIPLES.md)。
 

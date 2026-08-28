@@ -1,10 +1,7 @@
 # OPC 全局命名空间 manifest（单例 = 物理路径唯一真相源）
 # 设计原则：改名/改布局只改本文件，所有 consumer（脚本/AGENTS.md/skill）零改动。
+# manifest 所在目录即 OPC 根（resolver 以 manifest 文件位置定位，无 workspace.root 配置项）。
 # 对应决策：Q1 选 opc:// URI 符号；Q2 选「全局单例 + 公司级覆盖」。
-
-[workspace]
-# manifest 所在目录即 OPC 根；root 相对本文件
-root = "."
 
 [company.DEFAULT]
 # 骨架默认值：所有公司继承，未覆盖字段沿用此处

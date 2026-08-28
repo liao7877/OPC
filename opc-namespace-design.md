@@ -2,7 +2,7 @@
 
 > **定位**：PRINCIPLES 的补充约定，是 P2（单一真相）/ P3（高内聚低耦合）在**「架构常量层」**的具体落地。
 > **创建**：2026-08-28 · **依据**：架构评审（依赖倒置视角）+ PoC 验证。
-> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`scripts/link-company.*`（稳定锚同步）、`scripts/watch-companies.py`（可选监听守护）、`generate_dashboard.py`（首个接入的 consumer）。
+> **关联文件**：`opc.toml`（全局 manifest）、`opc_resolver.py`（解析器/DI 容器）、`scripts/link-company.*`（稳定锚同步）、`scripts/watch-companies.py`（可选监听守护）、`opc_tickets.py` / `opc_dashboards.py`（机制层生成器，2026-08-28 上提 OPC 根）。
 
 ---
 
@@ -64,9 +64,8 @@ opc://<scope>/<type>/<id>/<sub>
 - `scope`：`org`（组织层，OPC 根）| `company:<id>`（如 `company:C001`）
 - `type`：`company / team / employee / project / skill / workbench / task / doc`
 
-**别名**
-- 单公司语境内可省略 scope：`@skill/ticket-system` 或 `opc:skill/ticket-system` 默认解析到当前公司。
-- 跨公司 / 组织层**必须带 scope**，避免歧义。
+**scope 规则**
+- 引用必须显式带 scope（`opc://company:<cid>/...` 或 `opc://org/...`）；单文件内省略 scope 的简写（`opc:skill/...`、`@skill/...`）**未实现，禁止使用**——resolver 对不带 `//` 的形态直接报错（宁可失败不给歧义解析）。
 
 **已注册 name（resolver 当前可解析）**
 | name | 含义 | 例 |
@@ -93,8 +92,8 @@ opc://<scope>/<type>/<id>/<sub>
 ## 4. resolver（`opc_resolver.py`，OPC 根，零第三方依赖）
 
 仅用标准库 `tomllib`。API：
-- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。**自愈兜底**：若 `home` 目录不存在，自动扫 OPC 根下 `company.md`、按「公司 ID」定位真实目录——改名目录忘了更新锚也能工作。
-- `resolve(uri)` → `opc://...` 解析为绝对路径；无 name 则返回公司根。
+- `load_company(cid)` → 合并 `DEFAULT` + `[company.<cid>]` 覆盖，返回 `CompanyConfig`（含 `home_abs` / `tasks_data_abs` / `roster_rel` 等派生路径）。**自愈兜底**：若 `home` 目录不存在，自动扫 OPC 根下 `company.md`、按「公司 ID」定位真实目录——改名目录忘了更新锚也能工作。**严格性**：未知公司（manifest 无段且扫描发现无果）直接抛错，绝不返回假路径。
+- `resolve(uri)` → `opc://...` 解析为绝对路径；实体与子路径逐级校验存在性（`opc://company:C001/skill/<名>/SKILL.md` 直达文件）；实体类型与编号前缀强校验（team↔T、project↔P、employee↔E）；解析失败一律抛错。
 - `check_links(cid)` → ① manifest key 物理存在 + ② 全文 opc:// 引用可解析 + ③ 结构审计（company.md 锚点缺失/ID 无效/与 opc.toml 不符）；任一失效报 issue 列表。
 - `audit_structure()` → 结构审计（见上 ③）；可单独调用，亦被 `check_links` 内含。
 - `sync_links()` → **稳定锚同步中枢**：对每个公司，按 `home`（优先）或 `company.md` 的「公司 ID」扫描发现真实位置，把 `companies/<cid>` 重指过去。零参数、零手动输入。**手动脚本与未来 watcher 都只调它**（DIP：业务智能单一来源）。
@@ -109,8 +108,11 @@ opc://<scope>/<type>/<id>/<sub>
 cd OPC根
 python opc_resolver.py --doctor           # 🚦 init 自检门禁：开工前先跑，全绿才进业务
 python opc_resolver.py --check            # 全文扫描 opc:// 引用，全绿=自洽
+python opc_resolver.py --selftest         # resolver 内置回归测试
 python opc_resolver.py --resolve opc://company:C001/workbench   # 打印绝对路径
 python opc_resolver.py --sync-links        # 重指 companies/<cid> 到真实目录（零参数）
+python opc_tickets.py --company C001       # 生成工单看板数据（--dir <公司根> 亦可）
+python opc_dashboards.py --company C001    # 生成三级看板数据（--watch 监听 / --verify 校验）
 ```
 
 **🚦 init 自检门禁（`--doctor`，2026-08-28 新增）**：任何 agent 开工前必须跑 `python opc_resolver.py --doctor`，检查四项——①Python ≥3.11（`tomllib` 依赖）②稳定锚 `companies/<cid>` 存在且指向真实目录 ③pre-commit 门禁已装 ④`--check` 命名空间扫描自洽。全绿（输出「初始化自检通过」）才允许进入业务；不绿按 README「系统初始化」补齐（建锚 / 装钩子 / 修失效引用）。此步相当于函数 `init()`：前置条件不满足不许开工。详见 README「系统初始化」。
@@ -160,6 +162,25 @@ def anchor_prefix(base_dir, subdir):
 - **验证**：`opc_resolver.py --check` → 全绿；C001 + 模板共 4 个生成器 `--selftest` 全过；`anchor_prefix` 单测 4 场景全对；全项目 `companies/C001` 引用 177 处深度核对 0 偏差。
 
 > 数据层（看板 JSON 等运行时产物）仍走物理路径，属预期（产物不进版本库、随生成而变），不纳入符号化范围。
+
+### 6.2 机制上提 + 严格化（2026-08-28 第二轮，架构评审落地）
+
+**机制上提（推翻「工具随看板走」，廖哥拍板）**：`generate_tasks.py` / `generate_dashboard.py`
+（此前每个公司目录各一份复制、已实际分叉）收敛为 OPC 根单例 `opc_tickets.py` / `opc_dashboards.py`。
+公司目录只留数据 + `run_boards.{bat,sh}` 薄壳（自动反查公司 ID）。修 bug 一处生效、开新公司零代码复制。
+
+**resolver 严格化**：
+- URI 子路径直达（`.../skill/<名>/SKILL.md`），不再静默截断；
+- 未知公司 / 不存在实体与子路径 / 类型前缀错配（team 配 E 号）一律抛错，悬空引用不再漏网；
+- `--check` 默认遍历全部公司（原单查 C001）；扫描器兼容 GBK 文件（latin-1 兜底）+ 中文标点不吸入 URI；
+- `--sync-links` 对无法安全重建的锚位给可读报错（不再裸栈）；doctor 认 `core.hooksPath`；
+- 三个根模块均带 `--selftest`（resolver 11 / tickets 22 / dashboards 23 项断言）。
+
+**产物出库**：`*-data.js` / `tasks-data.json` 进 `.gitignore`（`generated_at` 每次生成必变，
+入库=永久噪音 diff）；HTML 是模板的确定性拷贝，留库。clone 后跑一次 `run_boards once` 重建数据。
+
+**跨平台**：`run_boards.sh` python3/python 双探测（Windows Git Bash 常无 python3、macOS 常无 python）；
+`link-company.ps1` 不再写死机器专属 Python 路径，并以 UTF-8 BOM 落盘（Windows PowerShell 5.1 硬要求）。
 
 ### 6.2 init 自检门禁（`--doctor`，2026-08-28 新增）
 

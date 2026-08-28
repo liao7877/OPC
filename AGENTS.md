@@ -4,7 +4,7 @@
 > 公司级 agent 入口在各公司 `AGENTS.md`（如 `C001-AI自动化公司/AGENTS.md`）；本文件管「组织根这一层」。
 
 ## 启动门禁（init · 任何 agent 开工前必过）
-- 在 OPC 根跑 `python opc_resolver.py --doctor`：**全绿（输出「初始化自检通过」）才允许开工**；不绿按 [`README.md`「系统初始化」](README.md) 补齐——典型是稳定锚缺失（跑 `scripts/link-company.{ps1,sh}` 重建 `companies/<cid>`）或 pre-commit 未装（`cp scripts/pre-commit .git/hooks/`）。
+- 在 OPC 根跑 `python opc_resolver.py --doctor`（Windows 用 `python`，macOS/Linux 用 `python3`）：**全绿（输出「初始化自检通过」）才允许开工**；不绿按 [`README.md`「系统初始化」](README.md) 补齐——典型是稳定锚缺失（跑 `scripts/link-company.{ps1,sh}` 重建 `companies/<cid>`）或 pre-commit 未装（`cp scripts/pre-commit .git/hooks/`）。
 - 这相当于函数 `init()`：命名空间符号化 + 稳定锚物理入口 + 提交门禁是系统正常跑的硬前置，未达标不许进入业务。
 - 改名公司目录后，重跑 `scripts/link-company.{ps1,sh}` 即可自动重指向，无需改任何其他文件。
 
@@ -22,3 +22,4 @@
 | [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级设计原则 P1~P26 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范 |
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
+| `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
