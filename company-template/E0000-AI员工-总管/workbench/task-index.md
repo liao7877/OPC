@@ -1,7 +1,7 @@
 # 任务编号台账（task-index）
 
 > 定位：**编号分配台账** —— 只登记"哪些 TSK 编号已分配、给谁、什么标题"。
-> 任务实体与最新状态以 `opc://company:C001/workbench/tasks/TSKxxx-标题/task.md` 为准（生成器自动读取，看板自动呈现），本台账**不做任务列表的重复维护**，避免两份漂移。
+> 任务实体与最新状态以 `opc://company:<本司ID>/workbench/tasks/TSKxxx-标题/task.md` 为准（生成器自动读取，看板自动呈现），本台账**不做任务列表的重复维护**，避免两份漂移。
 
 | 任务 ID | 标题 | 承接 | 创建时间 |
 |---|---|---|---|
@@ -23,6 +23,6 @@
 
 ## 登记规范
 - **分配编号前**：先查本台账，避免重号（生成器也会查重告警，但台账是源头防线）
-- **创建工单**：`python ../../../companies/C001/workbench/generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成规范目录 + task.md 模板）
+- **创建工单**：`python <OPC根>/opc_tickets.py --company <本司ID> --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成规范目录 + task.md 模板）
 - **登记**：新分配编号时在本表追加一行（ID/标题/承接/时间）
-- **状态查询**：看 `opc://company:C001/workbench/kanban.html`（数据从 tasks/ 自动同步 ≤3 秒），不在本表维护状态列
+- **状态查询**：看 `opc://company:<本司ID>/workbench/kanban.html`（数据从 tasks/ 自动同步 ≤3 秒），不在本表维护状态列

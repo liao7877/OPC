@@ -28,13 +28,13 @@ type: 工单                  ← 工单 / 直聊 / 事务 / 自由
 ticket: TSK00012            ← type=工单 时必填且不可写其他值；直聊活不要填
 aff: AFF0001                ← type=事务 时必填；工单若属于某常设事务的大活也可带
 project: P0004              ← 关联项目代号（可选）
-deliverable: 相对路径        ← 可选：以本员工目录根为基准，如 ../../../companies/C001/P0004-xxx/报告.md
+deliverable: 相对路径        ← 可选：以本员工目录根为基准，如 ../../../companies/<本司ID>/P0004-xxx/报告.md
 updated: 2026-08-27         ← 每次动这条记录时更新为当天
 note: 备注一句话             ← 可选
 ---
 ```
 
-> **常设事务**（AFF，无终点养资产的工作，如长期内容运营）：接到事务的活 → 建条目 `type: 事务` + 填 `aff`；每次推进都记一笔——生成器据 worklog 推导事务节奏，**不记 = 事务被判脱期**。事务契约见 `opc://company:C001/workbench/affairs/AFF-SCHEMA.md`。
+> **常设事务**（AFF，无终点养资产的工作，如长期内容运营）：接到事务的活 → 建条目 `type: 事务` + 填 `aff`；每次推进都记一笔——生成器据 worklog 推导事务节奏，**不记 = 事务被判脱期**。事务契约见 `opc://company:<本司ID>/workbench/affairs/AFF-SCHEMA.md`。
 
 ## 三、执行时机（Agent 行为规范）
 
@@ -56,7 +56,7 @@ note: 备注一句话             ← 可选
 
 ## 五、并发追加协议（同目录多会话并行时必守）
 
-同一员工目录可能并发开多个会话（见公司级技能 `opc://company:C001/skill/concurrent-work`），追加 worklog 必须：
+同一员工目录可能并发开多个会话（见公司级技能 `opc://company:<本司ID>/skill/concurrent-work`），追加 worklog 必须：
 
 1. **重读**：追加前重新读一遍 worklog.md 全文（拿到最新内容）；
 2. **补块**：在最新内容末尾拼上新块；
@@ -79,6 +79,6 @@ note: 备注一句话             ← 可选
 
 ## 七、知识沉淀出口（可选字段）
 
-某条经验对公司其他人也有用时，别只留在 worklog——提炼后交 `../../../companies/C001/公司知识库/methods/`（候选方法论），由总管评审提炼成技能/制度/背景资料（见知识库 KB.md）。个人下次干活的私有经验才进 `memory/MEMORY.md`。
+某条经验对公司其他人也有用时，别只留在 worklog——提炼后交 `../../../companies/<本司ID>/公司知识库/methods/`（候选方法论），由总管评审提炼成技能/制度/背景资料（见知识库 KB.md）。个人下次干活的私有经验才进 `memory/MEMORY.md`。
 
 > 我的个人工作台：双击本目录 `mydesk.html` 即可看到自己的记录被如何呈现；公司层面出现在公司根 `dashboard.html`。

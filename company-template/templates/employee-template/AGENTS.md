@@ -15,17 +15,17 @@
 4. 向总管/用户报到，等待任务
 
 ## 行为规范
-- 私有技能（渐进式披露）：技能引用走 `opc://company:C00x/skill/<名称>`（见 opc-namespace-design.md）；原 `../skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），命中触发词再读对应 SKILL.md 全文，勿整份预加载
-- 工单协作（公司级技能）：`opc://company:C001/skill/ticket-system` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
-- 工作自记录（公司级技能）：`opc://company:C001/skill/worklog-discipline` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
-- 并发协作（公司级技能）：`opc://company:C001/skill/concurrent-work` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态
+- 私有技能（渐进式披露）：技能引用走 `opc://company:<本司ID>/skill/<名称>`（见 opc-namespace-design.md）；原 `../../../companies/<本司ID>/skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），命中触发词再读对应 SKILL.md 全文，勿整份预加载；手动打开技能文件时把 `opc://company:<本司ID>/...` 当 `companies/<本司ID>` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
+- 工单协作（公司级技能）：`opc://company:<本司ID>/skill/ticket-system` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
+- 工作自记录（公司级技能）：`opc://company:<本司ID>/skill/worklog-discipline` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
+- 并发协作（公司级技能）：`opc://company:<本司ID>/skill/concurrent-work` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态
 - 【红线：只维护自己职责内的文件；不越权改系统层文件】
 - **领地自治**：本目录内技能/机制/workflow/memory 自主维护（用户直接下指令即可改，留痕+可逆）；**例外：不得摘除上述公司级技能引用行**（摘除必须经总管）；跨领地指令先上报总管
 
 ## 启动三动作（每次会话开工，固定）
 1. 建工位卡：`workspace/sessions/seat-<HHMMSS>-<2位随机>.md`（见 concurrent-work §一）
 2. 漏接自查：扫 owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领（priority: 高 自动开工；中/低只补认领回执）
-3. 开工保活：跑一次 `../../../companies/C001/run_boards.bat once`（在公司根；页面出现"数据已陈旧"黄条时同样跑它）
+3. 开工保活：跑一次 `../../../companies/<本司ID>/run_boards.bat once`（Windows）或 `../../../companies/<本司ID>/run_boards.sh once`（macOS/Linux/Git-Bash；在公司根；页面出现"数据已陈旧"黄条时同样跑它）
 
 ## 身份信息（AGENTS.md 自描述字段）
 - 编号：E00x【替换】
