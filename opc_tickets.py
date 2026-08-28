@@ -40,7 +40,8 @@ if _ROOT not in sys.path:
 from opc_model import (parse_frontmatter,                      # 共享读取器（P25，禁私写正则）
                        normalize_dt as normalize_date,         # 日期时间规整（D2 收敛）
                        read_text_warn as read_text,            # 告警读（D2 收敛）
-                       atomic_write)                           # 原子写（D3 收敛）
+                       atomic_write,                           # 原子写（D3 收敛）
+                       file_lock, locked_append, locked_update)  # 并发互斥（2026-08-29 拍板）
 import opc_resolver
 from opc_schema import (TASK_STATUS as VALID_STATUS,          # 状态机唯一真相源（opc_schema）
                         TASK_STATUS_ORDER as STATUS_ORDER,
@@ -329,17 +330,19 @@ def build_registry(ctx, tasks):
       2) 各工单 task.md 声明的 owner_name / project_name——兜底来源。
     合并规则：目录优先；仅当某代号在目录中查不到时，才用该工单声明的名称补全。"""
     emp, proj = {}, {}
+    reg = opc_resolver.entity_types()   # 前缀唯一真相（2026-08-29 实体注册表）
+    pe, pp = reg["employee"], reg["project"]
     for name in sorted(os.listdir(ctx.company_dir)) if os.path.isdir(ctx.company_dir) else []:
         full = os.path.join(ctx.company_dir, name)
         if not os.path.isdir(full):
             continue
-        if re.match(r"^E\d{3,}-", name):
+        if re.match(rf"^{pe}\d{{3,}}-", name):
             code = name.split("-", 1)[0]
             label = name.split("-", 1)[1] if "-" in name else name
             if label.startswith("AI员工-"):
                 label = label[len("AI员工-"):]
             emp[code] = label
-        elif re.match(r"^P\d{3,}-", name):
+        elif re.match(rf"^{pp}\d{{3,}}-", name):
             code = name.split("-", 1)[0]
             label = name.split("-", 1)[1] if "-" in name else name
             proj[code] = label
@@ -519,25 +522,33 @@ def register_ledger(ctx, tid, title, owner, parent, today):
     """建单即在 workbench/task-index.md「工单登记」表占一行（B5：取号+占台账+建单一步）。
     表格式变化或找不到表时跳过并提示（容错不阻断，总管人工补记）。"""
     p = os.path.join(ctx.wb_dir, "task-index.md")
-    text = read_text(p)
-    if not text or "## 工单登记" not in text:
-        print("  [提示] 未找到 task-index.md「工单登记」表，台账请总管人工补记")
+    if not os.path.isfile(p):
+        print("  [提示] 未找到 task-index.md，台账请总管人工补记")
         return
-    lines = text.splitlines(keepends=True)
-    start = next(i for i, ln in enumerate(lines) if "## 工单登记" in ln)
-    end, seen = start, False
-    for j in range(start + 1, len(lines)):
-        if lines[j].lstrip().startswith("|"):
-            end, seen = j, True
-        elif seen:
-            break
-    if not seen:
-        print("  [提示] task-index.md「工单登记」下无表格行，台账请总管人工补记")
-        return
-    safe = str(title).replace("|", "／")
-    row = f"| {tid} | {safe} | {owner or '-'} | {parent or '-'} | {today} |\n"
-    lines.insert(end + 1, row)
-    atomic_write(p, "".join(lines))
+    # 并发安全（2026-08-29 拍板）：读→改→原子替换全程持锁（台账是建单最热竞争点）
+    with file_lock(p):
+        text = read_text(p)
+        if "## 工单登记" not in text:
+            print("  [提示] task-index.md 缺「工单登记」表，台账请总管人工补记")
+            return
+        lines = text.splitlines(keepends=True)
+        start = next(i2 for i2, ln in enumerate(lines) if "## 工单登记" in ln)
+        end, seen = start, False
+        for k in range(start + 1, len(lines)):
+            if lines[k].lstrip().startswith("|"):
+                end, seen = k, True
+            elif seen:
+                break
+        if not seen:
+            print("  [提示] task-index.md「工单登记」下无表格行，台账请总管人工补记")
+            return
+        safe = str(title).replace("|", "／")
+        dash = "-"
+        nl = chr(10)
+        row = ("| " + tid + " | " + safe + " | " + (owner or dash)
+               + " | " + (parent or dash) + " | " + today + " |" + nl)
+        lines.insert(end + 1, row)
+        atomic_write(p, "".join(lines))
     print(f"  [完成] 台账登记：{tid} -> workbench/task-index.md")
 
 
@@ -646,20 +657,20 @@ def append_worklog_entry(ctx, owner, tid, title, project):
     wl = os.path.join(ctx.company_dir, emp_dirs[0], "workspace", "worklog.md")
     day = datetime.date.today().strftime("%Y%m%d")
     today = day[:4] + "-" + day[4:6] + "-" + day[6:]
-    existing = read_text(wl)
-    seq = len(re.findall(r"^wid: W-%s-" % day, existing, re.M)) + 1
-    block = (
-        f"\n---\nwid: W-{day}-{seq:02d}\ndate: {today}\ntitle: {title}\n"
-        f"status: 计划中\ntype: 工单\nticket: {tid}\nproject: {project}\nupdated: {today}\n---\n"
-    )
+
+    def _append_block(existing_text):
+        # wid 序号分配基于持锁快照，双会话并发建单不会撞 wid（2026-08-29 拍板）
+        seq = len(re.findall(r"^wid: W-%s-" % day, existing_text, re.M)) + 1
+        return existing_text + (
+            f"\n---\nwid: W-{day}-{seq:02d}\ndate: {today}\ntitle: {title}\n"
+            f"status: 计划中\ntype: 工单\nticket: {tid}\nproject: {project}\nupdated: {today}\n---\n"
+        )
+
     # 追加容错：自动建账失败不阻断建单主流程（员工可按 skill 自行补记）
-    # 原子写（P12）：并发会话下不直接对旧文件盲追加，读→拼→临时文件→替换
+    # 并发安全（2026-08-29 拍板）：读→序号分配→替换全程持锁，杜绝后写覆盖先写与撞 wid
     try:
         os.makedirs(os.path.dirname(wl), exist_ok=True)
-        tmp = wl + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(existing + block)
-        os.replace(tmp, wl)
+        locked_update(wl, _append_block)
         print(f"已自动建账：{emp_dirs[0]}/workspace/worklog.md 新增「计划中」条目（ticket={tid}）")
     except Exception as e:
         print(f"  [警告] 自动建账失败（{e}），请该员工按 worklog-discipline 技能自行补记")
@@ -680,7 +691,9 @@ def check_structure(ctx):
         r"^run_boards\.(bat|sh|command)$", r"^register-task\.ps1$", r"^register-patrol\.(ps1|sh)$",
         r"^verify_boards\.(js|py)$", r"^(dashboard|目录结构说明书)\.(html|md)$", r"^dashboard-data\.js$",
     )]
-    entity_re = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})-")
+    # 实体目录识别用注册表前缀（2026-08-29：加类型/改前缀 = 改 manifest，本函数零改动）
+    _alts = "|".join(rf"{p}\d{{3,}}" for p in opc_resolver.entity_types().values())
+    entity_re = re.compile(rf"^({_alts})-")
     problems = []
     for d in required_dirs:
         if not os.path.isdir(os.path.join(company, d)):

@@ -29,13 +29,24 @@ import sys
 import tomllib
 import subprocess
 
-# 实体类型 -> 目录名前缀约定（ID 必须匹配对应前缀，防 team/E0000 之类跨类错配）
-_ENTITY_PREFIX = {
-    "team": r"^T\d+$",
-    "project": r"^P\d+$",
-    "employee": r"^E\d+$",
-    "skill": None,          # skill 走 skills/ 目录约定，无前缀
-}
+# 实体类型内置默认（目录名前缀约定）；唯一真相在 opc.toml [entity_types]，可整体覆盖。
+# 加新实体类型（如客户/供应商）= manifest 加一行，resolver/生成器/巡检/结构自检自动跟随
+# （2026-08-29 拍板：实体类型注册表落地，消除「前缀正则散落 4+ 处」）。
+_DEFAULT_ENTITY_TYPES = {"employee": "E", "team": "T", "project": "P"}
+
+
+def entity_types(root=None):
+    """实体类型注册表：{type: 目录名前缀}。manifest [entity_types] 覆盖默认值。"""
+    reg = dict(_DEFAULT_ENTITY_TYPES)
+    root = root or _find_root()
+    if root:
+        try:
+            g = _load_toml(os.path.join(root, "opc.toml"))
+            for k, v in g.get("entity_types", {}).items():
+                reg[str(k)] = str(v)
+        except Exception:
+            pass    # manifest 缺失/损坏时回退默认（doctor 会另行报告）
+    return reg
 
 
 def _find_root():
@@ -215,11 +226,11 @@ def resolve_entity(cid, etype, eid, sub=None):
         base = cfg._m.get("skills", "skills")
         p = _require_dir(os.path.join(home, base, eid),
                          f"opc://company:{cid}/skill/{eid}")
-    elif etype in ("team", "project", "employee"):
-        # 校验 eid 与类型前缀匹配（防 team/E0000 跨类错配）
-        pat = _ENTITY_PREFIX[etype]
-        if pat and not re.match(pat, eid):
-            raise ValueError(f"实体 {etype}:{eid} 编号前缀不符（{etype} 应为 {pat} 格式）")
+    elif etype in entity_types():
+        # 校验 eid 与注册表前缀匹配（防 team/E0000 跨类错配；前缀真相在 [entity_types]）
+        prefix = entity_types()[etype]
+        if not re.match(rf"^{prefix}\d+$", eid):
+            raise ValueError(f"实体 {etype}:{eid} 编号前缀不符（{etype} 应为 {prefix}+数字）")
         # 扫描发现式：home 下找 {id}-* 目录（实体即目录，id 是稳定前缀）
         if not os.path.isdir(home):
             raise FileNotFoundError(f"公司根不存在：{home}")
@@ -235,7 +246,7 @@ def resolve_entity(cid, etype, eid, sub=None):
         # 兼容 key 模式透传（opc://company:C001/workbench 等）
         if etype in cfg._m:
             return cfg._abs(etype)
-        raise ValueError(f"不支持的实体类型：{etype}（可用：skill/team/project/employee 或 manifest key）")
+        raise ValueError(f"不支持的实体类型：{etype}（可用：skill 或注册表 {sorted(entity_types())} 或 manifest key）")
 
     if sub:
         # 子路径逐级校验（SKILL.md 等具体文件）
@@ -830,6 +841,9 @@ def selftest():
             ok = False
 
     print("运行内置自测…")
+    # 0) 实体类型注册表：内置默认 + manifest 覆盖通道
+    reg = entity_types()
+    check("实体注册表默认三件套", reg == {"employee": "E", "team": "T", "project": "P"})
     # 1) URI 解析：未知公司必须报错（绝不静默返回假路径）
     try:
         resolve("opc:" + "//company:C999_NOPE/workbench")

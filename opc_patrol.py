@@ -112,6 +112,7 @@ def _load_json(path):
 
 def find(ctx):
     """执行机器可判定的巡检项（1~6 号；7~10 需要处置联动，产出提示交总管）。"""
+    pe = opc_resolver.entity_types()["employee"]   # 员工前缀唯一真相（实体注册表）
     td = _load_json(ctx.tasks_data)
     if td is None:
         # 首跑前 tasks-data 不存在：不算异常（clone 后未生成属正常），提示即可
@@ -175,7 +176,7 @@ def find(ctx):
     # 7) 归档提醒（热文件含上一年度条目——仅提示计数，交总管处理）
     stale_year = str(ctx.today.year - 1)
     for name in sorted(os.listdir(ctx.base)) if os.path.isdir(ctx.base) else []:
-        if not re.match(r"^E\d{3,}-", name):
+        if not re.match(rf"^{pe}\d{{3,}}-", name):
             continue
         wl = os.path.join(ctx.base, name, "workspace", "worklog.md")
         txt = _read(wl)
@@ -202,7 +203,7 @@ def find(ctx):
     # 9) 僵尸工位卡（工作中但 3 天未动）
     cutoff = (ctx.today - datetime.timedelta(days=3)).strftime("%Y%m%d")
     for name in sorted(os.listdir(ctx.base)) if os.path.isdir(ctx.base) else []:
-        if not re.match(r"^E\d{3,}-", name):
+        if not re.match(rf"^{pe}\d{{3,}}-", name):
             continue
         sdir = os.path.join(ctx.base, name, "workspace", "sessions")
         if not os.path.isdir(sdir):

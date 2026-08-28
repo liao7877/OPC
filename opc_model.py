@@ -31,6 +31,8 @@ import json
 import os
 import re
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -170,6 +172,66 @@ def atomic_write(path, text):
     with open(tmp, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
     os.replace(tmp, path)
+
+
+# ---- 并发互斥（2026-08-29 拍板：锁原语落地；原子写只防「写一半被读」，防不了「后写覆盖先写」）----
+
+LOCK_STALE_SECONDS = 30.0   # 锁文件超过该秒数视为持有者崩溃残留，允许抢占
+
+
+@contextmanager
+def file_lock(path, timeout=10.0, poll=0.05):
+    """跨平台建议锁（纯标准库）：O_EXCL 锁文件 + 忙等超时 + 过期锁抢占。
+
+    用法：`with file_lock(target_path):` 锁文件为 target+".lock"。
+    约束：只约束「同样走本锁」的写方（机制层全部走；agent 侧用 --append 命令）；
+    锁内写必须经 atomic_write 落盘，临界区保持极短。
+    """
+    lock_path = str(path) + ".lock"
+    deadline = time.monotonic() + timeout
+    fd = None
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lock_path) > LOCK_STALE_SECONDS:
+                    os.unlink(lock_path)      # 持有者崩溃残留，抢占（临界区短，风险有界）
+                    continue
+            except OSError:
+                pass                           # 锁刚好被释放，重试
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"获取锁超时（{timeout}s）：{lock_path}（他人持有且未过期）")
+            time.sleep(poll)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        yield
+    finally:
+        os.close(fd)
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
+def locked_append(path, text):
+    """锁内追加：读 → 拼 → 原子替换，全程持锁（worklog/台账等追加型写路径的标准姿势）。
+    目标不存在时先创建（首条追加）。"""
+    path = str(path)
+    with file_lock(path):
+        existing = _read(Path(path))
+        atomic_write(path, existing + text)
+
+
+def locked_update(path, transform):
+    """锁内变换：existing → transform(existing) → 原子替换，全程持锁。
+    transform 读到的 existing 是持锁快照，wid 序号分配等「依赖现内容」的写
+    必须走这里（locked_append 不满足序号分配场景）。"""
+    path = str(path)
+    with file_lock(path):
+        existing = _read(Path(path))
+        atomic_write(path, transform(existing))
 
 
 def build_indexes(company_root):
@@ -380,6 +442,29 @@ def selftest():
         f = Path(tmp) / "aw.txt"
         atomic_write(str(f), "原子写内容")
         check("atomic_write 写后可读回", f.read_text(encoding="utf-8") == "原子写内容")
+    # 并发锁：互斥 / 超时 / 过期抢占
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "wl.md"
+        f.write_text("第一块\n", encoding="utf-8")
+        with file_lock(f):
+            try:
+                with file_lock(f, timeout=0.1):
+                    check("锁互斥：持有中不可再取", False)
+            except TimeoutError:
+                check("锁互斥：持有中不可再取", True)
+        with file_lock(f):
+            pass
+        check("锁释放后可再取", True)
+        stale = Path(str(f) + ".lock")
+        stale.write_text("x", encoding="utf-8")
+        old_ts = time.time() - LOCK_STALE_SECONDS - 5
+        os.utime(stale, (old_ts, old_ts))
+        with file_lock(f, timeout=1.0):
+            pass
+        check("过期锁自动抢占", not stale.exists())
+        locked_append(f, "第二块\n")
+        locked_append(f, "第三块\n")
+        check("locked_append 追加有序", f.read_text(encoding="utf-8") == "第一块\n第二块\n第三块\n")
     # 技能发现：triggers/summary 结构化字段 + description 兜底解析
     with tempfile.TemporaryDirectory() as tmp:
         sk = Path(tmp) / "skills" / "demo"
@@ -403,6 +488,8 @@ def main():
     ap.add_argument("--list", action="store_true", help="列出 OPC 根下各公司与实体数量")
     ap.add_argument("--list-skills", action="store_true", help="列出全部技能层 skills/*/SKILL.md 元数据（name/triggers/summary）")
     ap.add_argument("--sync-index", action="store_true", help="把各层技能清单写成 skills/INDEX.md（生成物，勿手改）")
+    ap.add_argument("--append", nargs=2, metavar=("目标文件", "内容文件"),
+                    action="store", help="锁内追加：把内容文件追加到目标（多会话安全；内容文件为 - 时读 stdin）")
     ap.add_argument("--company", default=None, help="限定公司 ID（--sync-index 用）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（不碰真实数据）")
 
@@ -414,6 +501,15 @@ def main():
     if not root:
         print("[ERR] 找不到 opc.toml（OPC 组织根）")
         return 1
+    if a.append:
+        target, src = a.append
+        content = sys.stdin.read() if src == "-" else _read(Path(src))
+        if not content:
+            print("[ERR] 内容为空（文件不存在或 stdin 无输入）")
+            return 1
+        locked_append(target, content)
+        print(f"[ok] 已锁内追加 {len(content)} 字符 -> {target}")
+        return 0
     if a.sync_index:
         wrote = sync_index(root, a.company)
         print(f"[done] 已生成 {len(wrote)} 份 skills/INDEX.md：")
