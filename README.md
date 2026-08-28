@@ -56,6 +56,36 @@ OPC/
 
 ---
 
+## 系统初始化（首次运行必做）
+
+> **这套框架能跑，前提是下面几步都做了。** 任何 AI agent 开工前必须先跑 `python opc_resolver.py --doctor`（init 自检门禁），全绿才进业务；不绿按本节补齐。机制详情见 [`opc-namespace-design.md`](opc-namespace-design.md) §5 跨平台。
+
+**前置条件（缺一不可）**
+1. **Python ≥ 3.11** —— resolver 依赖标准库 `tomllib`。`python3 --version` 确认。
+2. **重建稳定锚 `companies/<cid>`** —— `companies/` 不入库（symlink/junction 不进 git），clone 后是空的，必须建：
+   - Windows：`scripts/link-company.ps1`
+   - macOS / Linux：`scripts/link-company.sh`（内部调 `python3 opc_resolver.py --sync-links`）
+   - 公司目录改名后重跑一次即可自动重指向（零参数，靠 company.md「公司 ID」发现）。
+3. **恢复 pre-commit 门禁**（提交前拦截失效引用，开发期便利）：`cp scripts/pre-commit .git/hooks/` 或 `git config core.hooksPath scripts/`。
+4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描四项）。
+
+```bash
+# 最常用：init 自检（agent 开工前必跑）
+python3 opc_resolver.py --doctor
+# 输出 [ok] 初始化自检通过：可正常开工   ← 才允许开工
+
+# 首次 clone / 改名后重建锚
+scripts/link-company.sh        # macOS / Linux
+scripts/link-company.ps1       # Windows
+```
+
+**跨平台说明**
+- 稳定锚：Windows 用 junction（`mklink /J`，普通用户可建）；macOS/Linux 用 symlink（`os.symlink`，普通用户可建）。二者对浏览器/OS 透明，运行时层 HTML 双击即用。
+- 文档层 `opc://` 由 `opc_resolver.py` 解析（纯标准库，三平台一致），`--check` 门禁已实跑验证。
+- ⚠️ Windows 侧已实跑；macOS/Linux 的 `os.symlink` 分支逻辑正确但**未在真机实测**——首次在 Mac/Linux 跑请务必执行上面的 `--doctor` 验证命令确认。
+
+---
+
 ## 怎么用
 
 **1. 开一家新公司（推荐走技能）**

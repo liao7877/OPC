@@ -1,0 +1,22 @@
+#!/bin/sh
+# OPC 命名空间链接器自检（pre-commit 门禁）
+# 对应 opc-namespace-design.md §5：提交前阻断失效的 opc:// 引用 / 失效 manifest 映射。
+# 机制：所有实体引用应走 opc:// 逻辑符号，物理路径唯一真相源在 opc.toml；
+#       改名只改 opc.toml 一行，本钩子确保 consumer 不出现悬空引用。
+# 安装（clone 后跑一次）：cp scripts/pre-commit .git/hooks/   或   git config core.hooksPath scripts/
+# 跨平台：/bin/sh + python3 兜底 python，Windows(Git Bash)/macOS/Linux 均原生可跑。
+root=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$root" ]; then
+  exit 0
+fi
+if [ -f "$root/opc_resolver.py" ]; then
+  PY=python3
+  command -v python3 >/dev/null 2>&1 || PY=python
+  if ! "$PY" "$root/opc_resolver.py" --check; then
+    echo "❌ pre-commit 阻断：命名空间存在失效引用或锚点漂移。"
+    echo "   排查：$PY opc_resolver.py --check  或  $PY opc_resolver.py --resolve opc://company:C001/<name>"
+    echo "   修复原则：先改 opc.toml（物理路径唯一真相源），不要逐个改 consumer 引用点。"
+    exit 1
+  fi
+fi
+exit 0
