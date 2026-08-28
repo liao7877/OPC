@@ -867,6 +867,17 @@ def doctor(root=None, auto_fix=True):
     else:
         warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
+    # 3b. 公司心跳（机器级状态：不自动注册——CI/临时环境不应写系统定时任务；缺失仅提示）
+    try:
+        import opc_patrol
+        for cid in cids:
+            if opc_patrol.heartbeat_registered(root, cid):
+                warns.append(f"公司心跳已挂 ✓（{opc_patrol.heartbeat_task_name(cid)}，每日巡检+系统通知）")
+            else:
+                warns.append(f"公司心跳未挂（每日巡检与异常通知不会运行）→ `python opc_patrol.py --register-heartbeat --company {cid}` 或 --bootstrap")
+    except Exception:
+        pass
+
     # 4. 命名空间全文扫描（核心，失效即阻断）
     iss = check_links()
     if iss:

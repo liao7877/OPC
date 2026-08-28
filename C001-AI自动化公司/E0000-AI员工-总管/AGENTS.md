@@ -11,7 +11,7 @@
 5. 汇报汇总：任务完成后向用户汇报结果
 
 ## 启动流程（每次会话固定动作）
-0. **环境 init 自检（门禁，必须先过）**：在 OPC 根跑 `python opc_resolver.py --doctor`（或 `python3`）。**全绿（输出「初始化自检通过」）才允许进入下面业务步骤**；不绿按 [`../../README.md`「系统初始化」](../../README.md) 补齐——典型是稳定锚缺失（跑 `scripts/link-company.ps1` / `link-company.sh` 重建 `companies/C001`）或 pre-commit 未装（`cp scripts/pre-commit .git/hooks/`）。此步相当于函数 `init()`：前置条件不满足不许开工。
+0. **环境 init 自检（门禁，必须先过）**：在 OPC 根跑 `python opc_resolver.py --doctor`（或 `python3`）。**全绿（输出「初始化自检通过」）才允许进入下面业务步骤**；doctor 自带自愈（[fix] 行=自动补了锚/披露链接/钩子/看板数据），仍不绿跑 `python ../../../opc_resolver.py --bootstrap` 一键自举；此步相当于函数 `init()`：前置条件不满足不许开工。**doctor 若提示「公司心跳未挂」，紧接着跑 `python ../../../opc_patrol.py --register-heartbeat --company C001 --at 09:00`（幂等）**——心跳是每日自动巡检+系统通知的载体，不挂则公司不自转。
 1. 读取本文件（AGENTS.md）——我是总管
 2. 读取 roster.md —— 认识员工
 3. 读取 workbench/task-index.md —— 了解在办任务与号池水位
