@@ -261,7 +261,7 @@ E:\OPC\
 - 开公司前置修复：`create-company` 的 `home` 改指稳定锚 `companies/<cid>`（消除与 `opc-namespace-design.md` §2 的矛盾）+ 补 macOS/Linux junction 命令；`register-patrol` 任务名按公司隔离（`OPC-Patrol-<cid>`）+ 新增 `register-patrol.sh`。
 - 看板公司名从 `company.md` 实体卡读取（原从目录名倒推，Z 方案锚路径下退化为裸 ID）；公司 ID 提取收敛为 `opc_resolver.extract_company_id` 公开 API（原 6 份副本 2 种语义）。
 - 巡检 #8「知识库增量」机器化（2026-08-29 拍板）：心跳扫 `公司知识库/methods/` 与各项目 `knowledge/`，新增条目提示总管评审提炼；基线存 patrol-state `_meta`，首跑不告警。
-- 裁撤（2026-08-29 拍板）：`scripts/watch-companies.py`（watchdog 依赖违反 P13 且从未启用，ensure-links + doctor 已覆盖其职责）、`SYSTEM_GUIDE.html`（可视化快照与机制文档漂移，根文档入口收敛为 6 份）。
+- 裁撤（2026-08-29 拍板）：`scripts/watch-companies.py`（watchdog 依赖违反 P13 且从未启用，ensure-links + doctor 已覆盖其职责）；`SYSTEM_GUIDE.html` 因快照漂移同批裁撤——**后经用户拍板于同日重建**：按当前机制全量重写对外总览 `SYSTEM_GUIDE.html`，并新增面向小白的用户手册 `USER_GUIDE.html`（派活/对话/机制地图/命令速查/FAQ），两份均为手工维护快照，内文注明「以 README/PRINCIPLES 为准」。
 - 编号原子分配（B5 落地，2026-08-29 拍板）：`opc_tickets --new --auto-id` 原子取号（扫最大已用号+1，目录存在性即锁，并发败者自动取下一号）；显式取号同样自动在 task-index「工单登记」占行（取号+占台账+建单一步）。
 - 非法状态上板标红（P11 补齐，2026-08-29 拍板）：status 非法的工单不再整单跳过，保留上板（payload 增 `status_valid` 标记），kanban 对未知状态独立成列并回退红色渲染。
 - 代码去重（D1/D2/D3 落地，2026-08-29）：`resolve_company` 收敛三份 resolve_ctx；`normalize_dt/normalize_day/read_text_warn/atomic_write` 收敛进 opc_model 共享，tickets/dashboards 删本地副本。

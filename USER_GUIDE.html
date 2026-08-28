@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPC 用户手册 · 怎么派活、怎么对话、机制地图</title>
+<style>
+  :root {
+    --ink: #1a2332; --sub: #5a6a7e; --line: #e3e8ef;
+    --accent: #0f7b6c; --accent-soft: #e8f5f2;
+    --ok: #1a7f4e; --warn: #b26a00; --bad: #c0392b;
+    --card: #fff; --bg: #f6faf9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); line-height: 1.75; }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 28px 22px 80px; }
+  .hero { background: linear-gradient(135deg, #0b4f45, #0f7b6c); color: #fff; border-radius: 16px; padding: 36px 32px; }
+  .hero h1 { font-size: 27px; }
+  .hero p { margin-top: 8px; font-size: 14.5px; opacity: .93; max-width: 720px; }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px; margin: 18px 0; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  h2 { font-size: 20px; margin: 34px 0 12px; padding-left: 12px; border-left: 4px solid var(--accent); scroll-margin-top: 12px; }
+  h3 { font-size: 15px; margin: 14px 0 6px; }
+  p { margin: 7px 0; }
+  .muted { color: var(--sub); font-size: 13px; }
+  .grid { display: grid; gap: 13px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card h3 { margin-top: 0; color: var(--accent); }
+  .card p, .card li { font-size: 13.5px; }
+  .step { display: flex; gap: 12px; margin: 10px 0; align-items: flex-start; }
+  .step .n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin-top: 3px; }
+  .step .b { flex: 1; }
+  .step .b b { color: var(--accent); }
+  code, .mono { font-family: Consolas, "Courier New", monospace; background: #eef4f2; border-radius: 5px; padding: 1px 6px; font-size: 12.5px; }
+  pre { background: #0e2b26; color: #d7f0ea; border-radius: 10px; padding: 13px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.65; }
+  pre .c { color: #79b8a9; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--accent-soft); font-weight: 600; }
+  .say { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 9px 14px; margin: 8px 0; font-size: 13.5px; }
+  .say::before { content: "💬 示例话术："; color: var(--accent); font-weight: 600; }
+  .warnbox { background: #fffbe9; border: 1px solid #f0e0ac; border-radius: 10px; padding: 11px 15px; font-size: 13px; margin: 10px 0; }
+  .goodbox { background: #e9f6ee; border: 1px solid #bfe3cc; border-radius: 10px; padding: 11px 15px; font-size: 13px; margin: 10px 0; }
+  .pill { display: inline-block; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 600; }
+  .pill.crit { background: #fbe4e1; color: var(--bad); }
+  .pill.warn2 { background: #fdf1de; color: var(--warn); }
+  .pill.info2 { background: #e8f0fd; color: #2456d6; }
+  footer { margin-top: 42px; color: var(--sub); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <h1>OPC 用户手册</h1>
+  <p>写给「完全不了解系统内部」的你：只需要会三件事——<b>把总管目录当工作区打开、用大白话说需求、等验收</b>。剩下的（拆单、派活、记录、巡检、告警）是总管和机制层的事。</p>
+</div>
+
+<div class="toc">
+  <a href="#s1">① 30 秒上手</a>
+  <a href="#s2">② 怎么派活（两种入口）</a>
+  <a href="#s3">③ 怎么和员工对话</a>
+  <a href="#s4">④ 你要做的 / 不用做的</a>
+  <a href="#s5">⑤ 机制地图（系统怎么自己转）</a>
+  <a href="#s6">⑥ 命令速查</a>
+  <a href="#s7">⑦ 常见情况怎么办</a>
+</div>
+
+<h2 id="s1">① 30 秒上手</h2>
+<div class="goodbox">
+<b>唯一的日常入口</b>：用你的 AI Agent 工具（WorkBuddy / Claude Code / Codex…）把 <code>companies/C001/E0000-AI员工-总管/</code> 目录当工作区打开一个会话——总管会自动加载身份、职责和技能。然后像跟真人经理说话一样派活即可。
+</div>
+<div class="say">这几天帮我把公众号内容流程理一下，先给我个方案。</div>
+<p class="muted">总管会自己澄清需求 → 拆成工单 → 派给员工 → 跟踪进度 → 完成后向你汇报验收。你全程不需要知道「工单存在哪个目录」这种事。</p>
+
+<h2 id="s2">② 怎么派活（两种入口，殊途同归）</h2>
+<div class="grid g2">
+  <div class="card">
+    <h3>入口 A（推荐常态）：找总管</h3>
+    <div class="step"><div class="n">1</div><div class="b"><b>说构想</b>——不用结构化，一句话即可。模糊没关系，总管会一问一答澄清（一次只问一个问题）。</div></div>
+    <div class="step"><div class="n">2</div><div class="b"><b>等方案确认</b>——总管先调研汇报、给方案，你拍板后才会动手（先存档再执行）。</div></div>
+    <div class="step"><div class="n">3</div><div class="b"><b>等验收</b>——干完后总管/员工提交成果，你是最终验收人；不满意直接说哪里不行，会返工。</div></div>
+  </div>
+  <div class="card">
+    <h3>入口 B（直通）：直接指挥某个员工</h3>
+    <p>你也可以把某个员工目录（如 <code>E0001-AI员工-分析员/</code>）当工作区打开，直接派活。机制上完全支持：员工会自取工单号、自建台账、留痕「用户直派」。</p>
+    <p class="muted">规则差异：涉及公共领地的事（改公司制度、加员工、动看板机制），员工会按「领地自治」转报总管——这不是怠工，是防止越权改坏公共部分。</p>
+  </div>
+</div>
+<div class="warnbox"><b>无论哪个入口</b>，都请给三样东西（缺了会被追问）：<b>① 清晰的目标</b>（做成什么样算完）② <b>验收标准</b>（你打算怎么判断合格）③ <b>时限</b>（什么时候要）。这就是工单里的 title / 验收 / due，你给得越清楚，返工越少。</div>
+
+<h2 id="s3">③ 怎么和员工对话</h2>
+<p>和员工会话（或总管转述）时，把员工当成「能力很强但每次醒来失忆的新同事」——他的长期记忆在文件里，当次会话的上下文需要你说清楚：</p>
+<div class="grid g2">
+  <div class="card">
+    <h3>派活时说清楚</h3>
+    <ul class="clean" style="list-style:none">
+      <li>◇ <b>做什么、为什么</b>（背景一句即可，详细资料给路径）</li>
+      <li>◇ <b>交付物是什么形态</b>（报告？代码？一篇文案？）</li>
+      <li>◇ <b>验收标准 + 时限</b></li>
+      <li>◇ 相关资料的<b>文件路径</b>（员工会自己去读）</li>
+    </ul>
+    <div class="say">把上周的行业调研（资料在 项目P0001/knowledge/ 下）整理成一页决策建议，重点是三点结论，今天下班前给我。</div>
+  </div>
+  <div class="card">
+    <h3>过程与收尾</h3>
+    <ul class="clean" style="list-style:none">
+      <li>◇ 员工会先<b>认领工单</b>（worklog 建账）再动工，这是纪律，不用你催</li>
+      <li>◇ 遇到阻塞/需求不明，员工会在工单里<b>发升级信箱</b>，总管心跳会发现并<b>弹系统通知</b>找你——那是唯一会打扰你的事</li>
+      <li>◇ 完成后你看成果、表态：<b>满意</b> → 说「验收通过」，工单关单；<b>不满意</b> → 说具体哪里不行，走返工</li>
+      <li>◇ 对话产生的结论会自动留痕（worklog / 工单 messages），下次换会话不丢</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="s4">④ 你要做的 / 不用做的</h2>
+<div class="grid g2">
+  <div class="card" style="border-color:#bfe3cc">
+    <h3>✅ 你要做的（很少）</h3>
+    <ul class="clean" style="list-style:none">
+      <li>◇ <b>派活</b>：跟总管说话</li>
+      <li>◇ <b>验收</b>：看成果、说通过或不通过</li>
+      <li>◇ <b>回应急</b>：系统通知弹出「[高优] 升级」时，找总管处理</li>
+      <li>◇ <b>首一次性配置</b>：换机器/新 clone 时跑一次初始化命令（见 §6）</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>❌ 你不用做的</h3>
+    <ul class="clean" style="list-style:none">
+      <li>◇ 不用记任何目录结构、编号规则（C/T/E/P/TSK 是给 Agent 用的）</li>
+      <li>◇ 不用手动改看板/报表（它们是自动生成的投影，改了也会被重生成覆盖）</li>
+      <li>◇ 不用记得「谁该干什么」——看板、巡检、双账核验替你盯</li>
+      <li>◇ 不用担心改名/搬家弄坏引用——命名空间机制自愈，跑一次 <code>--ensure-links</code> 即可</li>
+      <li>◇ 不用维护技能索引、花名册、台账——总管与机制层负责</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="s5">⑤ 机制地图（系统怎么自己转）</h2>
+<p class="muted">了解这些不必须，但知道有什么，你就知道「哪些话可以直接对总管说」。</p>
+<div class="grid g3">
+  <div class="card"><h3>🎫 工单系统</h3><p>所有正式工作都是一张 <b>TSK 工单</b>：标题/负责人/验收/截止/阻塞关系（blocked_by）/父子单。七个状态：<code>backlog → in_progress → review → done</code>，另有 failed / paused / cancelled。写错状态会<b>红牌上板</b>而不是消失。</p></div>
+  <div class="card"><h3>📋 三级看板</h3><p>公司驾驶舱 <code>dashboard.html</code>、团队 <code>teamboard.html</code>、个人桌面 <code>mydesk.html</code>、工单墙 <code>kanban.html</code>。全部由真相自动生成——看板即进度，你随时打开浏览器看。</p></div>
+  <div class="card"><h3>📝 worklog 双账</h3><p>员工干任何活都自记录（三段式：计划中→进行中→已完成），与工单状态<b>交叉核验</b>：认领了没记录、干完了单没关，都会被点名告警。</p></div>
+  <div class="card"><h3>💓 公司心跳</h3><p>每日自动巡检 10 项：阻塞该开工的、没人认领的、双账不一致的、脱期事务、<b>升级信箱</b>（<span class="pill crit">critical</span> 唯一会打扰你）、号池水位、知识库增量、僵尸工位卡、看板数据陈旧等。异常 → 写日志 + <b>弹系统通知</b> → 生成待办快照给总管处置。</p></div>
+  <div class="card"><h3>🃏 工位卡与并发</h3><p>一个会话=一张工位卡。多会话各干各单；共干一单时只有持卡会话有权改状态。机制层写路径全部有<b>锁</b>，并发追加用 <code>--append</code> 命令——多开会话是安全的。</p></div>
+  <div class="card"><h3>🧠 技能体系</h3><p>员工会什么=读了哪些技能（三层：公司级/团队级/私有）。每个技能自带触发词与全流程，命中才加载。总管新增能力=建一个技能文件，索引自动更新。</p></div>
+  <div class="card"><h3>📚 知识库三分</h3><p>查资料 → <code>公司知识库/common/</code>；员工经验 → <code>methods/</code>（总管提炼成技能/制度）；项目资料 → 各项目 <code>knowledge/</code>。心跳会自动发现新知识并提醒总管评审。</p></div>
+  <div class="card"><h3>🚦 编号与台账</h3><p>一切实体有编号：公司 C/团队 T/员工 E/项目 P/工单 TSK/事务 AFF。台账 <code>task-index.md</code> 记录分配与预留号池，取号原子化防撞号。</p></div>
+  <div class="card"><h3>🏢 开新公司</h3><p>对组织根会话说「建公司」即可：按模板一键拉起，总管自动入职。模板与实例的机制同步由 <code>--diff-template</code> 盯着，不会悄悄漂移。</p></div>
+</div>
+
+<h2 id="s6">⑥ 命令速查（99% 情况你只需要前两条）</h2>
+<pre>
+<span class="c"># —— 初始化（换机器 / 新 clone 后各跑一次）——</span>
+python opc_resolver.py --ensure-links    <span class="c"># 重建全部 OS 级链接（稳定锚+技能披露），幂等</span>
+python opc_resolver.py --doctor          <span class="c"># 开工自检五项，全绿 = 可以正常使用</span>
+run_boards.bat once                      <span class="c"># 重建看板数据（macOS/Linux: ./run_boards.sh once）</span>
+
+<span class="c"># —— 挂心跳（每台机器一次性；之后每天自动巡检+通知）——</span>
+powershell -ExecutionPolicy Bypass -File register-patrol.ps1        <span class="c"># Windows</span>
+./register-patrol.sh                                                <span class="c"># macOS / Linux</span>
+
+<span class="c"># —— 总管/员工日常用（你不用记）——</span>
+python opc_tickets.py --company C001 --new --auto-id 标题 --owner E0001   <span class="c"># 原子取号建单+占台账</span>
+python opc_tickets.py --company C001                                     <span class="c"># 重算工单看板</span>
+python opc_dashboards.py --company C001 --verify                         <span class="c"># 三级看板+一致性校验</span>
+python opc_patrol.py --company C001                                      <span class="c"># 手动巡检一次</span>
+python opc_model.py --append worklog路径 块文件                           <span class="c"># 锁内追加（并发安全）</span>
+python opc_model.py --sync-index                                         <span class="c"># 重生成技能索引</span>
+python opc_resolver.py --diff-template                                   <span class="c"># 实例↔模板 漂移检查</span>
+</pre>
+
+<h2 id="s7">⑦ 常见情况怎么办</h2>
+<table>
+  <tr><th style="width:34%">情况</th><th>怎么办</th></tr>
+  <tr><td>看板上有<b>红牌工单</b></td><td>它的 status 写了非法值（坏数据会上板不隐藏）。跟总管说「把 XX 工单状态修正一下」即可。</td></tr>
+  <tr><td>弹了系统通知「[高优] 升级」</td><td>有员工在工单里举手求助（<span class="pill crit">critical</span>，唯一会打扰你的项）。开总管会话说「处理一下巡检待办」，总管会按 <code>patrol-pending.md</code> 逐项处置。</td></tr>
+  <tr><td>换了电脑 / 重新 clone 了仓库</td><td>跑 §6 前三条命令即可，链接与数据全部自动重建；然后跑 <code>--doctor</code> 确认全绿。</td></tr>
+  <tr><td>想改公司/员工/项目目录名</td><td>随便改。改完在 OPC 根跑一次 <code>python opc_resolver.py --ensure-links</code>，所有引用自愈。</td></tr>
+  <tr><td>觉得某个员工能力不对/缺技能</td><td>对总管说「给 E0001 加一个 XX 技能」——总管按落位 SOP 建技能、更新索引，你不用碰文件。</td></tr>
+  <tr><td>同一个活想多人/多会话并行</td><td>直接开多个会话。工位卡 + 锁保证不互相覆盖；谁持卡谁有权改单子状态。</td></tr>
+  <tr><td>怀疑员工没干活/账不对</td><td>打开公司驾驶舱 <code>dashboard.html</code> 看风险区；或者直接问总管「最近有什么双账不一致/未认领的」——巡检清单里都有。</td></tr>
+  <tr><td>想直接抢活干（绕过总管）</td><td>可以（入口 B），但公共领地的事员工会转总管；正式工作记得让它走工单，否则看板上看不到。</td></tr>
+</table>
+
+<footer>OPC 用户手册 · 2026-08-29 · 手册描述的是「怎么用」，机制细节以 README.md / PRINCIPLES.md / 各 SKILL.md 为准</footer>
+</div>
+</body>
+</html>
