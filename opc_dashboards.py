@@ -796,7 +796,9 @@ def deps_mtime(ctx):
     """依赖文件集最新 mtime（roster/worklog/team/notices/project/skills/模板/tasks-data）。"""
     latest = 0
     base_dir = ctx.base
-    paths = [os.path.join(base_dir, ctx.roster_rel), ctx.tasks_data]
+    # company.md 在列：公司名等实体卡字段变化也要触发重生成（N1 修复后它是显示数据来源）
+    paths = [os.path.join(base_dir, ctx.roster_rel), ctx.tasks_data,
+             os.path.join(base_dir, "company.md")]
     emp_dirs, team_dirs, proj_dirs = scan_entity_dirs(base_dir)
     for d in emp_dirs:
         paths += [os.path.join(base_dir, d, "workspace", "worklog.md")]

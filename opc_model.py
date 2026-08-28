@@ -233,8 +233,9 @@ def sync_index(root, cid=None):
         comp_dirs.append(tpl)   # 建司母版同样生成（其 ID 是占位符，路径一律走相对）
     for comp in comp_dirs:
         comp = Path(comp)
-        cids = re.findall(r"公司\s*ID[：:]\s*(\S+)", _read(comp / "company.md"))
-        cid_here = cids[0].split("（")[0].split("(")[0].strip() if cids else None
+        # 公司身份提取统一走 resolver 公开 API（P25/P26；惰性 import 保持本模块零耦合立场）
+        import opc_resolver
+        cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
         if not cid_here or not re.match(r"^C\d+$", cid_here):
             cid_here = None      # 模板占位符/非法 ID：不用 opc://，全走相对路径
         if cid and cid_here != cid:
