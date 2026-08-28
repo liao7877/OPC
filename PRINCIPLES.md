@@ -104,6 +104,17 @@
 | P27 | 协调层不生产 Agent 能力，选型是配置不是硬编码 |
 | P28 | 产出审批门：未经人类点头不进主数据，静态门禁不替代验收 |
 | P29 | 自动化边界在「发现」不在「代决策」，自动处置默认不启用 |
+| P30 | 跨平台三系统：一切机制代码/流程设计必须 Windows、macOS、Linux 三系统可正常运行（廖哥明令，2026-08-29） |
+
+## P30 跨平台三系统（2026-08-29，廖哥明令）
+
+**一切机制代码与流程设计，必须保证 Windows、macOS、Linux 三系统可正常运行。** 不允许「先在 Windows 跑通、别的系统再说」。
+
+落地纪律：
+- **平台差异收口在机制层**：路径分隔符（os.path/os.sep，禁手拼 `/`、`\`）、换行符（.gitattributes 已定：.sh/.py 强制 LF、.bat/.ps1 强制 CRLF）、OS 链接（Windows junction / *nix symlink，收口 `opc_resolver._create_link`）、计划任务（schtasks / crontab，收口 `opc_patrol.register_heartbeat`）、控制台编码（reconfigure + latin-1 兜底）——差异只在机制层写 `sys.platform` 分支，consumer 永远不感知；
+- **新增行为必须进 selftest**：selftest 是 CI 三平台矩阵（ubuntu/macos/windows × py3.11/3.13）的回归载体，凡是能用临时目录自测的行为（如多公司归司 case 11）都要进；
+- **门禁即跨平台验收**：`--doctor` 全绿 + 全模块 selftest + CI 矩阵全绿，才算改完。
+
 
 ---
-*创建：2026-08-27 · 修订：2026-08-28 增补 P26（全符号化/稳定锚化，廖哥明令"肯定全净化"）；2026-08-29 增补 P27~P29 人机协作三条（吸收 Multica 设计思路，调研见 `research/multica-调研报告.html`，零代码改动） · 来源：`opc://company:C001` 协作看板系统 20 轮迭代经验沉淀（含廖哥明令原则）*
+*创建：2026-08-27 · 修订：2026-08-28 增补 P26（全符号化/稳定锚化，廖哥明令"肯定全净化"）；2026-08-29 增补 P27~P29 人机协作三条（吸收 Multica 设计思路，调研见 `research/multica-调研报告.html`，零代码改动）及 P30 跨平台三系统（廖哥明令：所有修改与机制设计兼顾 Win/mac/Linux）； · 来源：`opc://company:C001` 协作看板系统 20 轮迭代经验沉淀（含廖哥明令原则）*
