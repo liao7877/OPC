@@ -32,3 +32,7 @@ tasks-data.json
 *.key
 
 **/skills/INDEX.md
+
+# 巡检运行时态（派生/可变：state 可重建，pending 是快照；patrol-log 是审计流水，保留入库）
+patrol-state.json
+patrol-pending.md
