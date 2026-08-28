@@ -1,0 +1,44 @@
+# OPC 三平台 CI（2026-08-28 拍板）：把 README「Windows/macOS/Linux 三端可用」的承诺变成每次提交的自动验证。
+# 验证内容：稳定锚重建（macOS/Linux 走 symlink 分支、Windows 走 junction 分支）→ doctor 门禁
+# → 6 个模块 selftest → 真实数据链路（run_boards once + --verify）。
+name: opc-ci
+on: [push, pull_request]
+
+jobs:
+  selftest:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 重建稳定锚（clone 后必做，同时验证各平台链接分支）
+        run: python opc_resolver.py --sync-links
+
+      - name: init 自检门禁（全绿才允许继续）
+        run: python opc_resolver.py --doctor
+
+      - name: 模块内置自测（6 件套）
+        run: |
+          python opc_resolver.py --selftest
+          python opc_model.py --selftest
+          python opc_schema.py
+          python opc_tickets.py --selftest
+          python opc_dashboards.py --selftest
+          python opc_patrol.py --selftest
+
+      - name: 真实数据链路（C001：工单 + 三级看板 + 一致性校验）
+        run: |
+          python opc_tickets.py --company C001
+          python opc_dashboards.py --company C001
+          python opc_dashboards.py --company C001 --verify
+
+      - name: 巡检 dry-run（不写日志）
+        run: python opc_patrol.py --company C001 --dry-run

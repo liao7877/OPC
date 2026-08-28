@@ -250,7 +250,27 @@ E:\OPC\
 | 8 | 《目录结构说明书.md》定稿 + company.md 引用行 | 公司根 |
 | 9 | OPC 根建 company-template/ 与 create-company skill（把 1–8 结论抽象进模板，000 号总管自带 mechanism-sop 等全部技能） | OPC 根 |
 
-> 每批次完成后跑 `--selftest` + `--check-structure`（P16），全部变更可逆（P24）。
+## 十四、2026-08-28 第二轮架构评审拍板记档
+
+> 来源：`架构评审`（实读全部机制代码 + 自测实跑）后与用户一问一答确认。已实施项见对应提交；本节记档「已拍板待实施」与「待拍板」。
+
+**已拍板并实施（本轮）**
+- 自转通道 = **A+ 系统通知**：`opc_patrol` 发现异常弹系统通知（Win Toast / macOS / Linux notify-send），`opc.toml [patrol].notify` 可关；B 阶段「自动处置」扩展位 `[patrol].actor` 预留未启用。
+- 跨平台验证 = **GitHub Actions 三平台矩阵**（`.github/workflows/ci.yml`）：sync-links → doctor → 6 selftest → 真实数据链路。
+- 换行符纪律 = **`.gitattributes`**（B7）：`.sh/.py` 强制 LF、`.bat/.ps1` 强制 CRLF，行为随仓库走不随机器。
+- 开公司前置修复：`create-company` 的 `home` 改指稳定锚 `companies/<cid>`（消除与 `opc-namespace-design.md` §2 的矛盾）+ 补 macOS/Linux junction 命令；`register-patrol` 任务名按公司隔离（`OPC-Patrol-<cid>`）+ 新增 `register-patrol.sh`。
+- 看板公司名从 `company.md` 实体卡读取（原从目录名倒推，Z 方案锚路径下退化为裸 ID）；公司 ID 提取收敛为 `opc_resolver.extract_company_id` 公开 API（原 6 份副本 2 种语义）。
+
+**已拍板待实施**（沿用第一轮评审 §七·五 / Q2 方案）
+- patrol findings 结构化（dict + severity/suggested_action）与 `patrol-state.json` 待办闭环态——B 阶段地基，A+ 阶段可先不动。
+- `--list-skills` / `--sync-index`：INDEX.md 转「生成物」（Q2 拍板 A 方案，未实施；当前 6 份 INDEX.md 仍是手工维护）。
+- `ensure_links()`：技能披露 junction 纳入 resolver 托管 + doctor 第 5 项检查（Q3 拍板，未实施；当前 doctor 仍不查 `.workbuddy/skills`，门禁对技能披露仍是假绿）。
+- `--diff-template`：C001 ↔ company-template 双向 diff（忽略换行符与占位符）。
+
+**待拍板（用户跳过，保持现状）**
+- 并发写锁原语：多会话同时追加同一 worklog 存在「后写覆盖先写」丢更新窗口（原子写只防写一半被读，不防互斥）；工位卡是纪律不是锁。待用户在「纪律够用」与「O_EXCL lockfile 原语」间拍板；拍板前不动写路径。
+- 实体类型注册表：`opc.toml [company.DEFAULT]` 的 teams/projects/employees 键当前 resolver 未消费（配置说谎）；若未来加新实体类型（客户/供应商等），先做注册表再扩展，避免改 4+ 处前缀正则。
 
 ---
-*定稿：2026-08-28 · 一问一答 16 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档与制度判定法则）· 实施待廖哥启动*
+*定稿：2026-08-28 · 一问一答 16 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档与制度判定法则）+ 第二轮评审拍板记档（§十四）*
+
