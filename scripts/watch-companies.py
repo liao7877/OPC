@@ -46,15 +46,17 @@ def main():
 
     class _H(FileSystemEventHandler):
         def on_any_event(self, event):
-            # 跳过 .git 与 companies 自身锚目录的回写抖动，避免循环
+            # 只关心 OPC 根一层的事件（公司目录被 rename/move/create/delete 才影响锚）。
+            # 非递归监听：公司内部文件写入（worklog 等）与锚无关，不触发 sync；
+            # .git 与 companies/ 自身的回写抖动也跳过，避免循环。
             if ".git" in event.src_path or event.src_path.startswith(anchor_dir):
                 return
             schedule()
 
     observer = Observer()
-    observer.schedule(_H(), root, recursive=True)
+    observer.schedule(_H(), root, recursive=False)
     observer.start()
-    print(f"[watch] 监听 {root} ...（Ctrl+C 退出）")
+    print(f"[watch] 监听 {root} 一层（目录 rename/move 触发锚同步；Ctrl+C 退出）")
     try:
         while True:
             time.sleep(1)

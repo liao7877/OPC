@@ -8,7 +8,7 @@ opc_model.py — OPC 实体共享读取器（唯一解析点）
   2. 把实体卡（frontmatter）读成 (dict, body, has_fm) —— 不校验、不写死字段
 
 为什么单独成模块（设计取舍，2026-08-28 廖哥拍板 X 方案）：
-  - 所有 consumer（generate_dashboard.py / generate_tasks.py，含 C001 与
+  - 所有 consumer（opc_dashboards.py / opc_tickets.py，含 C001 与
     company-template 两套）统一 import 本模块的 parse_frontmatter，禁止各脚本
     私写正则（呼应 P3 高内聚 / DRY）。加字段免费、改格式只动本文件一处。
   - 不做什么：不做 schema 校验、不做 FK 阻断、不报错拦下。改名类问题靠
@@ -54,9 +54,12 @@ def _find_opc_root(start=None):
 def parse_frontmatter(text):
     """解析卡片 frontmatter -> (dict, body, has_fm)。
 
+    支持的子集契约（刻意不支持完整 YAML）：
     - key: value / key: [a, b] / key:（空）
     - [a, b] 优先按 JSON 解析（支持对象数组，如 handoffs:[{...}]），失败回退逗号拆分
-    - 空值 -> None；裸值去引号
+      ⚠️ 逗号拆分回退不处理引号内逗号——含逗号的字符串值请写合法 JSON 或避免逗号
+    - 空值 -> None；裸值去引号；值内半角冒号会污染解析（建单工具已自动转全角）
+    - 重复 key 后者静默覆盖前者（勿写重复键）
     - 无 --- 包裹 -> ( {}, text.strip(), False )（交由调用方跳过坏文件）
     """
     lines = text.splitlines()
@@ -143,6 +146,8 @@ def build_indexes(company_root):
                 tid = extract_id(_read(tm), "id", r"团队\s*ID[：:]\s*(\S+)")
                 if tid:
                     teams[tid] = {"path": str(tm)}
+    # roster 位置真相源在 opc.toml [company.DEFAULT].roster（当前约定 E0000 总管目录）；
+    # 本读取器不依赖 manifest（保持零耦合），此处按同一约定 + E0000-* 扫描兜底发现。
     roster = root / "E0000-AI员工-总管" / "roster.md"
     if not roster.is_file():
         for d in root.iterdir():
@@ -181,11 +186,41 @@ def discover_companies(opc_root):
     return sorted(cands)
 
 
+def selftest():
+    """内置自测：frontmatter 子集契约 + extract_id 双格式。全过返回 0。"""
+    ok = True
+
+    def check(name, cond):
+        nonlocal ok
+        print(("  ✓ " if cond else "  ✗ ") + name)
+        if not cond:
+            ok = False
+
+    print("运行内置自测…")
+    NL = chr(10)
+    fm, body, has = parse_frontmatter(f"---{NL}id: P0002{NL}name: 乙{NL}team: [T001, T002]{NL}---{NL}正文")
+    check("基础 kv + 数组", has and fm["id"] == "P0002" and fm["team"] == ["T001", "T002"] and body == "正文")
+    fm2, _, _ = parse_frontmatter(f"---{NL}empty:{NL}quoted: \"带 空格\"{NL}---{NL}")
+    check("空值 None + 裸值去引号", fm2["empty"] is None and fm2["quoted"] == "带 空格")
+    fm3, _, has3 = parse_frontmatter("无包裹")
+    check("无包裹识别", not has3 and fm3 == {})
+    fm4, _, _ = parse_frontmatter(f"---{NL}handoffs: [{{\"from\":\"E1\"}}]{NL}---{NL}")
+    check("JSON 对象数组", isinstance(fm4["handoffs"], list) and fm4["handoffs"][0]["from"] == "E1")
+    check("extract_id frontmatter", extract_id(f"---{NL}id: P0009{NL}---{NL}") == "P0009")
+    check("extract_id 散文兜底", extract_id("项目 ID：P0001" + NL) == "P0001")
+    print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description="OPC 实体共享读取器（列出发现的公司与实体）")
     ap.add_argument("--list", action="store_true", help="列出 OPC 根下各公司与实体数量")
+    ap.add_argument("--selftest", action="store_true", help="内置自测（不碰真实数据）")
+
     ap.add_argument("--root", default=None, help="指定 OPC 根（默认向上查找 opc.toml）")
     a = ap.parse_args()
+    if a.selftest:
+        return selftest()
     root = a.root or _find_opc_root()
     if not root:
         print("[ERR] 找不到 opc.toml（OPC 组织根）")
