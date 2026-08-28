@@ -24,7 +24,7 @@ description: 需求拆分工单 SOP（总管专用）。触发词：拆单、拆
 
 ## 三、建单流程
 
-1. **建父单**（需求拆出 ≥2 个子单时）：`python ../../../../companies/C001/workbench/generate_tasks.py --new TSKxxx <需求名> --owner E0000`，然后手改 `type: 需求`，正文写 PRD 摘要 + 总验收标准 + 子单清单；
+1. **建父单**（需求拆出 ≥2 个子单时）：`python ../../../../../opc_tickets.py --company C001 --new TSKxxx <需求名> --owner E0000`，然后手改 `type: 需求`，正文写 PRD 摘要 + 总验收标准 + 子单清单；
 2. **建子单**：逐个 `--new`，frontmatter 补 `parent: <父单号>`；有前置的补 `blocked_by: [上游单号]`，需要上游产物的补 `inputs`；
 3. **登记台账**：workbench/task-index.md 逐条登记（含父子关系列）；
 4. **分派**：按 roster 选人（岗位匹配 + 负荷均衡），按 dispatch-sop 注入派发；

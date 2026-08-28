@@ -182,7 +182,7 @@
     }
     function render() {
       if (!DATA) {
-        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>dashboard-data.js</code>。<br>请先运行 <code>python generate_dashboard.py（公司根下）</code>。</div>';
+        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>dashboard-data.js</code>。<br>请先运行 <code>run_boards.bat</code> / <code>./run_boards.sh</code>。</div>';
         return;
       }
       document.getElementById("ver").textContent = DATA.page_version || "";
@@ -308,7 +308,7 @@
       updateStale();
     };
     syncEl.onerror = function () {
-      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 dashboard-data.js（请运行 generate_dashboard.py）";
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 dashboard-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
     function doSync() { syncEl.src = "dashboard-data.js#_=" + Date.now(); }

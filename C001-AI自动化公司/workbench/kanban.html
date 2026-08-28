@@ -164,7 +164,7 @@
         <option value="owner">负责人</option>
         <option value="participant">参与者</option>
       </select>
-      <a class="theme-btn" id="dashLink" href="../../companies/C001/dashboard.html" style="text-decoration:none">🏢 公司驾驶舱</a>
+      <a class="theme-btn" id="dashLink" href="#" style="text-decoration:none">🏢 公司驾驶舱</a>
       <button class="theme-btn" id="syncBtn">🔄 同步</button>
       <button class="theme-btn" id="themeBtn">🌙 切暗色</button>
     </div>
@@ -598,10 +598,19 @@
     }
 
     function render() {
+      // 顶部导航链接统一由 DATA.links 注入（生成器按落位产出，页面零硬编码）
+      if (DATA && DATA.links) {
+        ['dashLink', 'kanbanLink'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          var href = id === 'dashLink' ? DATA.links.dashboard : DATA.links.kanban;
+          if (href) el.href = href;
+        });
+      }
       var board = document.getElementById("board");
       rebuildIndex();   // 阻塞/父单进度计算依赖全量索引
       if (!tasks().length) {
-        board.innerHTML = '<div class="no-data">暂无工单数据。<br>请先运行 <code>python generate_tasks.py</code> 生成 tasks-data.js，' +
+        board.innerHTML = '<div class="no-data">暂无工单数据。<br>请先运行 <code>run_boards.bat</code> / <code>./run_boards.sh</code> 生成 tasks-data.js，' +
           '并按 TSKxxx-标题/task.md 模板在 workbench/tasks/ 下建工单。</div>';
         document.getElementById("countInfo").textContent = "0 条";
         updateStats(); // 空数据时统计栏显示「总 0」，避免残留旧值
@@ -823,7 +832,7 @@
       if (DATA && DATA.generated_at) {
         el.textContent = "实时同步（每3秒）· 数据生成于 " + DATA.generated_at;
       } else {
-        el.textContent = "未检测到数据，请先运行 generate_tasks.py";
+        el.textContent = "未检测到数据，请先运行 run_boards";
       }
     }
 
@@ -906,14 +915,14 @@
       updateGenInfo();
     };
     syncEl.onerror = function () {
-      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 tasks-data.js（请运行 generate_tasks.py）";
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 tasks-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
     function doSync() { syncEl.src = "tasks-data.js#_=" + Date.now(); }
     document.getElementById("syncBtn").addEventListener("click", doSync);
 
     if (DATA) { buildTagChips(); render(); updateGenInfo(); }
-    else { document.getElementById("board").innerHTML = '<div class="no-data">未找到 <code>tasks-data.js</code>。<br>请先运行 <code>python generate_tasks.py</code> 生成数据文件。</div>'; }
+    else { document.getElementById("board").innerHTML = '<div class="no-data">未找到 <code>tasks-data.js</code>。<br>请先运行 <code>run_boards.bat</code> / <code>./run_boards.sh</code> 生成数据文件。</div>'; }
 
     // 深链 ?id=TSKxxxx：打开即定位并弹出该工单详情（数据就绪后执行一次）
     (function () {

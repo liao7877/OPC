@@ -55,4 +55,10 @@
 - [ ] TSK00028
 - [ ] TSK00029
 
+## 状态与登记纪律
+- 任务实体与最新状态以 `workbench/tasks/TSKxxx-标题/task.md` 为准（生成器自动读取、看板自动呈现），**本台账不维护状态列**，避免两份漂移。
+- 状态机（与 ticket-system 技能一致）：`backlog(待领) → in_progress(进行中) → 待审(review) → done(完成)`；旁路 `failed / paused / cancelled`。
+- 分配编号前先查本台账（源头防线）；建单用 `python <OPC根>/opc_tickets.py --company C001 --new ...`；登记=领号后立即写入本表。
+- 台账**写协议（并发安全）**：读→改→写临时文件→原子替换（禁盲追加）；每次会话只允许持台账写权的会话改本文件（ concurrent-work 工位卡机制：改台账前扫 sessions/ 确认无其他"工作中"卡声称在改台账）。
+
 *台账创建：2026-08-28 · 补录历史工单 TSK00001-00009 · 总管维护*

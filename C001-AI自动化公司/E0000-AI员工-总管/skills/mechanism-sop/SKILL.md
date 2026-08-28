@@ -6,7 +6,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 # 机制落位 SOP（mechanism-sop）
 
 > **定位**：总管接到用户构想后的**第一判断工具**——"这属于哪类、落在哪、谁有权改、要登记什么、牵动什么"。
-> 静态契约（每个目录是什么）看 `../../../../companies/C001/目录结构说明书.md`；本技能管**动态流程**（怎么改、怎么登记、怎么防漂移）。落位后对着说明书跑 `python ../../../../companies/C001/workbench/generate_tasks.py --check-structure` 自检。
+> 静态契约（每个目录是什么）看 `../../../../companies/C001/目录结构说明书.md`；本技能管**动态流程**（怎么改、怎么登记、怎么防漂移）。落位后对着说明书跑 `python ../../../../../opc_tickets.py --company C001 --check-structure` 自检。
 
 ## 一、四类落位决策树（第一判断）
 
@@ -61,12 +61,12 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 
 **三步铁律**（功能从数据层长出来，不从看板硬编码）：
 1. **A 层契约**：task.md/worklog 增加单行字段（frontmatter 纪律：单行 key:value、数组单行 JSON）；字段空值不报错（P14 预留）；
-2. **B 层解析**：generate_tasks.py 解析 + 校验 + 告警（非法跳过+告警，P11 不降级上板）；worklog 相关改 generate_dashboard.py；
+2. **B 层解析**：OPC 根 opc_tickets.py 解析 + 校验 + 告警（非法跳过+告警，P11 不降级上板）；worklog 相关改 opc_dashboards.py；
 3. **C 层展示**：kanban/mydesk/dashboard 渲染（只读，P4 永不写回）。
 
 ### 类5 · 新视图
 
-从 `../../../../companies/C001/page-templates/` 复制改造（模板是唯一出处，generate_dashboard.py 会自动分发到各实体目录）；视图只读投影，坏删可重建。
+从 `../../../../companies/C001/page-templates/` 复制改造（模板是唯一出处，opc_dashboards.py 会自动分发到各实体目录）；视图只读投影，坏删可重建。
 
 ## 二、领地表（改动权限第二判断）
 
