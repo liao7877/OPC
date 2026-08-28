@@ -411,6 +411,16 @@ def check_links(cid=None, root=None):
         try:
             resolve(uri)
         except Exception as e:
+            # 生成产物例外（与 ① 同口径）：tasks_data 是 run_boards 产物，
+            # clone 后首跑前不存在属正常，不算失效引用（源目录在即可）
+            if uri.startswith("opc://company:"):
+                cid, _, key = uri[len("opc://company:"):].partition("/")
+                if key == "tasks_data" and "/" not in key:
+                    try:
+                        if os.path.isdir(load_company(cid).workbench_abs):
+                            continue
+                    except Exception:
+                        pass
             fp, ln = refs[uri][0]
             rel = os.path.relpath(fp, root)
             issues.append(f"失效引用 {uri} @ {rel}:{ln} -> {e}")

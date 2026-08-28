@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multica 开源项目调研报告 · OPC 组织级情报</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f7f8fa; --bg-card:#ffffff;
+    --text:#1a1d21; --text-mid:#4a5057; --text-dim:#767d85;
+    --line:#e3e6ea; --line-soft:#eef0f3;
+    --accent:#1f6feb; --accent-soft:#e8f0fe;
+    --warn:#b45309; --warn-bg:#fef6e7; --warn-line:#f5d9a8;
+    --danger:#c0392b; --danger-bg:#fdeeec; --danger-line:#f3c5bf;
+    --ok:#0f7b4f; --ok-bg:#e8f6ef; --ok-line:#b8e2cd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px; line-height:1.75;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:48px 32px 96px;}
+  header{border-bottom:2px solid var(--text); padding-bottom:24px; margin-bottom:40px;}
+  h1{font-size:30px; line-height:1.3; margin:0 0 12px; letter-spacing:-0.4px;}
+  .meta{color:var(--text-dim); font-size:13px;}
+  .meta code{background:var(--bg-soft); padding:1px 6px; border-radius:3px; font-size:12px;}
+  h2{
+    font-size:21px; margin:52px 0 18px; padding-top:20px;
+    border-top:1px solid var(--line);
+  }
+  h2:first-of-type{border-top:none;}
+  h3{font-size:16px; margin:28px 0 10px; color:var(--text);}
+  p{margin:12px 0;}
+  ul,ol{margin:12px 0; padding-left:22px;}
+  li{margin:6px 0;}
+  code{
+    background:var(--bg-soft); padding:1.5px 6px; border-radius:4px;
+    font-family:"SF Mono",Consolas,Monaco,monospace; font-size:13px; color:#b3286b;
+  }
+  table{
+    width:100%; border-collapse:collapse; margin:20px 0; font-size:14px;
+  }
+  th,td{
+    border:1px solid var(--line); padding:10px 12px; text-align:left; vertical-align:top;
+  }
+  th{background:var(--bg-soft); font-weight:600; width:150px;}
+  td p{margin:0 0 6px;}
+  td p:last-child{margin:0;}
+  .lead{
+    background:var(--bg-soft); border-left:4px solid var(--text);
+    padding:18px 22px; margin:24px 0; font-size:15.5px;
+  }
+  .lead strong{font-size:16px;}
+  .box{padding:16px 20px; margin:20px 0; border-radius:6px; border:1px solid;}
+  .box p:first-child{margin-top:0;} .box p:last-child{margin-bottom:0;}
+  .box .t{font-weight:700; display:block; margin-bottom:6px;}
+  .warn{background:var(--warn-bg); border-color:var(--warn-line);}
+  .warn .t{color:var(--warn);}
+  .danger{background:var(--danger-bg); border-color:var(--danger-line);}
+  .danger .t{color:var(--danger);}
+  .ok{background:var(--ok-bg); border-color:var(--ok-line);}
+  .ok .t{color:var(--ok);}
+  .info{background:var(--accent-soft); border-color:#c5dafc;}
+  .info .t{color:var(--accent);}
+  .stat-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:12px; margin:24px 0;
+  }
+  .stat{
+    border:1px solid var(--line); border-radius:6px; padding:14px 16px; background:var(--bg-card);
+  }
+  .stat .n{font-size:24px; font-weight:700; letter-spacing:-0.5px; display:block; line-height:1.2;}
+  .stat .l{font-size:12px; color:var(--text-dim); margin-top:4px; display:block;}
+  .tag{
+    display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px;
+    border:1px solid var(--line); color:var(--text-dim); margin-left:6px; vertical-align:middle;
+  }
+  .tag.src-official{background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok);}
+  .tag.src-community{background:var(--warn-bg); border-color:var(--warn-line); color:var(--warn);}
+  .tag.src-media{background:var(--danger-bg); border-color:var(--danger-line); color:var(--danger);}
+  blockquote{
+    margin:16px 0; padding:12px 20px; border-left:3px solid var(--line);
+    color:var(--text-mid); background:var(--bg-soft); font-size:14px;
+  }
+  blockquote p{margin:0;}
+  .src{font-size:12.5px; color:var(--text-dim); margin-top:6px;}
+  footer{
+    margin-top:64px; padding-top:20px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--text-dim);
+  }
+  .toc{
+    background:var(--bg-soft); border:1px solid var(--line); border-radius:6px;
+    padding:16px 24px; margin:28px 0;
+  }
+  .toc ol{margin:6px 0; padding-left:20px;} .toc li{margin:3px 0; font-size:14px;}
+  .toc a{color:var(--accent); text-decoration:none;} .toc a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Multica 开源项目调研报告</h1>
+  <div class="meta">
+    OPC 组织级情报 · 调研日期 2026-08-29 · 数据源：GitHub API 实时拉取 + 官方仓库原始文件 + 第三方实测
+  </div>
+</header>
+
+<div class="lead">
+  <strong>一句话结论：Multica 不是"一人公司"项目，它是一个"人机混合团队的项目管理平台"——本质是给 Jira/Linear 装上 Agent 执行层。</strong><br><br>
+  网上"一人公司神器"的说法是媒体二次包装，官方 VISION.md 只字未提"one-person company"。真正在做"AI 公司"这个形态的是 <strong>Paperclip</strong>（79,555 stars，MIT 协议），比 Multica 还火。如果你的目标是"一人 + 一群 Agent 跑公司"，Paperclip 是更对味的参照物；如果你的目标是"把我已有的多个 Agent CLI 管起来、任务能追踪、经验能沉淀"，Multica 才合适。
+</div>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#s1">定位纠偏：它到底是什么</a></li>
+    <li><a href="#s2">硬数据（已实时核实）</a></li>
+    <li><a href="#s3">架构与核心能力</a></li>
+    <li><a href="#s4">许可证红线（自部署前必读）</a></li>
+    <li><a href="#s5">真实坑与成熟度评估</a></li>
+    <li><a href="#s6">与 OPC 体系的关系</a></li>
+    <li><a href="#s7">Multica vs Paperclip 对比</a></li>
+    <li><a href="#s8">资料可信度警告</a></li>
+    <li><a href="#s9">结论与建议</a></li>
+  </ol>
+</div>
+
+<h2 id="s1">1. 定位纠偏：它到底是什么</h2>
+
+<p>这是本次调研最重要的一个发现。廖哥问的是"搭建一人公司的一个项目"，但 Multica 官方对自己的定义完全不同。</p>
+
+<table>
+  <tr><th>官方一句话</th><td>"Make humans and AI agents work as one team — open-source and self-hostable."（GitHub 仓库描述）</td></tr>
+  <tr><th>官方 VISION</th><td>"成为人机协同工作的 <strong>system of record and action</strong>"。核心比喻是 1960 年代的 Multics 分时操作系统——把算力分给多人。文档通篇讲 team、teammate、assignee、review，<strong>没有一处提到 one-person company 或 solo founder</strong>。</td></tr>
+  <tr><th>媒体包装</th><td>"你的下一批 10 个新员工不会是人类"、"一人公司神器"、"OPC 触手可及"——这是中文科技号和 SEO 作者为了流量做的二次解读。</td></tr>
+  <tr><th>准确类比</th><td><strong>"Linear / Jira 的 Agent 化版本"</strong>。第三方评测的原话最准："a Jira board where some assignees happen to be bots"（一个碰巧有些执行者是机器人的 Jira 看板）。</td></tr>
+</table>
+
+<div class="box info">
+  <span class="t">为什么这个区分很重要</span>
+  <p>定位决定了产品形态。Multica 的核心抽象是 <strong>Issue（工单）</strong>——一切围绕"谁被分配了哪张卡"。而"一人公司"需要的核心抽象是 <strong>组织（岗位、汇报线、预算、目标拆解）</strong>。这两个抽象不通用：你能把任务派给一个 Agent，但没法在 Multica 里定义"CTO 向 CEO 汇报、月度预算 50 美元、超支自动停"。</p>
+  <p>后者正是 Paperclip 在做的事（见第 7 节）。</p>
+</div>
+
+<h2 id="s2">2. 硬数据（已实时核实）</h2>
+
+<p>网上流传的 Stars 数从 10.7k 到 23.7k 都有，全是过时文章。以下为 2026-08-29 从 GitHub API 实测：</p>
+
+<div class="stat-grid">
+  <div class="stat"><span class="n">48,124</span><span class="l">Stars</span></div>
+  <div class="stat"><span class="n">6,178</span><span class="l">Forks</span></div>
+  <div class="stat"><span class="n">285</span><span class="l">贡献者</span></div>
+  <div class="stat"><span class="n">1,375</span><span class="l">Open Issues</span></div>
+  <div class="stat"><span class="n">v0.4.36</span><span class="l">最新版（8-28）</span></div>
+  <div class="stat"><span class="n">7.5 个月</span><span class="l">项目年龄</span></div>
+</div>
+
+<table>
+  <tr><th>项目全称</th><td><strong>Mul</strong>tiplexed <strong>I</strong>nformation and <strong>C</strong>omputing <strong>A</strong>gent</td></tr>
+  <tr><th>仓库</th><td><code>github.com/multica-ai/multica</code>（Organization 类型）</td></tr>
+  <tr><th>创建时间</th><td>2026-01-13</td></tr>
+  <tr><th>最后提交</th><td>2026-08-28（调研前一天，活跃度极高）</td></tr>
+  <tr><th>主语言</th><td>Go 22.5M 字符 + TypeScript 15.9M 字符</td></tr>
+  <tr><th>许可证</th><td><strong>Multica License</strong>（Apache 2.0 全文 + 附加限制条款），GitHub 识别为 NOASSERTION——即<strong>不是标准开源协议</strong></td></tr>
+  <tr><th>发布节奏</th><td>v0.4.27(8/17) → v0.4.36(8/28)，<strong>10 天 10 个正式版</strong>，每版 37 个构建产物。官方自称"大多数工作日都发版"</td></tr>
+  <tr><th>中文文档</th><td>有。<code>README.zh.md</code>、<code>VISION.zh.md</code> 均官方维护（注意：网上流传的 <code>README.zh-CN.md</code> 是旧路径，已失效）</td></tr>
+</table>
+
+<h2 id="s3">3. 架构与核心能力</h2>
+
+<h3>3.1 三层架构</h3>
+
+<pre style="background:var(--bg-soft);border:1px solid var(--line);border-radius:6px;padding:16px;overflow-x:auto;font-size:12.5px;line-height:1.5;">
+        Web  ·  Desktop (macOS/Windows/Linux)  ·  iOS
+                          │
+                          ▼
+   ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
+   │   Next.js    │──&gt;│  Go backend  │──&gt;│   PostgreSQL     │
+   │   frontend   │&lt;──│  (Chi + WS)  │&lt;──│   (17)           │
+   └──────────────┘   └──────┬───────┘   └──────────────────┘
+                             │  tasks over WebSocket
+                      ┌──────┴───────┐
+                      │ Agent daemon │  跑在你机器上，紧挨着你的代码
+                      └──────┬───────┘
+                             │  spawns
+                      ┌──────┴───────────────────────────────┐
+                      │  Claude Code · Codex · Cursor · …    │
+                      │  （共 23 个 runtime）                │
+                      └──────────────────────────────────────┘
+</pre>
+
+<p><strong>关键设计：Multica 不自带模型，也不实现 Agent 循环。</strong>它只是 shell out 到你已经装好、已登录的 CLI。这个取舍很聪明——Agent 生态变化太快，它只想做那个"不管谁赢都能活下来的层"。</p>
+
+<h3>3.2 支持的 23 个 Agent CLI</h3>
+
+<div class="box ok">
+  <span class="t">对廖哥的直接利好</span>
+  <p>官方 runtime 列表里<strong>包含 <code>codebuddy</code></strong>（CodeBuddy）。也就是说你现在主力用的 WorkBuddy/CodeBuddy 可以直接被 Multica 纳管，不需要换工具链。</p>
+</div>
+
+<table>
+  <tr><th>完整列表</th><td>
+    Claude Code、OpenAI Codex、Cursor Agent、GitHub Copilot CLI、OpenCode、OpenClaw、Hermes、Pi、Antigravity、<strong>CodeBuddy</strong>、DevEco Code、Grok、Kimi、Kiro CLI、Qoder CLI、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI、DeepSeek Harness、Oh-My-Pi、MiniMax Code、Dim
+  </td></tr>
+  <tr><th>接入方式</th><td>daemon 扫描 PATH 自动发现，装了哪个 CLI 就用哪个。切换 provider 是下拉框，不是迁移。</td></tr>
+</table>
+
+<h3>3.3 五大核心能力</h3>
+
+<table>
+  <tr><th>Agent 即队友</th><td>Agent 有档案、头像，出现在看板上、评论区发进度、主动报 blocker。Issue 可以像派给同事一样派给它。</td></tr>
+  <tr><th>Squads（小队）</th><td>把多个 Agent 和人归到一个 leader 下面，任务派给小队而不是个人，由 leader 决定谁接。抽象成 <code>@FrontendTeam</code> 而不是 <code>@张三</code>。</td></tr>
+  <tr><th>Autopilots</th><td>cron / webhook / 手动触发的周期性任务。每日站会、周报、定期审计可以全自动跑起来。<strong>这个能力最接近"无人值守公司"。</strong></td></tr>
+  <tr><th>Skills 复用</th><td>宣称"每个解决方案都沉淀为全队可复用技能"。<strong>但注意：实测这个能力目前大半是营销话术，见第 5 节。</strong></td></tr>
+  <tr><th>执行可观测</th><td>完整的执行日志（每次工具调用、命令、错误，带时间戳）、token 用量按 agent/issue 统计、失败自动重试或停下报原因、Review gates（产出先进 review 不进 main）。</td></tr>
+</table>
+
+<h3>3.4 部署形态</h3>
+
+<table>
+  <tr><th>云端</th><td>multica.ai 注册即用，零配置</td></tr>
+  <tr><th>桌面端</th><td>Electron，macOS / Windows / Linux。跑在哪台机器上，就把那台机器自动注册成 runtime</td></tr>
+  <tr><th>自托管</th><td>Docker Compose 或 Helm chart（k8s）。官方实测 idle 内存约 100MB（web 50MB + backend 7MB + PG 42MB）——服务端非常轻，吃掉资源的是 Agent 本身</td></tr>
+  <tr><th>最低配置</th><td>服务端：2 vCPU / 2GB RAM 跑得动。想在同一台机器上并行跑 Agent，上到 4 vCPU / 8GB</td></tr>
+</table>
+
+<h2 id="s4">4. 许可证红线（自部署前必读）</h2>
+
+<div class="box danger">
+  <span class="t">这不是 Apache 2.0</span>
+  <p>我拉了官方 LICENSE 原文（328 行）逐条核对。它是 <strong>Apache License 2.0 完整全文 + Part I 附加条件</strong>的组合体，附加条件优先于 Apache 正文（Part I 第 3.c 条明确："If Part I and Part II conflict, Part I controls"）。GitHub 因此无法识别为 SPDX 标准协议，标记为 <code>NOASSERTION</code>。</p>
+</div>
+
+<h3>4.1 四条关键限制</h3>
+
+<table>
+  <tr><th>① 禁止对外托管</th><td>
+    未经商业授权，<strong>不得用 Multica 源码向第三方提供托管服务</strong>，也不得把它作为组件嵌入对外销售/分发的产品。
+    <ul>
+      <li>即使<strong>免费、无广告、无付费档</strong>，只要是给外部用户访问的公开实例，仍需商业许可</li>
+      <li><strong>单一组织内部使用（含多工作区）不需要商业许可</strong>——这条对廖哥自用是放行的</li>
+      <li>发布 fork 源码到公开仓库不算托管服务，允许，但接收方要运营托管仍需各自拿许可</li>
+    </ul>
+  </td></tr>
+  <tr><th>② 不许拆品牌</th><td>
+    未经书面的 branding waiver，<strong>不得移除或修改 Multica 的 LOGO、产品名、UI 中的版权与署名信息</strong>。
+    <ul>
+      <li>覆盖 <code>apps/web/</code>、<code>apps/desktop/</code>、<code>apps/mobile/</code>、<code>packages/views/</code>、<code>packages/ui/</code>，以及 Docker 镜像 <code>ghcr.io/multica-ai/multica-web</code></li>
+      <li>且明确写着：改了、搬了、重命名了、抽到别的包里，<strong>照样受约束</strong></li>
+      <li>豁免场景：只用后端 <code>server/</code>、daemon 或 CLI，不分发也不运行 Multica 的 UI</li>
+    </ul>
+  </td></tr>
+  <tr><th>③ 非 UI 使用要署名</th><td>如果只用后端/daemon/CLI 做产品，必须保留所有版权专利商标声明，并在用户可见文档中声明"built on Multica"并附 GitHub 链接。</td></tr>
+  <tr><th>④ 贡献者条款</th><td>提交 PR 即视为同意：<strong>官方可以随时把协议改严或改松</strong>，且你的代码可被用于其商业云业务。</td></tr>
+</table>
+
+<h3>4.2 对 OPC 场景的判定</h3>
+
+<table>
+  <tr><th>自用（一人 + 自己的 Agent 团队）</th><td>✅ 完全允许，无需商业许可</td></tr>
+  <tr><th>改 UI / 换品牌名后自用</th><td>⚠️ 条款上不允许（第②条），除非拿到书面 branding waiver</td></tr>
+  <tr><th>做成产品对外卖 / 给客户部署</th><td>❌ 需要商业许可，否则违约</td></tr>
+  <tr><th>只借鉴架构思路，自己实现</th><td>✅ 思路不受版权保护，可放心借鉴</td></tr>
+</table>
+
+<div class="box warn">
+  <span class="t">与 OPC 现有机制的冲突点</span>
+  <p>廖哥的 OPC 有一套自建的品牌与治理体系（公司命名空间、员工卡、总管 E0000）。如果哪天想让 OPC 跑在 Multica 之上并对外提供服务，第①条是直接红线；如果只是自用且保留 Multica 品牌，则没障碍。</p>
+  <p>另外④值得警惕：<strong>给 Multica 贡献代码等于授权它单方面改协议</strong>，这在开源项目里属于相当强势的条款。</p>
+</div>
+
+<h2 id="s5">5. 真实坑与成熟度评估</h2>
+
+<p>这一节全部来自第三方实测博客和仓库自身 issue，不是媒体通稿。诚实说：<strong>这是个高速迭代的 v0.4.x，不是成品。</strong></p>
+
+<h3>5.1 已确认的真实问题</h3>
+
+<table>
+  <tr><th>编排名不副实</th><td>
+    最硬伤的一条。实测者配置了一个"自动派单的编排 Agent"，反复报 <code>multica cli is not authenticated</code>。<strong>根因：被 spawn 出来的子 Agent 进程不继承父进程的认证上下文</strong>。结果是——号称自动编排，实际上<strong>任务仍得手动分配给 Agent</strong>。
+    <div class="src">来源：tim.bai.uno 实机测试 <span class="tag src-community">实测</span></div>
+  </td></tr>
+  <tr><th>凭证传递断裂</th><td>
+    从 GitHub clone 的仓库里，Agent 拿不到 <code>.env</code> 里的 API key（spawn 的进程访问不到）。需要人工介入配置。
+    <div class="src">同上 <span class="tag src-community">实测</span></div>
+  </td></tr>
+  <tr><th>Skills 不会自动沉淀</th><td>
+    宣传语是"每个解决方案都自动变成可复用技能"，但<strong>自动蒸馏管线仍在开发中</strong>。今天的 skills 基本是手写 runbook。想要复利，得靠自己写。
+    <div class="src">来源：andrew.ooo 深度评测 <span class="tag src-community">实测</span></div>
+  </td></tr>
+  <tr><th>无 per-agent 预算上限</th><td>
+    每个 CLI 各走各的账单，Multica <strong>没有"这个 agent 花了 42 美元"的硬性熔断</strong>。成本控制得自己去 provider 后台做。这一点 Paperclip 有而 Multica 没有。
+  </td></tr>
+  <tr><th>Kanban 里 Agent 失败很难看</th><td>人从"进行中"挪到"阻塞"只挪一次；Agent 卡在循环里，90 秒能刷五次状态迁移，把看板淹掉。</td></tr>
+  <tr><th>自托管登录有坑</th><td>
+    默认鉴权走云端发验证码，全自托管且没接云端时，<strong>验证码永远收不到，卡在六位输入框</strong>。变通方法：设 <code>APP_ENV=development</code> + 清空 <code>RECENT_API_KEY</code>，此时任意六位码可登录，首个账号即管理员。<strong>但这不是生产级鉴权模式</strong>，别直接暴露公网。
+    <div class="src">来源：mejba.me Hetzner 部署实录 <span class="tag src-community">实测</span></div>
+  </td></tr>
+  <tr><th>云版与自托管不同步</th><td>新功能先上 Cloud，自托管 GHCR 镜像有时滞后一个版本。自托管需要盯 release notes。</td></tr>
+  <tr><th>安全项仍在补</th><td>2026-04-25 单日收到 6 个安全/API 审计级 issue：429 缺 Retry-After、<code>/auth/verify-code</code> 无暴力破解防护、状态变更请求未校验 Origin、<code>PATCH /api/comments/:id</code> 返回 404（只有 PUT 能用）。属于 P0/P1 级发现。</td></tr>
+</table>
+
+<h3>5.2 仓库自身的开放式争议</h3>
+
+<blockquote>
+  <p>"I think Multica is impressive work… But the underlying mental model is still 'a Jira board where some assignees happen to be bots.' <strong>Agents have radically different failure modes than humans.</strong>"</p>
+  <div class="src">—— 仓库 issue #815 原文，标题《Multica still manages AI the way it manages people》<span class="tag src-official">官方仓库</span></div>
+</blockquote>
+
+<p>这条来自仓库自身、15 条评论的讨论，指向一个未解的产品问题：<strong>用人类的项目管理抽象管 Agent，在 100 个 Agent 的规模下还成不成立？</strong>Agent 可能需要的是心跳、预算、审批门这类原生原语，而不是看板列。</p>
+
+<p>其他高热反馈还包括：</p>
+<ul>
+  <li><strong>#1943</strong> [Feature] Workflow Orchestration（16 评）—— 编排能力仍被强烈呼唤</li>
+  <li><strong>#1014</strong> [Feature] OIDC 登录（15 评）—— 企业身份集成缺失</li>
+  <li><strong>#4490</strong> [Feature] 插件/扩展系统（10 评）—— 目前没有扩展机制</li>
+  <li><strong>#1211</strong> 讨论：团队知识是否该像 skills 一样跨 run 沉淀（14 评）—— 说明还没做到</li>
+  <li><strong>#3262</strong> [Bug] Codex app-server 卡在 running 无输出；<strong>#2341</strong> [Bug] 只有 1 个任务时 Agent 卡在 Queue；<strong>#4601</strong> [Bug] 团队长叫不醒成员</li>
+</ul>
+
+<h3>5.3 成熟度判定</h3>
+
+<table>
+  <tr><th>适合谁</th><td>
+    已在跑 2 个以上 Agent CLI、受够了 tmux 的 2–10 人团队；想要统一看板 + 供应商中立 + 自托管的团队；想用两个模型家族做并行 code review 的场景。
+  </td></tr>
+  <tr><th>不适合谁</th><td>
+    只跑单个 Agent 的独狼（UI 开销收不回本）；今天就需要重型治理、审批链、per-agent 预算上限的团队；不想运维 PostgreSQL 的人；需要稳定 v1 API 契约或已过外部安全审计的团队。
+  </td></tr>
+  <tr><th>总体</th><td><strong>早期生产可用（early production for low-risk projects）</strong>——第三方评测原话。真实工程，但不是成品。</td></tr>
+</table>
+
+<h2 id="s6">6. 与 OPC 体系的关系</h2>
+
+<div class="box info">
+  <span class="t">核心判断：不在同一层，是互补而非替代</span>
+  <p>廖哥的 OPC（<code>E:\OPC</code>）是<strong>治理规范层</strong>——命名空间 <code>opc://</code>、公司/员工卡、总管 E0000、看板生成器、pre-commit 门禁。它的立身之本是"散落路径收敛到配置、改名只改一处、文档层符号化"。</p>
+  <p>Multica 是<strong>执行平台层</strong>——它需要 PostgreSQL + Docker + daemon，把 Issue 派给 CLI 去跑。</p>
+  <p><strong>两者解决的是不同问题</strong>：OPC 解决"组织知识怎么组织、引用怎么不失效"；Multica 解决"Agent 活儿怎么派、进度怎么看"。</p>
+</div>
+
+<h3>6.1 三个值得借鉴的设计</h3>
+
+<table>
+  <tr><th>① Runtime 抽象</th><td>
+    Multica 不绑任何 Agent CLI，vendor 中立——"切换 provider 是下拉框，不是迁移"。这跟 OPC 的"稳定锚"思路异曲同工：<strong>易变的物理布局下沉到一层间接</strong>。OPC 已在公司目录改名这件事上做到了，Multica 把它做到了 Agent 选型上。
+  </td></tr>
+  <tr><th>② Autopilots</th><td>
+    cron/webhook 触发周期性工作（每日站会、周报、定期审计），每个 autopilot 自动建 Issue 并路由给 Agent。<strong>这个机制和 OPC 的 <code>opc_patrol.py</code> 巡检是同一类东西</strong>，可以对照看 Multica 怎么把"巡检→发现→派单→回报"串成闭环。
+  </td></tr>
+  <tr><th>③ Review gates</th><td>
+    产出进 review 不进 main，"没有人类点头不许上线"。OPC 目前靠 pre-commit 门禁做静态校验，Agent 产出的人工审批环节还比较薄。
+  </td></tr>
+</table>
+
+<h3>6.2 不建议照搬的部分</h3>
+
+<ul>
+  <li><strong>不要为了 Multica 把 OPC 迁到数据库上。</strong>OPC 的文件系统 + 文档驱动是其最大优势：可读、可 diff、可 git 版本管理、零运维。Multica 的 PostgreSQL 依赖是它自己的负担（第三方评测明确列为 adoption 门槛）。</li>
+  <li><strong>不要接受"每个解决方案自动沉淀成技能"的说法。</strong>这能力 Multica 自己都没做出来，OPC 里若要沉淀经验，还是得靠人工写进 memory/技能文件。</li>
+  <li><strong>警惕协议传染。</strong>如果将来 OPC 想产品化对外，Multica 的第①条红线会挡路。借鉴思路零风险，直接依赖有风险。</li>
+</ul>
+
+<h2 id="s7">7. Multica vs Paperclip 对比</h2>
+
+<p>既然目标是"一人公司"，这个对比绕不开。<strong>Paperclip 才是真正对标"AI 公司"形态的那个项目</strong>，而且体量更大（79,555 stars，2026-08-29 实测）。</p>
+
+<table style="font-size:13.5px;">
+  <tr>
+    <th style="width:110px;">维度</th>
+    <th>Multica</th>
+    <th>Paperclip</th>
+  </tr>
+  <tr><th>Stars</th><td>48,124</td><td><strong>79,555</strong></td></tr>
+  <tr><th>协议</th><td>Multica License（附加限制）<span class="tag src-community">有红线</span></td><td><strong>MIT</strong><span class="tag src-official">无限制</span></td></tr>
+  <tr><th>核心抽象</th><td>Issue（工单）</td><td><strong>Org Chart（组织架构）</strong></td></tr>
+  <tr><th>定位</th><td>人机混合团队的项目管理平台</td><td>"如果 OpenClaw 是员工，Paperclip 是公司"</td></tr>
+  <tr><th>技术栈</th><td>Go + Next.js 16 + PostgreSQL 17</td><td>Node.js + React + 内嵌 PostgreSQL</td></tr>
+  <tr><th>安装</th><td>Docker Compose / Helm，需运维 PG</td><td><code>npx paperclipai onboard</code>，<strong>内嵌数据库，5 分钟</strong></td></tr>
+  <tr><th>预算控制</th><td>❌ 无 per-agent 上限</td><td>✅ 每月预算，超额自动停，原子化执行</td></tr>
+  <tr><th>心跳机制</th><td>Autopilots（cron 触发）</td><td>✅ Heartbeats——Agent 按调度醒来、查工作、行动，汇报线上下自动委派</td></tr>
+  <tr><th>目标对齐</th><td>Projects 分组</td><td>✅ 每个任务带完整目标谱系：公司使命→项目目标→Agent 目标→任务</td></tr>
+  <tr><th>治理</th><td>角色 owner/admin/member</td><td>✅ 你是董事会：审批录用、否决策略、随时暂停/解雇 Agent</td></tr>
+  <tr><th>审计</th><td>执行日志</td><td>✅ 全工具调用追踪 + 不可变审计日志</td></tr>
+  <tr><th>多公司</th><td>多工作区（隔离 Agent/Issue/设置）</td><td>✅ 一个部署跑多家公司，完全数据隔离</td></tr>
+  <tr><th>Agent 支持</th><td><strong>23 个 CLI</strong>，含 CodeBuddy</td><td>不限 runtime，"能接收 heartbeat 就能入职"</td></tr>
+  <tr><th>成熟度</th><td>v0.4.x，早期生产可用</td><td>v2026.722.0，同样年轻（2026-03 首次提交）</td></tr>
+</table>
+
+<div class="box warn">
+  <span class="t">但 Paperclip 有个转向信号</span>
+  <p>它的 GitHub 描述已经从"zero-human companies"改成了 <strong>"The open-source app everyone uses to manage agents at work"</strong>——正在往通用企业市场漂移。真要上车得看它当前版本是否还保留 org chart 那套。另外它的 open issues 有 <strong>5,416 个</strong>（Multica 的近 4 倍），社区反馈的问题量不小。</p>
+</div>
+
+<h2 id="s8">8. 资料可信度警告</h2>
+
+<div class="box danger">
+  <span class="t">中文资料大量是 AI 洗稿，与官方文件直接矛盾</span>
+  <p>调研过程中撞上两篇技术细节完全错误的中文文章，如果照着做会白折腾：</p>
+  <ul>
+    <li><strong>某 CSDN 文章</strong>称 Multica 用 Rust 写协调内核、FastAPI 做网关、四层 Docker 服务。<strong>全部是幻觉</strong>——官方架构图明确是 Go 后端 + Next.js 前端 + PostgreSQL，没有 Rust，没有 FastAPI，没有"Coordinator Core"这个概念。</li>
+    <li><strong>某部署教程</strong>称自部署"必须启用 Kubernetes""内存不低于 6GB"。<strong>与官方 SELF_HOSTING.md 矛盾</strong>——官方只要求 Docker + Docker Compose，Helm 是 k8s 用户的可选项；实测 idle 仅约 100MB。</li>
+    <li>媒体文章里的 Stars 数（10.7k / 23.7k / 40k）全部过时，真实值 48,124。</li>
+  </ul>
+  <p><strong>结论：Multica 相关的一切技术细节，只认 <code>README.md</code> / <code>SELF_HOSTING.md</code> / <code>LICENSE</code> 三个官方文件，其余当参考。</strong></p>
+</div>
+
+<h2 id="s9">9. 结论与建议</h2>
+
+<div class="lead">
+  <strong>如果目标是"搭一人公司"：Multica 不是最优解，建议先看 Paperclip。</strong><br>
+  Multica 的抽象是"派活"，Paperclip 的抽象是"建组织"。你要的是后者。<br><br>
+  <strong>如果目标是"把我现有的多个 Agent CLI 管起来"：Multica 值得试，且 CodeBuddy 已在官方支持列表里。</strong>
+</div>
+
+<h3>三档建议</h3>
+
+<table>
+  <tr><th>① 只取经，不落地</th><td>
+    <strong>成本零，收益确定。</strong>重点读三份官方文件（README / VISION / SELF_HOSTING），把 Runtime 抽象、Autopilots、Review gates 三个设计思路吸收进 OPC 机制层。协议零风险，架构可借鉴。
+  </td></tr>
+  <tr><th>② 接一个真场景试水</th><td>
+    <strong>成本半天，收益可验证。</strong>用 Multica Cloud（不自建，避开 Docker + PG 运维 + 登录坑），把 CodeBuddy 接进去，跑一个真实工单。重点验证两个宣传点是否兑现："Agent 主动报 blocker" 和 "Skills 沉淀"。<strong>同时对照看 Paperclip 的 onboard（5 分钟，内嵌数据库）。</strong>
+  </td></tr>
+  <tr><th>③ 作为 OPC 底座</th><td>
+    <strong>不建议，至少现在不建议。</strong>三个理由：一是 OPC 的文件系统优势会被引进数据库依赖抵消；二是协议第①条挡住未来产品化；三是 v0.4.x 的编排能力还不闭环（子 Agent 丢失认证上下文这个坑没填）。真要上，等它把 #1943 Workflow Orchestration 和 agent API 访问这两个缺口补上再说。
+  </td></tr>
+</table>
+
+<div class="box ok">
+  <span class="t">最值得 OPC 借鉴的一点</span>
+  <p>Multica 那句 "It does not ship a model. It drives the agent CLIs you already have" —— <strong>不做执行者，只做协调者</strong>。这个定位和 OPC 现在的角色高度一致：OPC 不生产 Agent 能力，它提供命名空间、稳定锚、门禁，让上层 Agent 能稳定协作。<strong>这个方向是对的，不必因为 Multica 火就动摇。</strong></p>
+</div>
+
+<footer>
+  调研人：Claw（OPC 组织级 agent）· 日期：2026-08-29<br>
+  数据源：GitHub REST API（2026-08-29 实时拉取）、官方仓库 <code>README.md</code> / <code>VISION.md</code> / <code>LICENSE</code> / <code>SELF_HOSTING.md</code> 原始文件、tim.bai.uno 与 andrew.ooo 与 mejba.me 第三方实测、仓库 issue 区<br>
+  本报告所有 Stars / 版本 / 协议数据均经一手核实，与媒体通稿数字不一致处以本报告为准。
+</footer>
+
+</div>
+</body>
+</html>
