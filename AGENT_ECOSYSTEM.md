@@ -44,11 +44,11 @@ companies/C001/                 ← 公司级工作区（稳定锚 junction→�
 ├── skills/ticket-system/         ← 实体（唯一出处，文件系统即真相）
 └── .workbuddy/skills → junction→ skills/     ← 引用（平台披露通道）
 
-T001-AI开发团队/                  ← 团队级工作区
+T001/                  ← 团队级工作区
 ├── skills/team-dev-standards/    ← 实体
 └── .workbuddy/skills → junction→ skills/
 
-E0001-AI员工-分析员/               ← 员工级工作区
+E0001/               ← 员工级工作区
 ├── skills/data-analysis-template/ ← 实体（私有技能）
 └── .workbuddy/skills → junction→ skills/
 ```

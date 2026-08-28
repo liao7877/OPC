@@ -38,7 +38,7 @@ root = "."                       # 相对本 manifest 所在目录（= OPC 根�
 [company.DEFAULT]                # 骨架默认值，所有公司继承
 workbench = "workbench"
 tasks_data = "workbench/tasks-data.json"
-roster = "E0000-AI员工-总管/roster.md"
+roster = "E0000/roster.md"
 affairs = "workbench/affairs"
 page_templates = "page-templates"
 
@@ -51,7 +51,7 @@ home = "companies/C001"          # Z 方案：指向 OS 级稳定锚（junction/
 - **更新锚 = 跑 `scripts/link-company`（零参数）**：脚本不靠你告诉它改了哪个目录，而是扫 OPC 根下各 `company.md`、按「公司 ID」扫描发现真实位置，重指 `companies/<cid>`。发现逻辑复用 resolver 的 `_discover_company_home`，零手动输入。
 - **终极兜底（C 自愈）**：即便锚也断了（没跑脚本），resolver 仍按 `company.md` 的「公司 ID」扫描发现真实目录——所有 consumer 经 resolver 自动定位，改名零配置。锚只是「人类可读 + 加速」层。
 - 公司段只写「偏离」字段，未写字段回退 DEFAULT（约定优于配置）。
-- **company.md 锚点的维护边界（回答「总得有人维护吗」）**：仅公司根目录一份 `company.md`，其「公司 ID」由 `create-company` 技能在**建公司时写一次**；ID 是位置无关的，**目录改名不需要改它**。子实体（员工/团队/项目）靠目录名前缀（`E0000-`/`T001-`/`P0001-`）扫描发现，**无 md、零维护**。锚点漂移由 `audit_structure`（被 `--check` / pre-commit 自动跑）兜底报警——你无需记着维护，工具替你盯。
+- **company.md 锚点的维护边界（回答「总得有人维护吗」）**：仅公司根目录一份 `company.md`，其「公司 ID」由 `create-company` 技能在**建公司时写一次**；ID 是位置无关的，**目录改名不需要改它**。子实体（员工/团队/项目）靠目录名前缀（`E0000`/`T001`/`P0001`）扫描发现（ID-only 与遗留 `-名称` 后缀均兼容，决策 #17），**无 md、零维护**。锚点漂移由 `audit_structure`（被 `--check` / pre-commit 自动跑）兜底报警——你无需记着维护，工具替你盯。
 
 ---
 
@@ -158,7 +158,7 @@ def anchor_prefix(base_dir, subdir):
 ```
 
 - 公司根输出（depth 0）：`../companies/C001/`
-- 一级子目录（depth 1，如 `E0001-*/`、`workbench/`）：`../../companies/C001/`
+- 一级子目录（depth 1，如 `E0001/`、`workbench/`）：`../../companies/C001/`
 - **验证**：`opc_resolver.py --check` → 全绿；C001 + 模板共 4 个生成器 `--selftest` 全过；`anchor_prefix` 单测 4 场景全对；全项目 `companies/C001` 引用 177 处深度核对 0 偏差。
 
 > 数据层（看板 JSON 等运行时产物）仍走物理路径，属预期（产物不进版本库、随生成而变），不纳入符号化范围。
@@ -188,7 +188,7 @@ def anchor_prefix(base_dir, subdir):
 
 - `opc_resolver.py` 新增 `--doctor`：检查 Python≥3.11 / 稳定锚 / pre-commit 钩子 / 命名空间扫描 / 技能披露链接五项，全绿才放行（exit 0），有缺失 exit 1 并打印补齐指引。
 - **治理文件全部写入该门禁**（波及面四处同步）：
-  - 总管 `E0000-AI员工-总管/AGENTS.md` 启动流程**第 0 步** = 环境 init 自检（C001 实例 + company-template 模板均改）。
+  - 总管 `E0000/AGENTS.md` 启动流程**第 0 步** = 环境 init 自检（C001 实例 + company-template 模板均改）。
   - 新建 **OPC 根 `AGENTS.md`**（组织级治理入口）：规定任何在 OPC 根工作的 agent 开工前必跑 `--doctor`。
   - `company-template/AGENTS.md` 加「启动门禁（init · 新建公司继承）」段，新公司自动遵循。
   - `README.md` 新增「系统初始化（首次运行必做）」章节：clone 后必做清单（Python≥3.11 / 建锚 / 装钩子 / 验证）。

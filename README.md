@@ -27,8 +27,8 @@ OPC/
 ├── companies/C001/          # 示例公司稳定锚（junction→真实公司目录）：完整跑通的 AI 自动化公司
 │   ├── company.md          #   公司档案（定位 / 编制 / 边界）
 │   ├── AGENTS.md / CLAUDE.md # 公司级角色与红线（跨平台兜底）
-│   ├── E0000~E0002/        #   员工级工作区（总管 / 分析员 / 项目经理），各含 mydesk/worklog/skills
-│   ├── T001-AI开发团队/     #   团队级工作区（含 teamboard / 团队技能）
+│   ├── E0000~E0002/        #   员工级工作区（总管 / 售前工程师 / 项目经理）；目录名 ID-only，显示名登记于 roster 岗位列，各含 mydesk/worklog/skills
+│   ├── T001/     #   团队级工作区（含 teamboard / 团队技能）
 │   ├── P0001~P0004/         #   项目目录（实体即目录，归属用字段声明）
 │   ├── workbench/           #   工单看板系统（tasks/ 为唯一真相，看板 HTML 为投影）
 │   ├── skills/              #   公司级技能实体（junction 接入平台披露）
@@ -36,7 +36,7 @@ OPC/
 │   └── page-templates/      #   dashboard / mydesk / teamboard 模板
 ├── company-template/        # 新公司脚手架：复制即可开一家新公司
 │   ├── company.md / workflow.md / 目录结构说明书.md
-│   ├── E0000-AI员工-总管/    #   总管岗模板
+│   ├── E0000/    #   总管岗模板
 │   └── skills/ / templates/ / workbench/ / page-templates/
 └── create-company/
     └── SKILL.md             # 「开公司」技能：按模板 + 规范一键拉起新公司
@@ -93,7 +93,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 ## 怎么用
 
-**0. 想派活（日常使用入口，小白从这开始）**：把 `companies/C001/E0000-AI员工-总管/`（每家公司各自的 E0000 总管目录）当工作区打开一个 agent 会话——总管的身份、职责、技能会自动加载，用自然语言说需求即可；系统的命名/看板/巡检/门禁维护由机制层与总管兜底，你不需要了解实现，也不需要手动维护任何文件。完整使用手册（怎么对话/机制地图/FAQ）：浏览器打开 [`USER_GUIDE.html`](USER_GUIDE.html)。
+**0. 想派活（日常使用入口，小白从这开始）**：把 `companies/C001/E0000/`（每家公司各自的 E0000 总管目录）当工作区打开一个 agent 会话——总管的身份、职责、技能会自动加载，用自然语言说需求即可；系统的命名/看板/巡检/门禁维护由机制层与总管兜底，你不需要了解实现，也不需要手动维护任何文件。完整使用手册（怎么对话/机制地图/FAQ）：浏览器打开 [`USER_GUIDE.html`](USER_GUIDE.html)。
 
 **1. 开一家新公司（推荐走技能）**
 - 加载 `create-company` 技能，按 `company-template/` 脚手架 + `PRINCIPLES.md` 规范拉起新公司目录。

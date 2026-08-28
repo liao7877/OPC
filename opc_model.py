@@ -256,9 +256,9 @@ def build_indexes(company_root):
                 tid = extract_id(_read(tm), "id", r"团队\s*ID[：:]\s*(\S+)")
                 if tid:
                     teams[tid] = {"path": str(tm)}
-    # roster 位置真相源在 opc.toml [company.DEFAULT].roster（当前约定 E0000 总管目录）；
-    # 本读取器不依赖 manifest（保持零耦合），此处按同一约定 + E0000-* 扫描兜底发现。
-    roster = root / "E0000-AI员工-总管" / "roster.md"
+    # roster 位置真相源在 opc.toml [company.*].roster（本读取器保持零耦合不读 manifest），
+    # 此处按约定发现：E0000 目录（决策 #17 ID-only 命名）优先，E0000-* 遗留带名兜底。
+    roster = root / "E0000" / "roster.md"
     if not roster.is_file():
         for d in root.iterdir():
             if d.is_dir() and re.match(r"^E0000", d.name):

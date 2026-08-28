@@ -411,6 +411,115 @@ def all_company_ids(root=None):
     return [k for k in g.get("company", {}) if k != "DEFAULT"]
 
 
+# ---------------------------------------------------------------------------
+# 裸路径散文扫描（决策 #17，2026-08-29）：显示名与物理路径解耦的执行半边。
+# 机制口径：实体目录名 ID-only（允许遗留 -名称 后缀），显示名唯一真相在
+# roster 岗位列 / team.md·project.md「名称」字段；正文若裸写目录名（P26 反模式），
+# 该名必须与现存目录全名一致，否则视为失效引用——改名/迁移后的散文漂移由门禁兜住。
+# ---------------------------------------------------------------------------
+
+# 目录名字符集：ASCII 字母数字/下划线/连字符 + CJK（「E0001」形态）。
+# 连字符也在集合内，故「E0001-*」「E0000-/」这类通配/半截写法因后段为空自动不匹配。
+_DIRNAME_CHARS = r"[A-Za-z0-9_\u4e00-\u9fff\-]"
+# 匹配时前面不能紧贴 ASCII 字母数字/下划线（防 TSK00010 里的 K00010 误吸；中文紧邻允许）
+
+
+def _live_entity_dir_names(root):
+    """现存公司/实体目录名集合（散文扫描的合法性判据）。
+    公司名取扫描发现的真实目录（锚 companies/<cid> 的 basename 只是 ID）；"""
+    live = set()
+    prefixes = sorted(set(entity_types(root).values()) | {"C"})
+    ent_re = re.compile(rf"^({'|'.join(prefixes)})\d{{3,}}(?:-.+)?$")
+    for cid in all_company_ids(root):
+        try:
+            real = _discover_company_home(cid, root)
+            if not real:
+                real = load_company(cid).home_abs
+        except Exception:
+            continue
+        live.add(os.path.basename(os.path.normpath(real)))
+        try:
+            entries = os.listdir(real)
+        except OSError:
+            continue
+        for e in entries:
+            if os.path.isdir(os.path.join(real, e)) and ent_re.match(e):
+                live.add(e)
+    return live
+
+
+def _iter_prose_lines(fp):
+    """逐行产出 (line_no, line)；UTF-8 失败以 latin-1 兜底（门禁不假绿）。
+    .py 文件的 selftest 函数体跳过——自测夹具里形如「E0001 加占位后缀」的
+    假目录名是测试数据不是组织文档，不进散文门禁。"""
+    def _skip_selftest(lines):
+        in_test = False
+        for i, line in enumerate(lines, 1):
+            if re.match(r"^\s*def selftest\(", line):
+                in_test = True
+                continue
+            if in_test and re.match(r"^(def |class |if __name__)", line):
+                in_test = False      # 出了 selftest 区，当行照常扫描
+            if in_test:
+                continue
+            yield i, line
+
+    try:
+        fh = open(fp, encoding="utf-8")
+    except OSError:
+        return
+    try:
+        if fp.lower().endswith(".py"):
+            yield from _skip_selftest(fh)
+        else:
+            yield from enumerate(fh, 1)
+    except UnicodeDecodeError:
+        try:
+            with open(fp, encoding="latin-1") as fh2:
+                yield from _skip_selftest(fh2)
+        except OSError:
+            return
+    except OSError:
+        return
+    finally:
+        fh.close()
+
+
+def scan_stale_dir_refs(root=None):
+    """全文扫描正文裸写的 {C|E|T|P}+数字-<名称> 目录名，不匹配任何现存目录即报失效。
+    跳过 companies/（锚命名空间）与 company-template/（示例占位）、scripts/、.zcode/。"""
+    root = root or _find_root()
+    if root is None or not os.path.isdir(root):
+        return []
+    live = _live_entity_dir_names(root)
+    if not live:
+        return []
+    prefixes = "".join(sorted(set(entity_types(root).values()) | {"C"}))
+    pat = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}+")
+    issues = []
+    skip_dirs = {".git", "node_modules", ".workbuddy", "companies",
+                 "company-template", "scripts", ".zcode"}
+    exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
+    seen = set()   # 同名多处失效只报首见（file,line），避免刷屏
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        for fn in files:
+            if not fn.lower().endswith(exts):
+                continue
+            fp = os.path.join(dirpath, fn)
+            for i, line in _iter_prose_lines(fp):
+                for m in pat.finditer(line):
+                    name = m.group(0)
+                    if name in live or name in seen:
+                        continue
+                    seen.add(name)
+                    issues.append(
+                        f"散文裸路径失效：{name} @ {os.path.relpath(fp, root)}:{i}"
+                        f"（不匹配任何现存目录名；实体显示名已与目录解耦，"
+                        f"请改用 ID（如 E0001）或 opc:// 符号）")
+    return issues
+
+
 def check_links(cid=None, root=None):
     """链接器自检：① manifest 定义的 key 必须物理存在（遍历全部公司，不单查一家）；
     ② 全文 opc:// 引用必须可解析；③ 结构审计（锚点）。"""
@@ -458,6 +567,10 @@ def check_links(cid=None, root=None):
 
     # ③ 结构审计：company.md 锚点缺失/无效 → 改名后无法被发现（维护职责下沉到门禁）
     issues += audit_structure(root)
+
+    # ④ 裸路径散文扫描（决策 #17，2026-08-29）：正文裸写的实体/公司目录名
+    #    必须与现存目录全名一致——治「opc:// 门禁全绿、散文里旧目录名漂移」盲区
+    issues += scan_stale_dir_refs(root)
 
     return issues
 
@@ -689,7 +802,7 @@ def diff_template(root=None, cid=None):
     _EXCL_DIRS = (".git", ".workbuddy", "workbench", "memory", "workspace", "node_modules")
     _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index|roster\.md|patrol-log\.md|"
                             r"patrol-state\.json|patrol-pending\.md|INDEX\.md)$")
-    _ENTITY = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})-")
+    _ENTITY = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})(?:-.+)?$")
 
     def _walk(base):
         """收集 {rel_path: abs_path}；workbench 只比 README/KANBAN_ARCHITECTURE 等机制文档，
@@ -1108,4 +1221,4 @@ if __name__ == "__main__":
             for i in iss:
                 print("  -", i)
             sys.exit(1)
-        print(f"[ok] 命名空间自洽：扫描全项目 opc:// 引用均无失效")
+        print("[ok] 命名空间自洽：opc:// 引用 + 结构审计 + 裸路径散文扫描均无失效")

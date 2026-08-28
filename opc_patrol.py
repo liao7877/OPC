@@ -179,7 +179,7 @@ def find(ctx):
     # 7) 归档提醒（热文件含上一年度条目——仅提示计数，交总管处理）
     stale_year = str(ctx.today.year - 1)
     for name in sorted(os.listdir(ctx.base)) if os.path.isdir(ctx.base) else []:
-        if not re.match(rf"^{pe}\d{{3,}}-", name):
+        if not re.match(rf"^{pe}\d{{3,}}(?:-|$)", name):
             continue
         wl = os.path.join(ctx.base, name, "workspace", "worklog.md")
         txt = _read(wl)
@@ -206,7 +206,7 @@ def find(ctx):
     # 9) 僵尸工位卡（工作中但 3 天未动）
     cutoff = (ctx.today - datetime.timedelta(days=3)).strftime("%Y%m%d")
     for name in sorted(os.listdir(ctx.base)) if os.path.isdir(ctx.base) else []:
-        if not re.match(rf"^{pe}\d{{3,}}-", name):
+        if not re.match(rf"^{pe}\d{{3,}}(?:-|$)", name):
             continue
         sdir = os.path.join(ctx.base, name, "workspace", "sessions")
         if not os.path.isdir(sdir):
@@ -273,7 +273,7 @@ def _count_knowledge(ctx):
     if os.path.isdir(ctx.base):
         for name in sorted(os.listdir(ctx.base)):
             kdir = os.path.join(ctx.base, name, "knowledge")
-            if re.match(r"^P\d{3,}-", name) and os.path.isdir(kdir):
+            if re.match(r"^P\d{3,}(?:-|$)", name) and os.path.isdir(kdir):
                 for root, _dirs, files in os.walk(kdir):
                     n += sum(1 for f in files if f.endswith(".md"))
     return n
