@@ -5,7 +5,7 @@
   公司级   -> 公司根/dashboard.html + dashboard-data.js
   团队级   -> T*/teamboard.html + teamboard-data.js
   个人级   -> E*/mydesk.html + mydesk-data.js（员工目录根，不套 workbench/）
-  工具随看板走：本脚本、page-templates/、run_boards.bat 等都在公司根；
+  工具随看板走：本脚本、../companies/C001/page-templates/、run_boards.bat 等都在公司根；
   workbench/ 只归工单系统（kanban/tasks/generate_tasks.py/tasks-data.js）。
 
 扫描公司根各实体（roster / E*/workspace/worklog.md / T*/team.md+notices.md / P*/project.md），
@@ -20,7 +20,7 @@
 - 单一真相：员工→团队归属以 roster.md「团队」列为唯一权威（A1）；项目归属读 project.md team 字段。
 - 交叉核验（A2）：worklog 工单型条目与 tasks-data.json 逐条核对，只告警不阻断。
 - 统计口径（B1/§4.5）：完成率=已完成/全部有效条目（累计）；在途=计划中+进行中。
-- 页面分发：teamboard/mydesk 的 HTML 模板放 page-templates/，每次生成同步到
+- 页面分发：teamboard/mydesk 的 HTML 模板放 ../companies/C001/page-templates/，每次生成同步到
   各实体目录（内容有变才写）——升级只改模板一处，下次生成全员自动刷新（§6 维护约定）。
 - 容错家规：坏条目跳过+告警不阻断；日期规整；deliverable/ticket/team 引用失效标 ⚠️。
 """
@@ -37,6 +37,15 @@ COMPANY_DIR = SCRIPT_DIR                          # 工具随看板走：脚本�
 PAGE_TPL_DIR = os.path.join(SCRIPT_DIR, "page-templates")
 TASKS_DATA = os.path.join(COMPANY_DIR, "workbench", "tasks-data.json")  # 复用工单产物
 ROSTER_RELPATH = os.path.join("E0000-AI员工-总管", "roster.md")  # 总管花名册（相对公司根）
+
+# 稳定锚前缀：从 base_dir/subdir 正确指向 companies/C001/（自动补 ../ 深度）
+def anchor_prefix(base_dir, subdir):
+    """返回 base_dir/subdir 指向稳定锚 companies/C001/ 的相对前缀（深度自适配）。"""
+    out_dir = os.path.realpath(os.path.join(base_dir, subdir))
+    base = os.path.realpath(base_dir)
+    rel = os.path.relpath(out_dir, base)          # 如 'E0001' / '.' / 'T001'
+    depth = 0 if rel == "." else len(rel.split(os.sep))
+    return ("../" * (depth + 1)) + "companies/C001/"
 
 PAGE_VERSION = "v1.1"
 WORKLOG_STATUS = {"计划中", "进行中", "已完成"}
@@ -291,7 +300,7 @@ def parse_worklog(eid, emp_dir, warnings):
     年度归档，2026-08-28）多块记录 -> 条目列表（含校验告警）。
     归档只动文件位置不动数据：生成器全量扫描保证历史在看板照常显示（P4 管道不变）。
     家规（第五轮补定）：deliverable 路径以「员工目录根」为基准书写
-    （如 ../P0004-xxx/报告.md 指向公司根下项目目录、roster.md 指向本目录文件）。"""
+    （如 ../companies/C001/P0004-xxx/报告.md 指向公司根下项目目录、roster.md 指向本目录文件）。"""
     entries = []
     base = os.path.join(COMPANY_DIR_cur[0], emp_dir, "workspace")
     wl_files = [os.path.join(base, "worklog.md")]
@@ -677,6 +686,7 @@ def generate_all(base_dir=None, workbench_dir=None):
     # ================= 团队级 T*/teamboard-data.js + html =================
     team_tpl = os.path.join(PAGE_TPL_DIR, "teamboard.html")
     for t in teams:
+        ap_team = anchor_prefix(base_dir, t["dir"])
         members = [e for e in employees if e["eid"] in t["members"]]
         agg = stats_of([w for e in members for w in e["entries"]])
         t_projects = [p for p in projects if t["tid"] in p["teams"]]
@@ -690,7 +700,7 @@ def generate_all(base_dir=None, workbench_dir=None):
             "activity": t_activity,
             "notices": parse_notices(t["dir"]),
             "assets": parse_skills(t["dir"]),
-            "links": {"dashboard": "../dashboard.html", "kanban": "../workbench/kanban.html"},
+            "links": {"dashboard": ap_team + "dashboard.html", "kanban": ap_team + "workbench/kanban.html"},
             "status_meta": tasks_data.get("status_meta", {}),
         }
         write_js(os.path.join(base_dir, t["dir"], "teamboard-data.js"), "TEAMBOARD_DATA", payload)
@@ -699,6 +709,7 @@ def generate_all(base_dir=None, workbench_dir=None):
     # ================= 个人级 E*/workbench/mydesk-data.js + html =================
     desk_tpl = os.path.join(PAGE_TPL_DIR, "mydesk.html")
     for e in employees:
+        ap_emp = anchor_prefix(base_dir, e["dir"])
         tid_list = [t for t in teams if e["eid"] in t["members"]]
         my_tickets = []
         for t in tasks:
@@ -710,7 +721,7 @@ def generate_all(base_dir=None, workbench_dir=None):
                     "due": t.get("due") or "", "priority": t.get("priority") or "",
                     "blocked_by": t.get("blocked_by") or [],
                     "paused": t["status"] == "paused",
-                    "detail": "../workbench/kanban.html?id=" + t["id"],
+                    "detail": ap_emp + "workbench/kanban.html?id=" + t["id"],
                 })
         my_warnings = [w for w in warnings if e["eid"] in w["msg"]]
         all_done_ids = [t["id"] for t in tasks if t["status"] == "done"]  # mydesk 阻塞判断用
@@ -721,7 +732,7 @@ def generate_all(base_dir=None, workbench_dir=None):
             "entries": e["entries"], "stats": e["stats"], "tickets": my_tickets,
             "all_tasks_done": all_done_ids,
             "skills": parse_skills(e["dir"]),
-            "links": {"dashboard": "../dashboard.html", "kanban": "../workbench/kanban.html"},
+            "links": {"dashboard": ap_emp + "dashboard.html", "kanban": ap_emp + "workbench/kanban.html"},
             "warnings": my_warnings,
         }
         write_js(os.path.join(base_dir, e["dir"], "mydesk-data.js"), "MYDESK_DATA", payload)

@@ -134,6 +134,30 @@ python opc_resolver.py --sync-links        # 重指 companies/<cid> 到真实目
   - `companies/C001` junction 已建，指向真实公司目录；`opc.toml` 的 `home` 改为 `companies/C001`。
   - `sync_links()` + `scripts/link-company.{ps1,sh}` + `scripts/watch-companies.py` 已实现：靠 `company.md` 的「公司 ID」扫描发现，**零参数**重指锚。`--sync-links` 实跑验证待 shell 恢复后补（逻辑已审阅）。
 
+### 6.1 全净化完成（2026-08-28，强制全符号化/稳定锚化）
+
+用户硬性要求：**所有内部引用一律符号化/稳定锚化，不留任何写死物理路径**——路径一旦变动全量失效，违背符号化初心。已完成两层净化：
+
+- **文档层（`.md`）**：内部引用统一为 `opc://company:C001/...`（resolver 可校验，`--check` 门禁）。残留的 `C001根/`、`C001-AI自动化公司/` 字面量已全部改写为稳定锚 `companies/C001/`。
+- **运行时层（`.html/.js/.py` + shell）**：浏览器/shell 不认 `opc://`，统一改用稳定锚真实路径 `companies/C001/`。C001 与 `company-template` 两处 `generate_dashboard.py` 改用 `anchor_prefix(base_dir, subdir)` 助手，**按输出目录深度自动补 `../`**，杜绝硬编码深度写错。
+
+⚠️ **关键坑（全净化核心教训）**：稳定锚 `companies/C001` 位于 **OPC 根**，比公司根**高一级**。因此子目录里的相对链接必须是 `../../companies/C001/`（两级上跳到 OPC 根），而非 `../companies/C001/`（那会错指到 `C001-AI自动化公司/companies/C001/`，不存在）。`anchor_prefix` 的算法：
+
+```python
+def anchor_prefix(base_dir, subdir):
+    out_dir = os.path.realpath(os.path.join(base_dir, subdir))  # base=公司根
+    base = os.path.realpath(base_dir)
+    rel = os.path.relpath(out_dir, base)          # 'E0001' / '.' / 'T001'
+    depth = 0 if rel == "." else len(rel.split(os.sep))
+    return ("../" * (depth + 1)) + "companies/C001/"   # 公司根→1跳，子目录→N+1跳
+```
+
+- 公司根输出（depth 0）：`../companies/C001/`
+- 一级子目录（depth 1，如 `E0001-*/`、`workbench/`）：`../../companies/C001/`
+- **验证**：`opc_resolver.py --check` → 全绿；C001 + 模板共 4 个生成器 `--selftest` 全过；`anchor_prefix` 单测 4 场景全对；全项目 `companies/C001` 引用 177 处深度核对 0 偏差。
+
+> 数据层（看板 JSON 等运行时产物）仍走物理路径，属预期（产物不进版本库、随生成而变），不纳入符号化范围。
+
 ---
 
 ## 7. 推广路线（后续「开工搞」）

@@ -11,7 +11,7 @@
 | 技能 | 触发词（命中即加载） | 摘要 | 路径 |
 |---|---|---|---|
 | **data-analysis-template** 分析模板 | 分析一下、做个研究、数据报告、对比、整理情报 | 分析员接到分析/研究类任务时，产出结构化分析报告的标准模板（结论先行/结构/格式约定） | `skills/data-analysis-template/SKILL.md` |
-| **worklog-discipline** 工作自记录（公司级） | 接到任务、干完了、记工作、worklog | 三段式自记录纪律：计划中→进行中→已完成，只增不删，双账一致（与工单核验联动） | `../skills/worklog-discipline/SKILL.md` |
+| **worklog-discipline** 工作自记录（公司级） | 接到任务、干完了、记工作、worklog | 三段式自记录纪律：计划中→进行中→已完成，只增不删，双账一致（与工单核验联动） | `opc://company:C001/skill/worklog-discipline` |
 
 ---
 

@@ -266,7 +266,7 @@ def build_record(task_dir, dirname):
     blocked_by = [str(b).strip() for b in blocked_by if str(b).strip()]
 
     # 输入物（用户需求）：结构化引用外部文件（相对 workbench/ 基准，不复制不漂移；
-    # 可指向项目目录 ../P0001-… 或上游工单交付物 tasks/TSKxxx-…/deliverables/…）
+    # 可指向项目目录 ../../companies/C001/P0001-… 或上游工单交付物 tasks/TSKxxx-…/deliverables/…）
     inputs = []
     raw_in = fm.get("inputs")
     if isinstance(raw_in, list):
@@ -627,11 +627,11 @@ def append_worklog_entry(owner, tid, title, project):
 
 def check_structure():
     """--check-structure：结构契约自检（机制扩展 #9，2026-08-28）。
-    校验公司根一级结构是否符合《目录结构说明书.md》声明的契约：
+    校验公司根一级结构是否符合《../../companies/C001/目录结构说明书.md》声明的契约：
     必需目录/文件缺失 → 告警；出现未登记的一级条目 → 告警（防结构漂移）。"""
     company = os.path.dirname(SCRIPT_DIR)
     required_dirs = ["skills", "workbench", "templates", "page-templates", "公司规章制度", "公司知识库"]
-    required_files = ["company.md", "AGENTS.md", "CLAUDE.md", "workflow.md", "目录结构说明书.md"]
+    required_files = ["company.md", "AGENTS.md", "CLAUDE.md", "workflow.md", "../../companies/C001/目录结构说明书.md"]
     # 已知一级条目：文件用模式匹配（跨平台入口脚本 .bat/.sh/.ps1/.py 等都认，P2a）
     known_extra_dirs = {".workbuddy", ".tools"}
     known_extra_file_patterns = [re.compile(p) for p in (
@@ -657,7 +657,7 @@ def check_structure():
             continue
         if os.path.isfile(full) and any(p.match(name) for p in known_extra_file_patterns):
             continue
-        problems.append(f"未登记的一级条目：{name}/（新增机制请同步更新《目录结构说明书.md》，本脚本 known_extra 清单，勿留野目录）")
+        problems.append(f"未登记的一级条目：{name}/（新增机制请同步更新《../../companies/C001/目录结构说明书.md》，本脚本 known_extra 清单，勿留野目录）")
     for parent_dir, allowed in known_subdirs.items():
         pfull = os.path.join(company, parent_dir)
         if not os.path.isdir(pfull):

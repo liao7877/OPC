@@ -6,7 +6,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 # 机制落位 SOP（mechanism-sop）
 
 > **定位**：总管接到用户构想后的**第一判断工具**——"这属于哪类、落在哪、谁有权改、要登记什么、牵动什么"。
-> 静态契约（每个目录是什么）看 `../目录结构说明书.md`；本技能管**动态流程**（怎么改、怎么登记、怎么防漂移）。落位后对着说明书跑 `python ../workbench/generate_tasks.py --check-structure` 自检。
+> 静态契约（每个目录是什么）看 `../../../../companies/C001/目录结构说明书.md`；本技能管**动态流程**（怎么改、怎么登记、怎么防漂移）。落位后对着说明书跑 `python ../../../../companies/C001/workbench/generate_tasks.py --check-structure` 自检。
 
 ## 一、四类落位决策树（第一判断）
 
@@ -22,12 +22,12 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 └─ 新报表/新页面                → 类5 视图：page-templates 复制，只读投影
 ```
 
-**类6 · 常设事务判定口诀**：干一次→直聊记账；有终点→工单；无终点养资产按节奏重复→**AFF 事务**；项目有终点、事务没终点——这是项目与事务的唯一分界线。事务契约见 `../workbench/affairs/AFF-SCHEMA.md`；AFF 编号由总管分配并登记 task-index.md。
+**类6 · 常设事务判定口诀**：干一次→直聊记账；有终点→工单；无终点养资产按节奏重复→**AFF 事务**；项目有终点、事务没终点——这是项目与事务的唯一分界线。事务契约见 `opc://company:C001/workbench/affairs/AFF-SCHEMA.md`；AFF 编号由总管分配并登记 task-index.md。
 
 ### 类1 · 新实体
 
 新目录（命名：前缀+序号+`-`+名称；C/T 三位、E/P 四位、TSK 五位）+ 实体卡（company/team/project/task.md 或 AGENTS.md）+ **登记**：
-- 员工 → 复制 `../templates/employee-template/`（四件套：AGENTS.md/CLAUDE.md/skills INDEX/junction，见 dispatch-sop 新建员工 SOP）→ 登 roster.md
+- 员工 → 复制 `opc://company:C001/templates/employee-template/`（四件套：AGENTS.md/CLAUDE.md/skills INDEX/junction，见 dispatch-sop 新建员工 SOP）→ 登 roster.md
 - 工单 → `--new` 建单 → 登 task-index.md；拆分出的子单挂 `parent`
 - 团队 → 建 T00x 目录（team.md + notices.md + skills/）→ roster 相关员工「团队」列登记
 - 项目 → 建 P00xx 目录（project.md 含 `owner:` 项目负责人 + knowledge/ 子目录）
@@ -52,7 +52,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 **判定口诀**（决策 #16）：内容含"必须/禁止/时限/追责/适用范围"语义 → 制度；只是"做了更好"的能力 → 技能。
 **三种落位组合**：
 1. 纯流程无合规含义 → 只建技能；
-2. 纪律简单、操作已被现有技能覆盖 → 只建制度（`../公司规章制度/<名>.md`），正文声明要点+范围+红线，**引用现有技能为权威执行标准**；
+2. 纪律简单、操作已被现有技能覆盖 → 只建制度（`../../../../companies/C001/公司规章制度/<名>.md`），正文声明要点+范围+红线，**引用现有技能为权威执行标准**；
 3. 纪律+新操作 → 制度+技能成对建（范例：《工单操作规范》+ ticket-system）。
 **落实**：按 dispatch-sop 的规章制度落实 SOP 执行（逐条判范围 → 公司条款改全员 AGENTS.md、团队条款改 team.md+成员、个体条款改该员工；先核对"已实现"避免重复落地；改动清单先过用户 → 备份 .bak → 执行 → 留引用行 → 汇报）。
 **为什么不用公司级 skill 替代制度**：技能触发才加载（无触发场景的纪律会悬空）；审计追责要指认条款；制度修订须注明原因与日期（组织意志 vs 能力演进）；制度同时给人读。
@@ -66,7 +66,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 
 ### 类5 · 新视图
 
-从 `../page-templates/` 复制改造（模板是唯一出处，generate_dashboard.py 会自动分发到各实体目录）；视图只读投影，坏删可重建。
+从 `../../../../companies/C001/page-templates/` 复制改造（模板是唯一出处，generate_dashboard.py 会自动分发到各实体目录）；视图只读投影，坏删可重建。
 
 ## 二、领地表（改动权限第二判断）
 
@@ -75,7 +75,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 | 员工 `E00xx/` | 该员工 | 技能/机制/workflow/memory 自治；用户直接下指令即可改（留痕+可逆）；**例外：不得摘除公司级技能引用行** |
 | 团队 `T00x/` | 团队负责人（roster「角色」列 lead） | 团队 workflow/团队级技能/notices；成员可提案、lead 定稿 |
 | 项目 `P00xx/` | 项目负责人（project.md `owner:`） | 项目文档/workflow/knowledge/ |
-| 公司公共区（company.md、目录结构说明书、skills/、workbench/、公司规章制度/、公司知识库/、templates/、roster、page-templates/） | **总管独占** | 员工/lead 接到涉及此区的指令一律上报总管 |
+| 公司公共区（company.md、目录结构说明书、skills/、workbench/、../../../../companies/C001/公司规章制度/、../../../../companies/C001/公司知识库/、templates/、roster、../../../../companies/C001/page-templates/） | **总管独占** | 员工/lead 接到涉及此区的指令一律上报总管 |
 
 - 总管有权动一切领地但尊重自治不代劳；
 - 双入口检验（决策 #11）：**每条新机制都要回答"用户直通员工（入口 B）走到这一步时：谁触发、谁有权、留痕到哪"**；入口只决定活从哪进来，机制必须收敛到同一套文件契约；
@@ -87,8 +87,8 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 |---|---|
 | 教 Agent 怎么干 | 技能（类2） |
 | 必须干什么 | 制度（类3） |
-| 给人/Agent 查的背景资料（行业/调研/案例） | `../公司知识库/common/` |
-| 员工经验，对公司别人有用 | 员工提交 `../公司知识库/methods/`（候选） |
+| 给人/Agent 查的背景资料（行业/调研/案例） | `../../../../companies/C001/公司知识库/common/` |
+| 员工经验，对公司别人有用 | 员工提交 `../../../../companies/C001/公司知识库/methods/`（候选） |
 | 员工经验，只对自己有用 | 员工 `memory/MEMORY.md` |
 | 项目过程知识 | 各项目 `P00xx/knowledge/`（项目领地自治） |
 
@@ -99,7 +99,7 @@ description: 机制落位 SOP（总管核心能力：把用户构想变成正确
 1. **归类**：决策树判定（类1-5 + 领地 + 知识去处）；
 2. **出改动清单**：改哪些文件、每处怎么改、登记什么、牵动什么（说明书/INDEX/引用行/生成器）——**先给用户过目**（P17/P24）；
 3. **备份**：被改文件复制 .bak；
-4. **执行**：按清单改；新目录/新字段同步更新《目录结构说明书.md》相应条目；
+4. **执行**：按清单改；新目录/新字段同步更新《../../../../companies/C001/目录结构说明书.md》相应条目；
 5. **验证汇报**：跑 `--check-structure`（结构漂移）+ `--selftest`（生成器）+ 看板确认渲染；汇报改了什么/备份在哪/如何回滚。
 
 ## 五、红线

@@ -87,8 +87,8 @@
     <div class="head-controls">
       <span class="stale-label">陈旧阈值(分)</span>
       <input type="number" min="1" class="stale-input" id="staleMin" />
-      <a class="btn" id="dashLink" href="../dashboard.html">🏢 公司驾驶舱</a>
-      <a class="btn" id="kanbanLink" href="../workbench/kanban.html">🗂 工单看板</a>
+      <a class="btn" id="dashLink" href="../../companies/C001/dashboard.html">🏢 公司驾驶舱</a>
+      <a class="btn" id="kanbanLink" href="../../companies/C001/workbench/kanban.html">🗂 工单看板</a>
       <button class="btn" id="syncBtn">🔄 同步</button>
       <button class="btn" id="themeBtn">☀️ 切亮色</button>
     </div>
@@ -187,7 +187,7 @@
 
       var sm = DATA.status_meta || {};
       // kanban 深链基准：统一取 DATA.links.kanban（生成器按落位产出，页面不硬编码）
-      var KANBAN = (DATA.links && DATA.links.kanban) || "../workbench/kanban.html";
+      var KANBAN = (DATA.links && DATA.links.kanban) || "../../companies/C001/workbench/kanban.html";
       var t3 = '<section id="t3"><h2>📁 团队项目<span class="cnt">归属本团队的项目（project.md team 字段）</span></h2><div class="grid g-proj">' +
         (projs.map(function (p) {
           var ts = p.ticket_stats || { total: 0, byStatus: {}, overdue: 0 };

@@ -9,7 +9,7 @@ description: 公司工单系统自解释技能。触发词：建工单、创建�
 > 你（Agent）对工单的一切操作 = 对文件的操作；改完文件后看板自动更新（≤3 秒），**你不需要懂看板**。
 > 本技能自解释全部流程：新建 → 推进 → 流转 → 完成 → 常见告警 → 红线。按步骤执行即可。
 >
-> **⚠️ 执行基准（重要）**：以下命令中的 `../workbench/` 是**从你所在员工目录（E00x-…/）指向公司根 `workbench/`** 的写法；若你在公司根目录 `C001-AI自动化公司/` 下执行，用 `workbench/` 前缀即可。**千万不要用裸 `workbench/` 从员工目录执行**（会解析到你目录下不存在的路径）。
+> **⚠️ 执行基准（重要）**：工单命令路径统一经稳定锚 `../../../companies/C001/workbench/`（从你所在员工目录 `E00x-…/` 上跳到公司根、再进稳定锚）。若你已 `cd` 到公司根（`../../../companies/C001/`），直接用 `workbench/` 前缀即可。**千万不要用裸 `workbench/` 从员工目录执行**（会解析到你目录下不存在的路径）。
 
 ---
 
@@ -27,14 +27,14 @@ description: 公司工单系统自解释技能。触发词：建工单、创建�
 
 1. **要编号**，两条通道：
    - **找总管要号（常态，入口 A）**：总管建单时直接分配（他维护台账 `workbench/task-index.md`）。员工不建单只干活。
-   - **号池自助取号（用户直派时，入口 B）**：用户直接让你建单时，打开 `../workbench/task-index.md` 找「预留号池」段（总管维护的 reserved 号段），**重读 → 取最靠前的未占用号 → 立即在台账把该号标记为「已占用(你的工单标题)」→ 保存**，然后建单。整个动作一气呵成（防并发撞号：先占号后建单，台账写完才算占到）。号池空了 → 回复用户"请总管补充号池"，不自造编号。
+   - **号池自助取号（用户直派时，入口 B）**：用户直接让你建单时，打开 `opc://company:C001/workbench/task-index.md` 找「预留号池」段（总管维护的 reserved 号段），**重读 → 取最靠前的未占用号 → 立即在台账把该号标记为「已占用(你的工单标题)」→ 保存**，然后建单。整个动作一气呵成（防并发撞号：先占号后建单，台账写完才算占到）。号池空了 → 回复用户"请总管补充号池"，不自造编号。
 2. **推荐方式（一条命令生成规范模板）**：
    ```
-   python ../workbench/generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]
+   python ../../../companies/C001/workbench/generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]
    ```
-   会自动创建 `../workbench/tasks/TSKxxx-标题/task.md` 模板（frontmatter 已填好）。
+   会自动创建 `opc://company:C001/workbench/tasks/TSKxxx-标题/task.md` 模板（frontmatter 已填好）。
 3. **手动方式**：建目录 + 写 task.md（模板见 §9）。
-4. 填好 `owner`/`project`/`priority`/`due` 等字段后，运行 `python ../workbench/generate_tasks.py` 让它上板（若挂了 `--watch` 则自动，无需手动）。
+4. 填好 `owner`/`project`/`priority`/`due` 等字段后，运行 `python ../../../companies/C001/workbench/generate_tasks.py` 让它上板（若挂了 `--watch` 则自动，无需手动）。
 
 ## 1.5 认领（接到工单时的固定动作）
 
@@ -112,7 +112,7 @@ handoffs: [{"from":"E0002","to":"E0003","at":"2026-08-27","reason":"开发完成
 inputs: [{"name":"PRD 需求规格","path":"tasks/TSK00001-xxx/deliverables/PRD.md"}]
 ```
 
-- **引用不复制**（避免两份真相漂移）；路径相对 `workbench/`：项目文件写 `../P0001-…/x.md`，上游工单交付物写 `tasks/TSKxxx-…/deliverables/…`。
+- **引用不复制**（避免两份真相漂移）；路径相对 `workbench/`：项目文件写 `opc://company:C001/project/P0001/x.md`，上游工单交付物写 `tasks/TSKxxx-…/deliverables/…`。
 - **上一手的交付物就是下一手的输入物**——流转时把上游交付物列为你的输入。
 - 路径失效 → 生成器告警 + 看板详情标「⚠️ 路径失效」，及时修。
 
@@ -126,7 +126,7 @@ completed_at: 2026-08-27
 - `completed_at`（实际完成时间）**必须填**，否则生成器告警。
 - `completed_at ≤ due` → 按期；`> due` → 看板标「逾期完成」。
 - 被否决/不需要做的工单 → `status: cancelled`（取消，不背「逾期」的锅）。
-- **双记账联动**：完成工单的同一时刻，必须把自己 worklog 里 ticket=本单 的条目改为「已完成」（见公司级技能 `../skills/worklog-discipline/SKILL.md`）；只关单一边，看板交叉核验会告警。
+- **双记账联动**：完成工单的同一时刻，必须把自己 worklog 里 ticket=本单 的条目改为「已完成」（见公司级技能 `opc://company:C001/skill/worklog-discipline`）；只关单一边，看板交叉核验会告警。
 
 ## 6. 常见告警对照（遇到告警怎么修）
 
@@ -159,7 +159,7 @@ completed_at: 2026-08-27
 
 ## 8. 自检（收工前）
 
-- 改完文件后：`python ../workbench/generate_tasks.py --selftest`（生成器自检 11 项，全过退出码 0）。
+- 改完文件后：`python ../../../companies/C001/workbench/generate_tasks.py --selftest`（生成器自检 11 项，全过退出码 0）。
 - 确认上板：打开 `workbench/kanban.html` 看卡片是否出现/变化（或地址栏加 `?selftest=1` 跑前端自测）。
 
 ## 9. task.md 完整模板
@@ -192,9 +192,9 @@ blocked_by: []            ← 有前置工单才填：[TSK00007, TSK00009]（单
 
 1. **建单**（编号先找总管分配，确认后执行）：
    ```
-   python ../workbench/generate_tasks.py --new TSK00010 搭建日志系统 --owner E0001 --project P0001
+   python ../../../companies/C001/workbench/generate_tasks.py --new TSK00010 搭建日志系统 --owner E0001 --project P0001
    ```
-2. **开工**：打开 `../workbench/tasks/TSK00010-搭建日志系统/task.md`，把 `status` 改成 `in_progress`、`priority: 高`、填 `due: 2026-08-30`，顺手更新 `updated`。
+2. **开工**：打开 `opc://company:C001/workbench/tasks/TSK00010-搭建日志系统/task.md`，把 `status` 改成 `in_progress`、`priority: 高`、填 `due: 2026-08-30`，顺手更新 `updated`。
 3. **干完**：交付物放 `deliverables/`，在 `messages.md` **追加**完成备注，`status: review`（交总管/下一手审核）。
 4. **流转**（总管要交给 E0002 实现）：改 `owner: E0002` + 追加一条 handoffs（**单行 JSON**）：
    ```yaml
@@ -202,9 +202,9 @@ blocked_by: []            ← 有前置工单才填：[TSK00007, TSK00009]（单
    ```
    > 铁律：最后一条 `handoffs.to` 必须等于新 `owner`；**换人不改状态**。
 5. **完成**（E0002 做完）：`status: done` + `completed_at: 2026-08-29`（必填，否则告警）。
-6. **自检**：`python ../workbench/generate_tasks.py --selftest`，全过即收工。
+6. **自检**：`python ../../../companies/C001/workbench/generate_tasks.py --selftest`，全过即收工。
 
-> 每一步改完文件，看板 ≤3 秒自动更新；你全程只动 `../workbench/tasks/TSK00010-…/` 下的文件，不碰看板/生成器。
+> 每一步改完文件，看板 ≤3 秒自动更新；你全程只动 `opc://company:C001/workbench/tasks/TSK00010-…/` 下的文件，不碰看板/生成器。
 
 ## 11. 一句话对接契约
 

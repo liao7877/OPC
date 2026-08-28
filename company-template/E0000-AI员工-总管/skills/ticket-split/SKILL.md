@@ -24,7 +24,7 @@ description: 需求拆分工单 SOP（总管专用）。触发词：拆单、拆
 
 ## 三、建单流程
 
-1. **建父单**（需求拆出 ≥2 个子单时）：`python ../workbench/generate_tasks.py --new TSKxxx <需求名> --owner E0000`，然后手改 `type: 需求`，正文写 PRD 摘要 + 总验收标准 + 子单清单；
+1. **建父单**（需求拆出 ≥2 个子单时）：`python ../../../../companies/C001/workbench/generate_tasks.py --new TSKxxx <需求名> --owner E0000`，然后手改 `type: 需求`，正文写 PRD 摘要 + 总验收标准 + 子单清单；
 2. **建子单**：逐个 `--new`，frontmatter 补 `parent: <父单号>`；有前置的补 `blocked_by: [上游单号]`，需要上游产物的补 `inputs`；
 3. **登记台账**：workbench/task-index.md 逐条登记（含父子关系列）；
 4. **分派**：按 roster 选人（岗位匹配 + 负荷均衡），按 dispatch-sop 注入派发；
@@ -56,4 +56,4 @@ description: 需求拆分工单 SOP（总管专用）。触发词：拆单、拆
 | 多工单多角色、有交付终点 | 项目（P00xx） |
 | **无终点、养资产、按节奏重复**（长期内容运营/文件维护/渠道经营） | **常设事务 AFF**——不是工单，不进本 SOP 拆分 |
 
-事务建档：找总管分配 AFF 编号 → `workbench/affairs/AFFxxxx-标题/`（affair.md + assets/）→ 契约见 `../workbench/affairs/AFF-SCHEMA.md`。事务的大活（改版/迁移等需验收的）照常开工单，worklog 条目带 aff 关联。
+事务建档：找总管分配 AFF 编号 → `workbench/affairs/AFFxxxx-标题/`（affair.md + assets/）→ 契约见 `opc://company:C001/workbench/affairs/AFF-SCHEMA.md`。事务的大活（改版/迁移等需验收的）照常开工单，worklog 条目带 aff 关联。
