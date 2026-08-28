@@ -98,9 +98,9 @@
       <span class="stale-label">陈旧阈值(分)</span>
       <input type="number" min="1" class="stale-input" id="staleMin" />
       <label class="stale-label" style="cursor:pointer;user-select:none"><input type="checkbox" id="archFilter" checked style="vertical-align:-2px" /> 含归档</label>
-      <a class="btn" id="dashLink" href="../../companies/C001/dashboard.html">🏢 公司驾驶舱</a>
+      <a class="btn" id="dashLink" href="#">🏢 公司驾驶舱</a>
       <a class="btn" id="teamLink" style="display:none" href="#">🧩 团队看板</a>
-      <a class="btn" id="kanbanLink" href="../../companies/C001/workbench/kanban.html">🗂 工单看板</a>
+      <a class="btn" id="kanbanLink" href="#">🗂 工单看板</a>
       <button class="btn" id="syncBtn">🔄 同步</button>
       <button class="btn" id="themeBtn">☀️ 切亮色</button>
     </div>
@@ -167,7 +167,7 @@
     }
     function workCard(w) {
       // kanban 深链基准：统一取 DATA.links.kanban（生成器按落位产出）
-      var tk = w.ticket ? '<span class="badge tk"><a href="' + esc((DATA.links && DATA.links.kanban) || "../../companies/C001/workbench/kanban.html") + '?id=' + esc(w.ticket) + '" title="查看工单">' + esc(w.ticket) + "</a></span>" : "";
+      var tk = w.ticket ? '<span class="badge tk"><a href="' + esc((DATA.links && DATA.links.kanban) || "#") + '?id=' + esc(w.ticket) + '" title="查看工单">' + esc(w.ticket) + "</a></span>" : "";
       var pj = w.project ? '<span class="badge">' + esc(w.project) + "</span>" : "";
       var arch = w.archived ? '<span class="badge" title="已归档至 workspace/worklog-archive/">🗄 归档</span>' : "";
       var deliv = "";
@@ -193,8 +193,17 @@
       return on ? entries : entries.filter(function (w) { return !w.archived; });
     }
     function render() {
+      // 顶部导航链接统一由 DATA.links 注入（生成器按落位产出，页面零硬编码）
+      if (DATA && DATA.links) {
+        ['dashLink', 'kanbanLink'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          var href = id === 'dashLink' ? DATA.links.dashboard : DATA.links.kanban;
+          if (href) el.href = href;
+        });
+      }
       if (!DATA) {
-        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>mydesk-data.js</code>。<br>请运行 <code>python workbench/generate_dashboard.py</code>。</div>';
+        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>mydesk-data.js</code>。<br>请运行 <code>run_boards.bat</code> / <code>./run_boards.sh</code>。</div>';
         return;
       }
       document.title = "个人工作台 · " + (DATA.name || DATA.eid || "");
@@ -282,7 +291,7 @@
       updateStale();
     };
     syncEl.onerror = function () {
-      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 mydesk-data.js（请运行 generate_dashboard.py）";
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 mydesk-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
     function doSync() { syncEl.src = "mydesk-data.js#_=" + Date.now(); }

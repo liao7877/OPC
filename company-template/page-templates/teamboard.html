@@ -87,8 +87,8 @@
     <div class="head-controls">
       <span class="stale-label">陈旧阈值(分)</span>
       <input type="number" min="1" class="stale-input" id="staleMin" />
-      <a class="btn" id="dashLink" href="../../companies/C001/dashboard.html">🏢 公司驾驶舱</a>
-      <a class="btn" id="kanbanLink" href="../../companies/C001/workbench/kanban.html">🗂 工单看板</a>
+      <a class="btn" id="dashLink" href="#">🏢 公司驾驶舱</a>
+      <a class="btn" id="kanbanLink" href="#">🗂 工单看板</a>
       <button class="btn" id="syncBtn">🔄 同步</button>
       <button class="btn" id="themeBtn">☀️ 切亮色</button>
     </div>
@@ -154,8 +154,17 @@
       return '<div class="card stat-card"><div class="num" style="' + (color ? "color:" + color : "") + '">' + num + '</div><div class="lbl">' + lbl + '</div></div>';
     }
     function render() {
+      // 顶部导航链接统一由 DATA.links 注入（生成器按落位产出，页面零硬编码）
+      if (DATA && DATA.links) {
+        ['dashLink', 'kanbanLink'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          var href = id === 'dashLink' ? DATA.links.dashboard : DATA.links.kanban;
+          if (href) el.href = href;
+        });
+      }
       if (!DATA) {
-        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>teamboard-data.js</code>。<br>请运行 <code>python workbench/generate_dashboard.py</code>。</div>';
+        document.getElementById("main").innerHTML = '<div class="no-data">未找到 <code>teamboard-data.js</code>。<br>请运行 <code>run_boards.bat</code> / <code>./run_boards.sh</code>。</div>';
         return;
       }
       document.title = "团队看板 · " + (DATA.name || DATA.tid || "");
@@ -187,7 +196,7 @@
 
       var sm = DATA.status_meta || {};
       // kanban 深链基准：统一取 DATA.links.kanban（生成器按落位产出，页面不硬编码）
-      var KANBAN = (DATA.links && DATA.links.kanban) || "../../companies/C001/workbench/kanban.html";
+      var KANBAN = (DATA.links && DATA.links.kanban) || "#";
       var t3 = '<section id="t3"><h2>📁 团队项目<span class="cnt">归属本团队的项目（project.md team 字段）</span></h2><div class="grid g-proj">' +
         (projs.map(function (p) {
           var ts = p.ticket_stats || { total: 0, byStatus: {}, overdue: 0 };
@@ -239,7 +248,7 @@
       updateStale();
     };
     syncEl.onerror = function () {
-      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 teamboard-data.js（请运行 generate_dashboard.py）";
+      document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 teamboard-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
     function doSync() { syncEl.src = "teamboard-data.js#_=" + Date.now(); }

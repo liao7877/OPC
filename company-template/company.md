@@ -2,11 +2,11 @@
 
 > 公司级总纲文档。定义公司实体、组织规范与全局约定。
 > **组织级设计原则**（通用，所有公司/项目适用）：`opc://org/principles` —— 搭建/改动前先读。
-> **目录结构说明书**（结构契约：每个目录/文件的职责/维护者/红线）：`../companies/C001/目录结构说明书.md` —— 落位/改动前对照，改结构必须同步更新。
+> **目录结构说明书**（结构契约：每个目录/文件的职责/维护者/红线）：`../companies/<本司ID>/目录结构说明书.md` —— 落位/改动前对照，改结构必须同步更新。
 > **公司工作流**（三级协作协议：双入口/交接/升级/闭环）：`workflow.md`。
 
 ## 基本信息
-- 公司 ID：C001
+- 公司 ID：<本司ID>   ← 建司必填；全局唯一，建司前扫 OPC 根查重
 - 公司名：AI自动化公司
 - 根目录：本目录
 
@@ -23,7 +23,7 @@
 
 ## 目录结构
 ```
-../companies/C001/
+../companies/<本司ID>/
 ├── company.md              # 本文件（公司总纲）
 ├── workbench/tasks/        # 统一任务区：TSK00001-标题/（任务实体目录）
 ├── T001-AI开发团队/        # 团队实体（team.md）
@@ -39,7 +39,7 @@
 
 ## 工单系统（看板 + 生成器 + 公司级技能）
 - **看板**：`workbench/kanban.html`（双击即开；数据从 tasks/ 自动生成并 ≤3 秒同步；分组/筛选/详情/流转轨迹/逾期标记）
-- **生成器**：`workbench/generate_tasks.py`（`--new` 建单模板 / `--watch` 自动重跑 / `--selftest` 内置自检）
+- **生成器**：机制代码上提 OPC 根——`opc_tickets.py`（工单）/ `opc_dashboards.py`（三级看板）；公司内统一入口 `run_boards.bat|.sh`（`--new` 建单 / `--watch` 自动重跑 / `--selftest` 内置自检 调根模块）
 - **状态机**：backlog → in_progress → review → done；旁路 failed / paused / cancelled
 - **公司级技能**：`skills/ticket-system/SKILL.md` —— 工单操作全流程自解释（建单/流转/完成/告警/红线），**员工 AGENTS.md 引用即生效，无需培训**
 - **规范权威**：员工执行以 `skills/ticket-system/SKILL.md` 为准；参考手册 `workbench/tasks/README.md`；架构设计 `workbench/KANBAN_ARCHITECTURE.md`

@@ -11,7 +11,7 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
 ## 流程
 1. **接需求**：听清总目标，不明确就走需求澄清（`skills/demand-clarify/SKILL.md`，一问一答 + PRD 存档，不瞎猜）
 2. **拆任务**：多工单需求按 `skills/ticket-split/SKILL.md` 拆分（三原则 + 四项自检 + 父单闭环）；**编号先查 `workbench/task-index.md` 台账**（避免重号）
-3. **建工单**：`python ../../../../companies/C001/workbench/generate_tasks.py --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成 `workbench/tasks/TSKxxx-标题/task.md` 模板；拆分子单补 `parent`/`blocked_by`/`inputs` 字段）
+3. **建工单**：`python ../../../../../opc_tickets.py --company <本司ID> --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成 `workbench/tasks/TSKxxx-标题/task.md` 模板；拆分子单补 `parent`/`blocked_by`/`inputs` 字段）
 4. **登记**：在 `workbench/task-index.md` 台账追加一行（ID / 标题 / 承接 / 创建时间 / 父单）
 5. **选人**：查 roster.md，按岗位匹配 + 负荷均衡（mydesk 统计）选员工；无命中则人工判断
 6. **派发（双模式，按平台能力选择）**：
@@ -37,15 +37,15 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
 - **机制落位走 mechanism-sop**：涉及改目录/技能/制度/字段的构想，一律先加载 `skills/mechanism-sop/SKILL.md` 按决策树落位（清单→过目→备份→执行→验证），不拍脑袋改文件
 
 ## 员工培训（不人肉）
-- 工单系统使用规范 = 公司级技能 `opc://company:C001/skill/ticket-system`（自解释、自包含）
+- 工单系统使用规范 = 公司级技能 `opc://company:<本司ID>/skill/ticket-system`（自解释、自包含）
 - 新员工入职：确认其 AGENTS.md 已引用该技能即可，无需逐人培训
 
 ## 规章制度落实 SOP（2026-08-27 定稿）
 > 触发：用户说"把 XX 规章制度落实一下 / 按规章管理员工 / 改规范"。
-> **规章原文件统一放 `../../../../companies/C001/公司规章制度/`**（公司级/团队级/个体级内容都在这，**不复制到团队/员工目录**，单一真相）；**格式多样（word/excel/pdf/md 等），不做预处理，由总管自行解析**。
+> **规章原文件统一放 `../../../../companies/<本司ID>/公司规章制度/`**（公司级/团队级/个体级内容都在这，**不复制到团队/员工目录**，单一真相）；**格式多样（word/excel/pdf/md 等），不做预处理，由总管自行解析**。
 
 1. **接指令**：确认要落实的规章（文件名或主题；不明确就问）
-2. **读规章**：到 `../../../../companies/C001/公司规章制度/` 定位文件，解析内容（任意格式，总管负责转换理解）
+2. **读规章**：到 `../../../../companies/<本司ID>/公司规章制度/` 定位文件，解析内容（任意格式，总管负责转换理解）
 3. **按条款判范围**：**逐条判定**（一份混合规章可拆多条分别落实）——
    - 公司条款（"所有员工/全员"）→ 改**所有员工** AGENTS.md 及相关 skills
    - 团队条款（点名"T001 团队"）→ 改 **team.md + 团队 skills + 该团队所有成员**
@@ -54,22 +54,22 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
    - **⚠️ 先核对"已实现"**：条款要求的机制若已由现有目录结构/技能/文档实现（如工单规范已由 ticket-system 技能 + tasks/ 结构覆盖）→ **不改文件，仅确认引用行存在**（员工 AGENTS.md / team.md 是否已引用对应技能或规章）——避免重复落地、制造双份真相（P2）
 4. **出改动清单**：列出"将改哪些文件、每处怎么改（新增/修改/删除）"，**先给用户过目确认**（P24 零风险可逆）
 5. **备份**：确认后，被改文件先复制 `.bak`（同名备份，可回滚）
-6. **执行**：按清单改文件（AGENTS.md / team.md / skills / INDEX.md 等）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/C001/公司规章制度/XX.md`
+6. **执行**：按清单改文件（AGENTS.md / team.md / skills / INDEX.md 等）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/<本司ID>/公司规章制度/XX.md`
 7. **汇报**：改了哪些文件、备份位置、如何回滚
 
 ## 新建员工 SOP（2026-08-27 定稿，必须按新标准，禁止老结构）
-> 模板：`opc://company:C001/templates/employee-template/`（标准骨架，含全部机制文件与占位符）。
+> 模板：`opc://company:<本司ID>/templates/employee-template/`（标准骨架，含全部机制文件与占位符）。
 
 1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E0003-AI员工-岗位/`
-2. **复制模板**：把 `opc://company:C001/templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
+2. **复制模板**：把 `opc://company:<本司ID>/templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
 3. **改人设**：编辑 AGENTS.md —— 替换全部【替换】占位符（编号/岗位名/职责/红线）；CLAUDE.md 保持一行 `@AGENTS.md`
-4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description 触发词）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析，**无需登记 INDEX.md**（MECHANISM_PLAN 批#1 已废弃）
+4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description 触发词）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析；同时**必须在该员工 `skills/INDEX.md` 披露索引登记一行**（触发词+摘要+路径，渐进式披露通道）
 5. **建 junction（关键，模板复制不会带过来）**：
    ```powershell
    New-Item -ItemType Junction -Path "E0003-岗位/.workbuddy/skills" -Target "E0003-岗位/skills"
    ```
    验证：`ls -i .workbuddy/skills/<技能>/SKILL.md skills/<技能>/SKILL.md` inode 相同
 6. **登记 roster.md**：追加一行（ID / 岗位 / 目录路径）
-7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原 skills/INDEX.md 披露层已废弃，四件套精简为三件
+7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原"公司级 skills/INDEX.md"披露层已废弃（公司级技能走平台披露），员工私有技能的 skills/INDEX.md **保留**为披露索引，四件套 = 三件套 + 员工私有索引
 
 > ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。
