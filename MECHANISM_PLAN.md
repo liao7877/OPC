@@ -278,6 +278,7 @@ E:\OPC\
 **已拍板并实施（2026-08-29，原「待拍板」两档全部落地）**
 - 并发写锁原语：`opc_model.file_lock`（O_EXCL 锁文件 + 忙等超时 + 过期锁抢占，纯标准库）；机制层写路径全部接入——建账 `locked_update`（wid 序号分配持锁）、台账登记 `file_lock`；agent 侧提供 `opc_model.py --append`（锁内追加），concurrent-work 技能已写明用法。`--new --auto-id` 的目录存在性即锁与本原语互补。
 - 实体类型注册表：`opc.toml [entity_types]` 为前缀唯一真相（默认 E/T/P），`resolver.entity_types()` 统一供给 resolve_entity / dashboards.scan_entity_dirs / tickets.build_registry / check_structure / patrol 员工扫描——加新实体类型 = manifest 加一行，零代码改动；[company.DEFAULT] 中 teams/projects/employees 三个未消费死键移除。
+- 车道判定口诀（2026-08-29 拍板：验收判据）：「要验收的活建工单，干完就完的直聊；拿不准就建单」写入 ticket-system 技能开头（双车道早有实现：worklog 四型/直聊不填 ticket/核验仅对工单型要求 ticket，但判定条款此前缺文）——补齐员工第一反应的口径不一致缝隙；USER_GUIDE FAQ/机制卡同步。
 - 全自举（2026-08-29 拍板「新电脑 clone 后系统自己完成初始化」）：`opc_resolver.py --bootstrap` 一条命令完成链接+钩子+看板数据+技能索引+**公司心跳注册**（Windows schtasks / crontab，定时逻辑唯一来源收编 `opc_patrol.register_heartbeat`，register-patrol.{ps1,sh} 退化为薄壳）；`--doctor` 升级为「先自愈再检查」（安全幂等项自动补，打印 [fix] 行）——agent 按门禁跑 doctor 即完成自举。心跳是 bootstrap 唯一机器级副作用，`--no-heartbeat` 可关。Windows 本机实跑通过（schtasks 任务 OPC-Patrol-C001 就绪）；README「系统初始化」改写为新电脑三步。
 
 ---

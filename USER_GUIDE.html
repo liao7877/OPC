@@ -141,7 +141,7 @@
 <h2 id="s5">⑤ 机制地图（系统怎么自己转）</h2>
 <p class="muted">了解这些不必须，但知道有什么，你就知道「哪些话可以直接对总管说」。</p>
 <div class="grid g3">
-  <div class="card"><h3>🎫 工单系统</h3><p>所有正式工作都是一张 <b>TSK 工单</b>：标题/负责人/验收/截止/阻塞关系（blocked_by）/父子单。七个状态：<code>backlog → in_progress → review → done</code>，另有 failed / paused / cancelled。写错状态会<b>红牌上板</b>而不是消失。</p></div>
+  <div class="card"><h3>🎫 工单系统（双车道）</h3><p><b>要验收的活</b>才建 <b>TSK 工单</b>（有人检验成果/要交接/跨会话/多人协作）；<b>干完就完的小活走直聊</b>——员工在 worklog 记一笔留痕，不用建单，你随便聊。工单的：标题/负责人/验收/截止/阻塞关系（blocked_by）/父子单。七个状态：<code>backlog → in_progress → review → done</code>，另有 failed / paused / cancelled。写错状态会<b>红牌上板</b>而不是消失。</p></div>
   <div class="card"><h3>📋 三级看板</h3><p>公司驾驶舱 <code>dashboard.html</code>、团队 <code>teamboard.html</code>、个人桌面 <code>mydesk.html</code>、工单墙 <code>kanban.html</code>。全部由真相自动生成——看板即进度，你随时打开浏览器看。</p></div>
   <div class="card"><h3>📝 worklog 双账</h3><p>员工干任何活都自记录（三段式：计划中→进行中→已完成），与工单状态<b>交叉核验</b>：认领了没记录、干完了单没关，都会被点名告警。</p></div>
   <div class="card"><h3>💓 公司心跳</h3><p>每日自动巡检 10 项：阻塞该开工的、没人认领的、双账不一致的、脱期事务、<b>升级信箱</b>（<span class="pill crit">critical</span> 唯一会打扰你）、号池水位、知识库增量、僵尸工位卡、看板数据陈旧等。异常 → 写日志 + <b>弹系统通知</b> → 生成待办快照给总管处置。</p></div>
@@ -183,7 +183,7 @@ python opc_resolver.py --diff-template                                   <span c
   <tr><td>觉得某个员工能力不对/缺技能</td><td>对总管说「给 E0001 加一个 XX 技能」——总管按落位 SOP 建技能、更新索引，你不用碰文件。</td></tr>
   <tr><td>同一个活想多人/多会话并行</td><td>直接开多个会话。工位卡 + 锁保证不互相覆盖；谁持卡谁有权改单子状态。</td></tr>
   <tr><td>怀疑员工没干活/账不对</td><td>打开公司驾驶舱 <code>dashboard.html</code> 看风险区；或者直接问总管「最近有什么双账不一致/未认领的」——巡检清单里都有。</td></tr>
-  <tr><td>想直接抢活干（绕过总管）</td><td>可以（入口 B），但公共领地的事员工会转总管；正式工作记得让它走工单，否则看板上看不到。</td></tr>
+  <tr><td>想直接抢活干（绕过总管）</td><td>可以（入口 B），但公共领地的事员工会转总管。车道判定：<b>要验收的活建工单，干完就完的小活直聊留痕即可</b>（问答/随手小改不用建单）；拿不准就建单。</td></tr>
 </table>
 
 <footer>OPC 用户手册 · 2026-08-29 · 手册描述的是「怎么用」，机制细节以 README.md / PRINCIPLES.md / 各 SKILL.md 为准</footer>
