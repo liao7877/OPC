@@ -10,11 +10,10 @@ tasks_data = "workbench/tasks-data.json"
 roster = "E0000-AI员工-总管/roster.md"
 affairs = "workbench/affairs"
 page_templates = "page-templates"
-templates = "templates"           # 公司模板目录（新建员工骨架来源）
+templates = "templates"            # 公司模板目录（新建员工骨架来源；opc://company:<cid>/templates/... 经 key 透传解析）
 skills = "skills"                  # 技能根目录：skill/<name> -> {home}/skills/<name>
-teams = ""                        # 团队目录前缀（空=在 home 根下，目录名 T00x-<描述>）
-projects = ""                     # 项目目录前缀（空=在 home 根下，目录名 P00x-<描述>）
-employees = ""                    # 员工目录前缀（空=在 home 根下，目录名 E00xx-<角色>）
+# 注：实体目录前缀的唯一真相已移至 [entity_types]（2026-08-29）；原 teams/projects/employees 三键
+# 自落地以来从未被 resolver 消费（配置说谎），已移除——实体解析按 [entity_types] 前缀扫描公司根。
 
 [company.C001]
 # 仅覆盖「偏离」字段；其余继承 DEFAULT（约定优于配置）
@@ -26,6 +25,13 @@ home = "companies/C001"
 [patrol]
 notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS / Linux notify-send，失败不影响巡检）
 # actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
+
+# ---- 实体类型注册表（2026-08-29 拍板：前缀唯一真相，resolver/生成器/巡检/结构自检统一消费）----
+# 加新实体类型（如 customer = "X"）= 加一行；改前缀同理。公司实体目录命名约定 {前缀}{数字}-<名称>。
+[entity_types]
+employee = "E"
+team = "T"
+project = "P"
 
 # ---- 平台技能披露（opc_resolver.ensure_links 统一托管，2026-08-28 Q3 拍板）----
 # 所有「不入库、clone 后必重建」的 OS 级链接（稳定锚 + 各层技能披露）只有一个管理者 = resolver。

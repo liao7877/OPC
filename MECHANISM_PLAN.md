@@ -275,9 +275,9 @@ E:\OPC\
 - `opc_resolver.py --ensure-links`：技能披露 junction 纳入 resolver 统一托管（manifest `[platform.workbuddy]` 配置化，层自动发现），`--sync-links` 保留为别名；doctor 第 5 项「OS 级链接完整性」（error 阻断）——根治「门禁假绿」（原断点 1 闭环，负例实测：删链接→doctor 阻断→ensure-links 重建→全绿）。
 - `opc_resolver.py --diff-template`：C001 ↔ 模板双向 diff（忽略换行符与 `<CID>`/`<本司ID>`/`C00x` 占位符），当前 4 处差异均为 Q5 确认的有意保留（AGENTS.md 启动门禁节 / company.md 实体清单 / workflow.md 路径说明 / 说明书标题）。
 
-**待拍板（用户跳过，保持现状）**
-- 并发写锁原语：多会话同时追加同一 worklog 存在「后写覆盖先写」丢更新窗口（原子写只防写一半被读，不防互斥）；工位卡是纪律不是锁。待用户在「纪律够用」与「O_EXCL lockfile 原语」间拍板；拍板前不动写路径。
-- 实体类型注册表：`opc.toml [company.DEFAULT]` 的 teams/projects/employees 键当前 resolver 未消费（配置说谎）；若未来加新实体类型（客户/供应商等），先做注册表再扩展，避免改 4+ 处前缀正则。
+**已拍板并实施（2026-08-29，原「待拍板」两档全部落地）**
+- 并发写锁原语：`opc_model.file_lock`（O_EXCL 锁文件 + 忙等超时 + 过期锁抢占，纯标准库）；机制层写路径全部接入——建账 `locked_update`（wid 序号分配持锁）、台账登记 `file_lock`；agent 侧提供 `opc_model.py --append`（锁内追加），concurrent-work 技能已写明用法。`--new --auto-id` 的目录存在性即锁与本原语互补。
+- 实体类型注册表：`opc.toml [entity_types]` 为前缀唯一真相（默认 E/T/P），`resolver.entity_types()` 统一供给 resolve_entity / dashboards.scan_entity_dirs / tickets.build_registry / check_structure / patrol 员工扫描——加新实体类型 = manifest 加一行，零代码改动；[company.DEFAULT] 中 teams/projects/employees 三个未消费死键移除。
 
 ---
 *定稿：2026-08-28 · 一问一答 16 项决策全记录（含双入口领地自治、知识库三分、总管落位赋能、技能定制三档与制度判定法则）+ 第二轮评审拍板记档（§十四）*

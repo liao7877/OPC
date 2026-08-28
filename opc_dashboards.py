@@ -152,19 +152,20 @@ def parse_md_kv(text, keys):
 # ---------- 实体扫描与解析 ----------
 
 def scan_entity_dirs(base):
-    """扫描公司根：返回 (employees_dirs, teams_dirs, projects_dirs)，按代号排序。"""
+    """扫描公司根：返回 (employees_dirs, teams_dirs, projects_dirs)，按代号排序。
+    前缀来自 resolver 实体类型注册表（2026-08-29：加类型/改前缀 = 改 manifest）。"""
     emp, team, proj = [], [], []
     if not os.path.isdir(base):
         return emp, team, proj
+    reg = opc_resolver.entity_types()
+    buckets = {"employee": emp, "team": team, "project": proj}
     for name in sorted(os.listdir(base)):
         if not os.path.isdir(os.path.join(base, name)):
             continue
-        if re.match(r"^E\d{3,}-", name):
-            emp.append(name)
-        elif re.match(r"^T\d{3,}-", name):
-            team.append(name)
-        elif re.match(r"^P\d{3,}-", name):
-            proj.append(name)
+        for etype, pfx in reg.items():
+            if re.match(rf"^{pfx}\d{{3,}}-", name) and etype in buckets:
+                buckets[etype].append(name)
+                break
     return emp, team, proj
 
 
