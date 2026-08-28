@@ -1,6 +1,8 @@
 ---
 name: dispatch-sop
 description: 总管接到用户需求后，按标准流程拆解、建工单、选人派发的操作手册。触发词：派任务、派发、分配、接需求、调度、建工单、创建任务。
+summary: 总管接到用户需求后，按标准流程拆解、建工单、选人派发的操作手册。
+triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务]
 ---
 
 # 派发工单 SOP（dispatch-sop）
@@ -50,11 +52,11 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
    - 公司条款（"所有员工/全员"）→ 改**所有员工** AGENTS.md 及相关 skills
    - 团队条款（点名"T001 团队"）→ 改 **team.md + 团队 skills + 该团队所有成员**
    - 个体条款（点名 E0xx）→ 仅改该员工
-   - 条款要求建/改 skill → 按员工模板 `skills/_template/SKILL.md` + INDEX 登记规范执行
+   - 条款要求建/改 skill → 按员工模板 `skills/_template/SKILL.md` 规范执行（frontmatter 写全 name/description/triggers/summary，INDEX 由 --sync-index 生成）
    - **⚠️ 先核对"已实现"**：条款要求的机制若已由现有目录结构/技能/文档实现（如工单规范已由 ticket-system 技能 + tasks/ 结构覆盖）→ **不改文件，仅确认引用行存在**（员工 AGENTS.md / team.md 是否已引用对应技能或规章）——避免重复落地、制造双份真相（P2）
 4. **出改动清单**：列出"将改哪些文件、每处怎么改（新增/修改/删除）"，**先给用户过目确认**（P24 零风险可逆）
 5. **备份**：确认后，被改文件先复制 `.bak`（同名备份，可回滚）
-6. **执行**：按清单改文件（AGENTS.md / team.md / skills / INDEX.md 等）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/C001/公司规章制度/XX.md`
+6. **执行**：按清单改文件（AGENTS.md / team.md / skills 等；INDEX.md 属生成物，由 --sync-index 重生成）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/C001/公司规章制度/XX.md`
 7. **汇报**：改了哪些文件、备份位置、如何回滚
 
 ## 新建员工 SOP（2026-08-27 定稿，必须按新标准，禁止老结构）
@@ -63,13 +65,15 @@ description: 总管接到用户需求后，按标准流程拆解、建工单、�
 1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E0003-AI员工-岗位/`
 2. **复制模板**：把 `opc://company:C001/templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
 3. **改人设**：编辑 AGENTS.md —— 替换全部【替换】占位符（编号/岗位名/职责/红线）；CLAUDE.md 保持一行 `@AGENTS.md`
-4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description 触发词）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析；同时**必须在该员工 `skills/INDEX.md` 披露索引登记一行**（触发词+摘要+路径，渐进式披露通道）
+4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description + **triggers** + **summary**，技能元数据唯一真相在此）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析；跑 `python opc_model.py --sync-index` 重生成该员工 `skills/INDEX.md`（生成物，「登记」动作消失）
 5. **建 junction（关键，模板复制不会带过来）**：
    ```powershell
    New-Item -ItemType Junction -Path "E0003-岗位/.workbuddy/skills" -Target "E0003-岗位/skills"
    ```
+   macOS/Linux：`ln -sfn "$(pwd)/E0003-岗位/skills" "E0003-岗位/.workbuddy/skills"`
+   或（推荐，全层幂等重建）：回 OPC 根跑 `python opc_resolver.py --ensure-links`
    验证：`ls -i .workbuddy/skills/<技能>/SKILL.md skills/<技能>/SKILL.md` inode 相同
 6. **登记 roster.md**：追加一行（ID / 岗位 / 目录路径）
-7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原"公司级 skills/INDEX.md"披露层已废弃（公司级技能走平台披露），员工私有技能的 skills/INDEX.md **保留**为披露索引，四件套 = 三件套 + 员工私有索引
+7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原"公司级 skills/INDEX.md"披露层已废弃（公司级技能走平台披露），员工私有技能的 skills/INDEX.md **保留**为披露索引（生成物，--sync-index 重生成），四件套 = 三件套 + 员工私有索引
 
-> ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。
+> ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX(生成物)/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。

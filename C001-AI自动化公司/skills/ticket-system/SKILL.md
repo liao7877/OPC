@@ -1,6 +1,8 @@
 ---
 name: ticket-system
 description: 公司工单系统自解释技能。触发词：建工单、创建任务、派任务、新建工单、改状态、流转、交接、转交、完成工单、取消工单、task.md、handoffs、inputs、completed_at、TSK、认领、接单、漏接、阻塞、blocked_by、前置、父单、子单、需求闭环、取号、号池。任何员工（总管/分析员/项目经理）要创建、认领、修改、流转、完成公司工单（workbench/tasks/TSKxxx）时，加载本技能并按流程执行；本技能自包含全部使用规则，无需额外培训。
+summary: 公司工单系统自解释技能。
+triggers: [建工单, 创建任务, 派任务, 新建工单, 改状态, 流转, 交接, 转交, 完成工单, 取消工单, task.md, handoffs, inputs, completed_at, TSK, 认领, 接单, 漏接, 阻塞, blocked_by, 前置, 父单, 子单, 需求闭环, 取号, 号池]
 ---
 
 # 公司工单系统（ticket-system）

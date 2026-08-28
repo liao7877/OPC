@@ -7,7 +7,7 @@
 - 员工 ID：E0002
 - 岗位：项目经理
 - 归属团队：T001-AI开发团队（引用制，可在多个团队）
-- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 opc-namespace-design.md）；私有技能披露走本目录 `skills/INDEX.md` 索引（先查索引，命中才读全文，勿整份预加载）；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
+- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 opc-namespace-design.md）；私有技能披露走本目录 `skills/INDEX.md` 索引（**生成物**：`python opc_model.py --sync-index` 产出，勿手改）（先查索引，命中才读全文，勿整份预加载）；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
 - 工单协作（公司级技能）：`opc://company:C001/skill/ticket-system` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
 - 工作自记录（公司级技能）：`opc://company:C001/skill/worklog-discipline` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
 - 并发协作（公司级技能）：`opc://company:C001/skill/concurrent-work` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态

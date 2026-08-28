@@ -1,6 +1,8 @@
 ---
 name: data-analysis-template
 description: 分析员接到分析/研究类任务时，产出结构化分析报告的标准模板。触发词：分析一下、做个研究、数据报告、对比、整理情报。
+summary: 分析员接到分析/研究类任务时，产出结构化分析报告的标准模板。
+triggers: [分析一下, 做个研究, 数据报告, 对比, 整理情报]
 ---
 
 # 数据分析模板（data-analysis-template）

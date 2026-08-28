@@ -1,6 +1,8 @@
 ---
 name: project-plan-template
 description: 项目经理接到项目资料或需求后，生成 WBS 拆解、排期与风险登记册的标准模板。触发词：项目规划、做计划、WBS、排期、拆解任务、立项。
+summary: 项目经理接到项目资料或需求后，生成 WBS 拆解、排期与风险登记册的标准模板。
+triggers: [项目规划, 做计划, WBS, 排期, 拆解任务, 立项]
 ---
 
 # 项目规划模板（project-plan-template）

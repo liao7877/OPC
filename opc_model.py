@@ -164,6 +164,121 @@ def build_indexes(company_root):
     return {"task": tasks, "project": projects, "team": teams, "employee": employees}
 
 
+# ---------------------------------------------------------------------------
+# 技能发现与索引生成（2026-08-28 Q2 拍板：技能元数据唯一真相在 SKILL.md，
+# INDEX.md 是投影/生成物，登记这个动作消失）
+# ---------------------------------------------------------------------------
+
+def list_skills(layer_dir):
+    """扫 {layer}/skills/*/SKILL.md -> [{name, desc, triggers, summary}]。
+
+    triggers/summary 读 frontmatter 结构化字段；缺失时回退从 description 的
+    「触发词：…」段解析（仅展示兜底，行为依赖一律以结构化字段为准）。
+    """
+    out = []
+    sdir = Path(layer_dir) / "skills"
+    if not sdir.is_dir():
+        return out
+    for d in sorted(sdir.iterdir()):
+        sk = d / "SKILL.md"
+        if not sk.is_file():
+            continue
+        fm, _, _ = parse_frontmatter(_read(sk))
+        desc = str(fm.get("description") or "")
+        triggers = fm.get("triggers")
+        if not isinstance(triggers, list) or not triggers:
+            m = re.search(r"触发词[：:](.+?)(?:。|$)", desc)
+            triggers = [w.strip(" 、，,;；") for w in re.split(r"[、，,;；/]", m.group(1))
+                        if w.strip(" 、，,;；")] if m else []
+        summary = str(fm.get("summary") or (desc.split("。")[0] + "。" if desc else ""))
+        out.append({"name": str(fm.get("name") or d.name),
+                    "desc": desc, "triggers": triggers, "summary": summary})
+    return out
+
+
+def _skill_layers_with_scope(company_dir):
+    """公司内全部技能层 -> [(layer_path, is_company_level)]。
+    公司根层=公司级；实体层（E*/T*/templates 子目录）=私有/团队级；
+    templates/ 下的二级骨架层（employee-template）也算一层（建司模板自带索引）。"""
+    layers = []
+    if not Path(company_dir).is_dir():
+        return layers
+    if (Path(company_dir) / "skills").is_dir():
+        layers.append((str(company_dir), True))
+    for d in sorted(Path(company_dir).iterdir()):
+        if d.name.startswith(".") or not d.is_dir():
+            continue
+        if (d / "skills").is_dir():
+            layers.append((str(d), False))
+        elif d.name == "templates":   # 二级骨架层
+            for sub in sorted(d.iterdir()):
+                if sub.is_dir() and (sub / "skills").is_dir():
+                    layers.append((str(sub), False))
+    return layers
+
+
+def sync_index(root, cid=None):
+    """把各层技能清单写成 skills/INDEX.md（生成物：头部声明「勿手改」）。
+
+    层级口径：公司根层 INDEX 只列公司级技能；实体层 INDEX 列「本层私有 +
+    公司级」（与既有手工 INDEX 的发现口径一致——私有技能平台披露覆盖不到，
+    公司级是全员可用）。路径列：公司级用 opc:// 符号（resolver 可校验），
+    私有用层内相对路径。返回写入的 INDEX 路径列表。
+    """
+    root = Path(root)
+    targets = []
+    comp_dirs = [Path(c) for c in discover_companies(str(root))]
+    tpl = root / "company-template"
+    if tpl.is_dir() and (tpl / "company.md").is_file():
+        comp_dirs.append(tpl)   # 建司母版同样生成（其 ID 是占位符，路径一律走相对）
+    for comp in comp_dirs:
+        comp = Path(comp)
+        cids = re.findall(r"公司\s*ID[：:]\s*(\S+)", _read(comp / "company.md"))
+        cid_here = cids[0].split("（")[0].split("(")[0].strip() if cids else None
+        if not cid_here or not re.match(r"^C\d+$", cid_here):
+            cid_here = None      # 模板占位符/非法 ID：不用 opc://，全走相对路径
+        if cid and cid_here != cid:
+            continue
+        company_skills = None
+        for layer, is_company in _skill_layers_with_scope(comp):
+            skills = list_skills(layer)
+            if is_company:
+                company_skills = skills
+                rows = skills
+            else:
+                rows = skills + (company_skills or [])
+            if not rows:
+                continue
+            lines = [
+                "<!-- 本文件由 `python opc_model.py --sync-index` 生成，勿手改。",
+                "     技能元数据的唯一真相在各 SKILL.md frontmatter（triggers/summary）。",
+                f"     重新生成：python opc_model.py --sync-index{(' --company ' + cid_here) if cid_here else ''} -->",
+                "",
+                f"# 技能披露索引（{Path(layer).name if not is_company else '公司级'}）",
+                "",
+                "| 技能 | 触发词（命中即加载） | 摘要 | 路径 |",
+                "|---|---|---|---|",
+            ]
+            for s in rows:
+                if is_company:
+                    path = f"opc://company:{cid_here}/skill/{s['name']}" if cid_here else f"skills/{s['name']}/SKILL.md"
+                else:
+                    own = {x["name"] for x in skills}
+                    path = (f"opc://company:{cid_here}/skill/{s['name']}"
+                            if s["name"] not in own and cid_here else f"skills/{s['name']}/SKILL.md")
+                lines.append("| **%s** | %s | %s | `%s` |" % (
+                    s["name"], "、".join(s["triggers"]) or "—",
+                    s["summary"] or s["desc"][:40], path))
+            lines.append("")
+            idx = Path(layer) / "skills" / "INDEX.md"
+            tmp = str(idx) + ".tmp"
+            with open(tmp, "w", encoding="utf-8", newline="") as fh:
+                fh.write("\n".join(lines))
+            os.replace(tmp, idx)
+            targets.append(str(idx))
+    return targets
+
+
 def discover_companies(opc_root):
     """列出 OPC 根下全部公司目录（含 companies/ 稳定锚，按真实路径去重）。"""
     opc_root = Path(opc_root)
@@ -187,7 +302,8 @@ def discover_companies(opc_root):
 
 
 def selftest():
-    """内置自测：frontmatter 子集契约 + extract_id 双格式。全过返回 0。"""
+    """内置自测：frontmatter 子集契约 + extract_id 双格式 + 技能发现。全过返回 0。"""
+    import tempfile
     ok = True
 
     def check(name, cond):
@@ -208,13 +324,30 @@ def selftest():
     check("JSON 对象数组", isinstance(fm4["handoffs"], list) and fm4["handoffs"][0]["from"] == "E1")
     check("extract_id frontmatter", extract_id(f"---{NL}id: P0009{NL}---{NL}") == "P0009")
     check("extract_id 散文兜底", extract_id("项目 ID：P0001" + NL) == "P0001")
+    # 技能发现：triggers/summary 结构化字段 + description 兜底解析
+    with tempfile.TemporaryDirectory() as tmp:
+        sk = Path(tmp) / "skills" / "demo"
+        sk.mkdir(parents=True)
+        (sk / "SKILL.md").write_text(
+            f"---{NL}name: demo{NL}description: 演示技能。触发词：建单、流转{NL}"
+            f"summary: 演示用。{NL}triggers: [建单, 流转]{NL}---{NL}正文", encoding="utf-8")
+        sk2 = Path(tmp) / "skills" / "legacy"
+        sk2.mkdir(parents=True)
+        (sk2 / "SKILL.md").write_text(
+            f"---{NL}name: legacy{NL}description: 旧技能无结构化字段。触发词：查询、导出。详情略{NL}---{NL}正文", encoding="utf-8")
+        got = {s["name"]: s for s in list_skills(tmp)}
+        check("list_skills 结构化 triggers", got["demo"]["triggers"] == ["建单", "流转"] and got["demo"]["summary"] == "演示用。")
+        check("list_skills description 兜底", got["legacy"]["triggers"] == ["查询", "导出"])
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
 
 def main():
-    ap = argparse.ArgumentParser(description="OPC 实体共享读取器（列出发现的公司与实体）")
+    ap = argparse.ArgumentParser(description="OPC 实体共享读取器（列出发现的公司与实体 / 技能索引生成）")
     ap.add_argument("--list", action="store_true", help="列出 OPC 根下各公司与实体数量")
+    ap.add_argument("--list-skills", action="store_true", help="列出全部技能层 skills/*/SKILL.md 元数据（name/triggers/summary）")
+    ap.add_argument("--sync-index", action="store_true", help="把各层技能清单写成 skills/INDEX.md（生成物，勿手改）")
+    ap.add_argument("--company", default=None, help="限定公司 ID（--sync-index 用）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（不碰真实数据）")
 
     ap.add_argument("--root", default=None, help="指定 OPC 根（默认向上查找 opc.toml）")
@@ -225,6 +358,19 @@ def main():
     if not root:
         print("[ERR] 找不到 opc.toml（OPC 组织根）")
         return 1
+    if a.sync_index:
+        wrote = sync_index(root, a.company)
+        print(f"[done] 已生成 {len(wrote)} 份 skills/INDEX.md：")
+        for p in wrote:
+            print("  -", p)
+        return 0
+    if a.list_skills:
+        for comp in discover_companies(root):
+            for layer, is_company in _skill_layers_with_scope(comp):
+                tag = "公司级" if is_company else Path(layer).name
+                for s in list_skills(layer):
+                    print(f"[{tag}] {s['name']} | 触发词: {'、'.join(s['triggers']) or '—'} | {s['summary']}")
+        return 0
     comps = discover_companies(root)
     if not comps:
         print("未发现任何公司（无含 company.md 的目录）")

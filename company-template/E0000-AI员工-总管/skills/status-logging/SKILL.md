@@ -1,6 +1,8 @@
 ---
 name: status-logging
 description: 任务状态留痕规范，确保状态可追溯。触发词：更新状态、记一下、留痕、看板、状态变更。
+summary: 任务状态留痕规范，确保状态可追溯。
+triggers: [更新状态, 记一下, 留痕, 看板, 状态变更]
 ---
 
 # 状态留痕规范（status-logging）
