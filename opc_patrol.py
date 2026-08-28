@@ -12,6 +12,8 @@ opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
   - 本脚本只「发现」：1~6 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
     （追加式、幂等去重），并打印待办清单；不做任何处置决策。
   - 总管「处置」：读 patrol-log / 看板告警，答复、转派、催办、补号。
+  - A+ 报警（2026-08-28 拍板）：有发现时弹系统通知（opc.toml [patrol].notify 可关）；
+    B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
 
 用法（cwd 无关）：
     python opc_patrol.py --company C001              # 巡检 + 写 log
@@ -31,12 +33,23 @@ import sys
 import re
 import json
 import datetime
+import subprocess
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 import opc_resolver
 from opc_schema import TASK_TERMINAL, TASK_ACTIVE, PATROL
+
+
+def _patrol_cfg():
+    """读 opc.toml 的 [patrol] 段（A+ 通知开关 / B 阶段 actor 扩展位）。缺段或根找不到时用默认。"""
+    try:
+        root = opc_resolver._find_root()
+        g = opc_resolver._load_toml(os.path.join(root, "opc.toml"))
+        return g.get("patrol", {})
+    except Exception:
+        return {}
 
 
 class Ctx:
@@ -89,7 +102,14 @@ def find(ctx):
         return
     tasks = td.get("tasks", [])
     tmap = {t["id"]: t for t in tasks}
-    dd = _load_json(ctx.dash_data) or {}
+    dd = _load_json(ctx.dash_data)
+    if dd is None:
+        # P11：投影损坏/未生成必须告警，绝不静默跳过检查项 2/3/4（认领/双账/脱期）
+        if os.path.isfile(ctx.dash_data):
+            print(f"  [警告] {ctx.dash_data} 存在但解析失败，检查项 2/3/4 本轮跳过——先跑 run_boards once 修复")
+        else:
+            print(f"  [i] {ctx.dash_data} 不存在（先跑 run_boards once），检查项 2/3/4 本轮跳过")
+        dd = {}
     warnings = dd.get("risks", {}).get("warnings", [])
 
     # 1) 阻塞解锁：blocked_by 上游全 done 而本单还在 backlog
@@ -198,6 +218,58 @@ def write_log(ctx, dry):
     return len(new_lines)
 
 
+def notify_user(ctx, summary):
+    """A+ 报警通道（2026-08-28 拍板）：发现异常时弹系统通知，用户不守着机器也能被 critical 打扰。
+    跨平台尽力而为：Windows 弹 Toast（PowerShell BalloonTip）、macOS 弹 osascript 通知、
+    Linux 走 notify-send；任何失败只打印提示，绝不影响巡检主流程（P11：通知是增益不是依赖）。
+    B 阶段（自动处置）扩展位见 opc.toml [patrol].actor，本函数只管「让人知道」。"""
+    title = "OPC 巡检 %s：%d 项待办" % (ctx.cid, len(ctx.findings))
+    text = summary[:180]
+    try:
+        if sys.platform.startswith("win"):
+            _notify_windows(title, text)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["osascript", "-e",
+                              'display notification "%s" with title "%s"'
+                              % (text.replace('"', '\\"'), title.replace('"', '\\"'))],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.Popen(["notify-send", title, text],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception as e:
+        print(f"  [提示] 系统通知发送失败（不影响巡检结果）：{e}")
+        return False
+
+
+def _notify_windows(title, text):
+    """Windows Toast 通知：经临时 .ps1（UTF-8 BOM，PS5.1 硬要求）执行 BalloonTip，
+    避免命令行内联中文的编码/转义问题；固定文件名覆盖写，无临时垃圾。"""
+    import tempfile
+    title = title.replace("'", "''")
+    text = text.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms\r\n"
+        "Add-Type -AssemblyName System.Drawing\r\n"
+        "$n = New-Object System.Windows.Forms.NotifyIcon\r\n"
+        "$n.Icon = [System.Drawing.SystemIcons]::Warning\r\n"
+        "$n.Visible = $true\r\n"
+        "$n.BalloonTipTitle = '%s'\r\n"
+        "$n.BalloonTipText = '%s'\r\n"
+        "$n.ShowBalloonTip(10000)\r\n"
+        "Start-Sleep -Seconds 11\r\n"
+        "$n.Dispose()\r\n" % (title, text)
+    )
+    ps = os.path.join(tempfile.gettempdir(), "opc-patrol-notify.ps1")
+    with open(ps, "w", encoding="utf-8-sig", newline="") as fh:
+        fh.write(script)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+         "-WindowStyle", "Hidden", "-File", ps],
+        creationflags=flags, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def selftest():
     import tempfile
     ok = True
@@ -277,6 +349,10 @@ def main(argv):
         print(f"  #{no} {msg}")
     if written:
         print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
+    if ctx.findings and not dry and _patrol_cfg().get("notify", True):
+        summary = "；".join(m for _, m in sorted(ctx.findings)[:3])
+        if notify_user(ctx, summary):
+            print("  已发系统通知（A+ 报警通道；可在 opc.toml [patrol] notify=false 关闭）")
     return 1 if ctx.findings else 0
 
 

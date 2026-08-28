@@ -21,3 +21,8 @@ employees = ""                    # 员工目录前缀（空=在 home 根下，�
 # Z 方案：home 指向 OS 级稳定锚（companies/C001 = symlink/junction），
 # 真实目录改名后只需更新该链接，所有 consumer 零改动且跨平台。
 home = "companies/C001"
+
+# ---- 巡检报警（opc_patrol 消费）----
+[patrol]
+notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS / Linux notify-send，失败不影响巡检）
+# actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
