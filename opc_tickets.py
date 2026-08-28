@@ -37,7 +37,10 @@ import datetime
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
-from opc_model import parse_frontmatter          # 共享读取器（P25，禁私写正则）
+from opc_model import (parse_frontmatter,                      # 共享读取器（P25，禁私写正则）
+                       normalize_dt as normalize_date,         # 日期时间规整（D2 收敛）
+                       read_text_warn as read_text,            # 告警读（D2 收敛）
+                       atomic_write)                           # 原子写（D3 收敛）
 import opc_resolver
 from opc_schema import (TASK_STATUS as VALID_STATUS,          # 状态机唯一真相源（opc_schema）
                         TASK_STATUS_ORDER as STATUS_ORDER,
@@ -57,20 +60,9 @@ class Ctx:
 
 
 def resolve_ctx(company=None, company_dir=None):
-    """--company CID（走 manifest）或 --dir 目录（反查 ID）。返回 Ctx。"""
-    if company is None:
-        if not company_dir:
-            raise ValueError("需要 --company <cid> 或 --dir <公司根目录>")
-        company_dir = os.path.abspath(company_dir)
-        md = os.path.join(company_dir, "company.md")
-        company = opc_resolver.extract_company_id(opc_resolver.read_text(md))
-        if not company:
-            raise FileNotFoundError(f"{md} 缺「公司 ID」声明，无法反查公司")
-    cfg = opc_resolver.load_company(company)
-    if not os.path.isdir(cfg.home_abs):
-        raise FileNotFoundError(
-            f"公司 {company} 根不存在：{cfg.home_abs}（锚未建或目录被删）"
-            f"→ 在 OPC 根跑 `python opc_resolver.py --sync-links` 重建锚")
+    """--company CID（走 manifest）或 --dir 目录（反查 ID）。返回 Ctx。
+    身份反查/断链校验统一走 opc_resolver.resolve_company（D1 收敛）。"""
+    cfg = opc_resolver.resolve_company(company, company_dir)
     wb = cfg._abs("workbench")
     return Ctx(cfg.home_abs, wb, os.path.join(wb, "tasks"),
                cfg._abs("tasks_data"),
@@ -91,18 +83,6 @@ def list_files(tasks_dir, directory):
             result.append({"name": f, "rel_path": rel.replace(os.sep, "/")})
     result.sort(key=lambda x: x["rel_path"])
     return result
-
-
-def read_text(path):
-    if not os.path.isfile(path):
-        return ""  # 文件不存在是正常情况（如 messages.md 可选），不告警
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return fh.read()
-    except Exception as e:
-        # 文件存在但读取失败：常见原因是非 UTF-8 编码（如 GBK）。告警避免内容静默丢失。
-        print(f"  [警告] 读取失败（疑似非 UTF-8 编码）：{path}（{e}），内容按空处理")
-        return ""
 
 
 def dir_prefix_id(dirname):
@@ -133,24 +113,6 @@ def build_input_item(ctx, dirname, idx, path, name):
     return {"name": name, "path": path, "valid": valid}
 
 
-def normalize_date(s):
-    """规整日期为 YYYY-MM-DD 或 YYYY-MM-DD HH:MM[:SS]（补前导零，保证字典序=时间序）；
-    无法识别返回 None。"""
-    if not s:
-        return None
-    s = s.strip()
-    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$", s)
-    if not m:
-        return None
-    y, mo, d, h, mi, se = m.groups()
-    base = "%04d-%02d-%02d" % (int(y), int(mo), int(d))
-    if h is not None:
-        base += " %02d:%02d" % (int(h), int(mi))
-        if se:
-            base += ":" + se
-    return base
-
-
 def build_record(ctx, task_dir, dirname):
     task_md = os.path.join(task_dir, "task.md")
     if not os.path.isfile(task_md):
@@ -162,9 +124,10 @@ def build_record(ctx, task_dir, dirname):
         print(f"  [跳过] {dirname}/task.md 缺少 frontmatter（无 --- 包裹），视为坏文件，跳过")
         return None
     status = fm.get("status")
-    if status not in VALID_STATUS:
-        print(f"  [跳过] {dirname}/task.md status={status!r} 非法，跳过该工单")
-        return None
+    status_valid = status in VALID_STATUS
+    if not status_valid:
+        # P11：坏数据不静默丢弃——工单仍上板（看板对未知状态标红独立成列），绝不消失
+        print(f"  [警告] {dirname}/task.md status={status!r} 非法（合法值见 opc_schema.TASK_STATUS），工单仍上板并标红，请尽快修正")
 
     tid = fm.get("id") or dir_prefix_id(dirname)
     dir_id = dir_prefix_id(dirname)
@@ -321,6 +284,7 @@ def build_record(ctx, task_dir, dirname):
         "id": tid,
         "title": title,
         "status": status,
+        "status_valid": status_valid,
         "owner": owner,
         "project": project,
         "owner_name": owner_name,
@@ -474,13 +438,7 @@ def generate(ctx):
         "links": {"dashboard": "../dashboard.html"},
     }
 
-    def _atomic_write(path, text):
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-
-    _atomic_write(ctx.out_json, json.dumps(payload, ensure_ascii=False, indent=2))
+    atomic_write(ctx.out_json, json.dumps(payload, ensure_ascii=False, indent=2))
     print(f"  [完成] 生成 {len(tasks)} 条工单 -> {ctx.out_json}")
 
     # 兼容 file:// 双击打开：浏览器禁止 fetch 本地 JSON（CORS），
@@ -488,7 +446,7 @@ def generate(ctx):
     # 防御：task.md 内容若含 </script> 会破坏 JS 字面量，需转义为 <\/script。
     js_text = "window.KANBAN_DATA = " + json.dumps(payload, ensure_ascii=False, indent=2) + ";\n"
     js_text = js_text.replace("</script", "<\\/script")
-    _atomic_write(ctx.out_js, js_text)
+    atomic_write(ctx.out_js, js_text)
     print(f"  [完成] 生成浏览器数据 -> {ctx.out_js}")
     return len(tasks)
 
@@ -530,16 +488,77 @@ def watch(ctx):
         print("\n已停止监听。")
 
 
+def _max_task_no(ctx):
+    """扫描 tasks/ 现有目录，返回已用最大 TSK 号（无工单返回 0）。"""
+    n = 0
+    if os.path.isdir(ctx.tasks_dir):
+        for name in os.listdir(ctx.tasks_dir):
+            m = re.match(r"^TSK(\d+)-", name)
+            if m:
+                n = max(n, int(m.group(1)))
+    return n
+
+
+def _alloc_and_create_dir(ctx, safe_title, limit=100):
+    """原子取号 + 建目录（B5 落地，2026-08-29 拍板）：目录存在性即锁——
+    两个并发 --new --auto-id 算出同号时 makedirs 只有一个成功，败者取下一号重试。
+    返回 (tid, task_dir)；重试耗尽返回 (None, None)。"""
+    n = _max_task_no(ctx) + 1
+    for _ in range(limit):
+        cand = "TSK%05d" % n
+        task_dir = os.path.join(ctx.tasks_dir, f"{cand}-{safe_title}")
+        try:
+            os.makedirs(task_dir)
+            return cand, task_dir
+        except FileExistsError:
+            n += 1
+    return None, None
+
+
+def register_ledger(ctx, tid, title, owner, parent, today):
+    """建单即在 workbench/task-index.md「工单登记」表占一行（B5：取号+占台账+建单一步）。
+    表格式变化或找不到表时跳过并提示（容错不阻断，总管人工补记）。"""
+    p = os.path.join(ctx.wb_dir, "task-index.md")
+    text = read_text(p)
+    if not text or "## 工单登记" not in text:
+        print("  [提示] 未找到 task-index.md「工单登记」表，台账请总管人工补记")
+        return
+    lines = text.splitlines(keepends=True)
+    start = next(i for i, ln in enumerate(lines) if "## 工单登记" in ln)
+    end, seen = start, False
+    for j in range(start + 1, len(lines)):
+        if lines[j].lstrip().startswith("|"):
+            end, seen = j, True
+        elif seen:
+            break
+    if not seen:
+        print("  [提示] task-index.md「工单登记」下无表格行，台账请总管人工补记")
+        return
+    safe = str(title).replace("|", "／")
+    row = f"| {tid} | {safe} | {owner or '-'} | {parent or '-'} | {today} |\n"
+    lines.insert(end + 1, row)
+    atomic_write(p, "".join(lines))
+    print(f"  [完成] 台账登记：{tid} -> workbench/task-index.md")
+
+
 def new_task(ctx, argv):
-    """--new <TSKxxx> <标题> [--owner E0001] [--project P0001] [--parent x] [--blocked-by a,b]
-    生成规范工单模板目录（含 task.md），降低 Agent 建单出错率。"""
+    """--new <TSKxxx|--auto-id> <标题> [--owner E0001] [--project P0001] [--parent x] [--blocked-by a,b]
+    生成规范工单模板目录（含 task.md），降低 Agent 建单出错率；
+    --auto-id 原子取号（扫现有最大号+1，目录存在性即锁防并发撞号），建单自动占台账。"""
     rest = argv[argv.index("--new") + 1:]
     if not rest:
-        print("用法：opc_tickets.py --new <TSKxxx> <标题> [--owner E0001] [--project P0001]")
+        print("用法：opc_tickets.py --new <TSKxxx|--auto-id> <标题> [--owner E0001] [--project P0001]")
         return 1
     tid = rest[0]
-    if not re.match(r"^TSK\d+$", tid):
-        print(f"错误：编号 {tid!r} 不规范，应为 TSKxxx（如 TSK00009）")
+    auto = tid == "--auto-id"
+    if auto:
+        rest = rest[1:]
+        if not rest:
+            print("用法：opc_tickets.py --new --auto-id <标题> [...]")
+            return 1
+        tid = None
+    elif not re.match(r"^TSK\d+$", tid):
+        print(f"错误：编号 {tid!r} 不规范，应为 TSKxxx 或 --auto-id（如 TSK00009）")
         return 1
     owner, project = "", ""
     parent, blocked_by = "", []
@@ -570,12 +589,19 @@ def new_task(ctx, argv):
         print(f"  [警告] 标题含半角冒号，已替换为全角冒号（避免污染 frontmatter）：{title}")
         title = title.replace(":", "：")
     safe_title = re.sub(r'[\\/:*?"<>|]', "-", title)  # Windows 文件名非法字符
-    task_dir = os.path.join(ctx.tasks_dir, f"{tid}-{safe_title}")
-    if os.path.exists(task_dir):
-        print(f"错误：目录已存在：{task_dir}")
-        return 1
-    os.makedirs(task_dir)
     today = datetime.date.today().strftime("%Y-%m-%d")
+    if auto:
+        tid, task_dir = _alloc_and_create_dir(ctx, safe_title)
+        if tid is None:
+            print("错误：取号失败（连续 100 次撞号，请人工核对台账与 tasks/ 目录）")
+            return 1
+        print(f"  [完成] 原子取号：{tid}（现最大号已占，目录存在性即锁）")
+    else:
+        task_dir = os.path.join(ctx.tasks_dir, f"{tid}-{safe_title}")
+        if os.path.exists(task_dir):
+            print(f"错误：目录已存在：{task_dir}")
+            return 1
+        os.makedirs(task_dir)
     parent_line = f"\nparent: {parent}" if parent else ""
     blocked_line = "\nblocked_by: [" + ", ".join(blocked_by) + "]" if blocked_by else ""
     tpl = (
@@ -599,6 +625,7 @@ def new_task(ctx, argv):
     with open(os.path.join(task_dir, "task.md"), "w", encoding="utf-8") as fh:
         fh.write(tpl)
     print(f"已创建工单：{task_dir}")
+    register_ledger(ctx, tid, title, owner, parent, today)
     append_worklog_entry(ctx, owner, tid, title, project)
     print("已自动重算看板数据（建单即上板），可打开 kanban.html 查看。")
     safe_generate(ctx)
@@ -724,7 +751,8 @@ def selftest():
     os.makedirs(d2)
     with open(os.path.join(d2, "task.md"), "w", encoding="utf-8") as fh:
         fh.write("---\nid: TSKB\nstatus: 乱写\n---\n")
-    check("非法 status 跳过", build_record(ctx_tmp, d2, "B-非法状态") is None)
+    rec_bad = build_record(ctx_tmp, d2, "B-非法状态")
+    check("非法 status 上板不丢弃（status_valid=False）", rec_bad is not None and rec_bad["status_valid"] is False and rec_bad["status"] == "乱写")
     fm4, _, _ = parse_frontmatter('---\ndue: 2026-9-5\nstatus_history: [{"to":"in_progress","at":"2026-8-26"}]\n---\n')
     check("due 规整 2026-9-5 -> 2026-09-05", normalize_date(fm4["due"]) == "2026-09-05")
     check("status_history 数组解析", isinstance(fm4.get("status_history"), list) and fm4["status_history"][0]["to"] == "in_progress")
@@ -775,6 +803,12 @@ def selftest():
     check("集成:blocked_by 解析入 payload", t_by_id.get("TSKI8", {}).get("blocked_by") == ["TSKI6"])
     check("集成:parent 解析入 payload", t_by_id.get("TSKI6", {}).get("parent") == "TSKI5")
     check("集成:无阻塞工单 blocked_by 为空数组", t_by_id.get("TSKI2", {}).get("blocked_by") == [])
+
+    # ---- --auto-id 原子取号：目录存在性即锁（B5）----
+    check("auto-id: 首号 = 最大已用号+1", _alloc_and_create_dir(ictx, "占号验证A")[0] == "TSK00001")
+    os.makedirs(os.path.join(itasks, "TSK00002-预占用"), exist_ok=True)   # 模拟并发者已占 00002
+    cand2, d2_ = _alloc_and_create_dir(ictx, "占号验证B")
+    check("auto-id: 撞号自动跳到下一号", cand2 == "TSK00003" and os.path.isdir(d2_))
 
     # ---- resolve_ctx 反查（--dir 模式）——身份提取统一走 resolver.extract_company_id（P25）----
     rtmp = tempfile.mkdtemp(prefix="ctx_it_")

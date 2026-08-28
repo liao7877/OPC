@@ -124,6 +124,54 @@ def _read(p):
         return ""
 
 
+# ---- 共享小工具（2026-08-29 D2/D3 收敛：日期规整 / 告警读 / 原子写原为多份复制）----
+
+def normalize_dt(s):
+    """规整日期/日期时间为 YYYY-MM-DD[ HH:MM[:SS]]（补前导零，保证字典序=时间序）；
+    无法识别返回 None。superset 版：保留时间部分（工单 due/handoffs/completed_at 用）。"""
+    if not s:
+        return None
+    s = str(s).strip()
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$", s)
+    if not m:
+        return None
+    y, mo, d, h, mi, se = m.groups()
+    base = "%04d-%02d-%02d" % (int(y), int(mo), int(d))
+    if h is not None:
+        base += " %02d:%02d" % (int(h), int(mi))
+        if se:
+            base += ":" + se
+    return base
+
+
+def normalize_day(s):
+    """规整为 YYYY-MM-DD（取日期部分，worklog/事务等日粒度字段用）；无法识别返回 None。"""
+    dt = normalize_dt(s)
+    return dt.split(" ")[0] if dt else None
+
+
+def read_text_warn(path):
+    """读取文本；文件不存在是正常情况返回空串（如 messages.md 可选），存在但读取失败
+    （常见为非 UTF-8 编码）则告警——内容不能静默丢失（P11）。"""
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except Exception as e:
+        print(f"  [警告] 读取失败（疑似非 UTF-8 编码）：{path}（{e}），内容按空处理")
+        return ""
+
+
+def atomic_write(path, text):
+    """P12 原子写：临时文件 + os.replace。newline="" 禁止换行符翻译
+    （保证模板分发副本与源逐字节一致）。"""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
 def build_indexes(company_root):
     """发现并索引公司内实体（task/project/team/employee），返回 dict。"""
     root = Path(company_root)
@@ -325,6 +373,13 @@ def selftest():
     check("JSON 对象数组", isinstance(fm4["handoffs"], list) and fm4["handoffs"][0]["from"] == "E1")
     check("extract_id frontmatter", extract_id(f"---{NL}id: P0009{NL}---{NL}") == "P0009")
     check("extract_id 散文兜底", extract_id("项目 ID：P0001" + NL) == "P0001")
+    check("normalize_dt 带时间补零", normalize_dt("2026-8-1 9:05") == "2026-08-01 09:05")
+    check("normalize_day 取日期部分", normalize_day("2026-8-1 9:05") == "2026-08-01")
+    check("normalize 非法返回 None", normalize_dt("abc") is None)
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "aw.txt"
+        atomic_write(str(f), "原子写内容")
+        check("atomic_write 写后可读回", f.read_text(encoding="utf-8") == "原子写内容")
     # 技能发现：triggers/summary 结构化字段 + description 兜底解析
     with tempfile.TemporaryDirectory() as tmp:
         sk = Path(tmp) / "skills" / "demo"

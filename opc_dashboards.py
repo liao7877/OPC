@@ -41,7 +41,10 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 import opc_resolver
-from opc_model import parse_frontmatter   # 共享读取器（P25，禁私写正则）
+from opc_model import (parse_frontmatter,                    # 共享读取器（P25，禁私写正则）
+                       normalize_day as normalize_date,    # 日期规整（D2 收敛）
+                       read_text_warn as read_text,        # 告警读（D2 收敛）
+                       atomic_write)                       # 原子写（D3 收敛）
 from opc_schema import (WORKLOG_STATUS, TASK_ACTIVE as ACTIVE_TS,   # 状态机唯一真相源
                         TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS, PATROL,
                         EMPLOYEE_STATUS)
@@ -68,22 +71,9 @@ class Ctx:
 
 
 def resolve_ctx(company=None, company_dir=None):
-    """--company CID（走 manifest）或 --dir 目录（反查 ID）。返回 Ctx。"""
-    if company is None:
-        if not company_dir:
-            raise ValueError("需要 --company <cid> 或 --dir <公司根目录>")
-        company_dir = os.path.abspath(company_dir)
-        txt = opc_resolver.read_text(os.path.join(company_dir, "company.md"))
-        company = opc_resolver.extract_company_id(txt)
-        if not company:
-            raise FileNotFoundError(f"{company_dir}/company.md 缺「公司 ID」声明，无法反查公司")
-    cfg = opc_resolver.load_company(company)
-    # 严格性：home 断链（锚未建/目录被删）时明确报错，绝不静默在 companies/ 锚位
-    # 创建真实目录（否则违反「companies/ 仅供锚机制管理」铁律，且数据写进假位置）
-    if not os.path.isdir(cfg.home_abs):
-        raise FileNotFoundError(
-            f"公司 {company} 根不存在：{cfg.home_abs}（锚未建或目录被删）"
-            f"→ 在 OPC 根跑 `python opc_resolver.py --sync-links` 重建锚")
+    """--company CID（走 manifest）或 --dir 目录（反查 ID）。返回 Ctx。
+    身份反查/断链校验统一走 opc_resolver.resolve_company（D1 收敛）。"""
+    cfg = opc_resolver.resolve_company(company, company_dir)
     return Ctx(cfg, cfg.home_abs, cfg.page_templates_abs, cfg.tasks_data_abs,
                cfg.roster_rel, cfg.affairs_abs)
 
@@ -114,35 +104,6 @@ def split_blocks(text):
         elif cur is not None:
             cur.append(line)
     return blocks
-
-
-def normalize_date(s):
-    """规整为 YYYY-MM-DD（补前导零）；无法识别返回 None。"""
-    if not s:
-        return None
-    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", str(s).strip())
-    if not m:
-        return None
-    return "%04d-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
-
-
-def read_text(path):
-    if not os.path.isfile(path):
-        return ""
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return fh.read()
-    except Exception as e:
-        print(f"  [警告] 读取失败（疑似非 UTF-8）：{path}（{e}），按空处理")
-        return ""
-
-
-def atomic_write(path, text):
-    tmp = path + ".tmp"
-    # newline="" 禁止 \n→\r\n 翻译：保证页面分发副本与模板逐字节一致
-    with open(tmp, "w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
 
 
 def write_js(path, var_name, payload):

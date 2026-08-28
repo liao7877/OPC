@@ -472,7 +472,11 @@
       return keys;
     }
 
-    function statusColor(st) { return "var(--st-" + st + ")"; }
+    function statusColor(st) {
+      // 未知/非法状态回退红色（P11：坏数据上板标红，绝不隐藏）
+      if (DATA.status_meta && !DATA.status_meta[st]) return "var(--st-failed)";
+      return "var(--st-" + st + ")";
+    }
 
     // F5-④ 流转高亮：最近 7 天内有 handoff 的工单
     function isRecentFlow(t) {

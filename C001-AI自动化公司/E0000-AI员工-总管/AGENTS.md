@@ -31,3 +31,7 @@
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
 - **命名空间治理（2026-08-28 新增，依据 opc-namespace-design.md）**：物理路径唯一真相源在 `opc.toml`（OPC 根）——改名 / 改布局只改该文件一行，公司内所有引用零改动；公司内引用统一用 `opc://company:C001/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；定期 `cd OPC根 && python opc_resolver.py --check` 巡检失效引用并修（先改 opc.toml 再查 consumer）；**agent 打开文件**：`opc://company:C001/...` 直接当稳定锚 `../../companies/C001/...` 用（真实目录，OS 透明解析，无需跑脚本），或 `python opc_resolver.py --resolve <uri>` 取绝对路径。详见 opc-namespace-design.md §3.1。
 - **共享读取器（2026-08-28 新增，依据 PRINCIPLES P25）**：实体卡（task/project/team/worklog/affair 等）的 frontmatter 读取统一走 OPC 根 `opc_model.py` 的 `parse_frontmatter`；写任何读取 / 扫描脚本都 `import` 它，禁止各脚本私写解析正则。加字段免费、改格式只动 `opc_model.py` 一处。
+- **人机协作三条（2026-08-29 新增，依据 PRINCIPLES P27~P29；来源：Multica 调研 `research/multica-调研报告.html`）**：
+  - **P27 协调层中立**：OPC 只做命名 / 路由 / 发现 / 门禁，**不绑任何 Agent CLI 或模型**；派活按 `roster.md` 配置选人，**禁止在脚本或员工卡里写死 `claude` / `codex` / `codebuddy` 等具体 CLI 名并据此分支**——换 Agent 是改一行配置，不是迁移。
+  - **P28 审批门**：员工产出**未经用户（或指定验收人）点头，不标记完成、不进主数据**；pre-commit 的 `--check` 只验引用有效性与结构完整性，**链接全绿 ≠ 活儿干对了**。验收不自审自批（呼应"只调度不代劳 / 验收=用户或指定员工"）。
+  - **P29 自动化边界**：`opc_patrol.py` 心跳只负责**发现与留痕**，**处置决策始终人类在环**；自动派单 / 自动处置是 `opc.toml [patrol].actor` 预留扩展位，**默认不启用、不得擅自开启**（Agent 失败模式与人不同，自动处置会淹看板）。机器可以提醒「该开工了」，不可以替人决定「这就算做完了」。
