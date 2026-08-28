@@ -26,3 +26,9 @@ home = "companies/C001"
 [patrol]
 notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS / Linux notify-send，失败不影响巡检）
 # actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
+
+# ---- 平台技能披露（opc_resolver.ensure_links 统一托管，2026-08-28 Q3 拍板）----
+# 所有「不入库、clone 后必重建」的 OS 级链接（稳定锚 + 各层技能披露）只有一个管理者 = resolver。
+# 接新平台（如 Claude Code）只加一段配置，零代码改动。
+[platform.workbuddy]
+skill_link = ".workbuddy/skills"   # 相对各层目录（公司根/员工/团队，凡含 skills/ 的层自动覆盖）

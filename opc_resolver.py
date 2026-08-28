@@ -521,6 +521,181 @@ def sync_links(root=None):
     return ok, err
 
 
+# ---------------------------------------------------------------------------
+# ensure_links：OS 级链接统一托管（2026-08-28 Q3 拍板）
+# 稳定锚 companies/<cid> 与「各层技能披露链接」同属一类问题——不入库、
+# clone 后必重建、断了会让 agent 行为退化——却曾有两套标准（锚有脚本+门禁，
+# 披露链接三不管，doctor 门禁假绿）。现在统一：发现/创建/校验全在本模块。
+# ---------------------------------------------------------------------------
+
+def _platform_skill_links(root=None):
+    """从 manifest [platform.*] 读披露配置，返回全部 (link_path, target_dir)。
+
+    层自动发现：对公司 home（含 company-template 母版）扫「含 skills/ 的目录」
+    ——公司根本身 + 一级子目录（E*/T*/templates 下含 skills/ 的实体层）。
+    新员工/新团队建好 skills/ 即自动纳入，无需登记（呼应 P7）。
+    """
+    root = root or _find_root()
+    if root is None:
+        return []
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    platforms = [(name, cfg.get("skill_link"))
+                 for name, cfg in g.get("platform", {}).items() if cfg.get("skill_link")]
+    if not platforms:
+        return []
+    company_dirs = []
+    for cid in all_company_ids(root):
+        try:
+            company_dirs.append(load_company(cid).home_abs)
+        except Exception:
+            continue          # 锚断链时 doctor 的锚检查项会报，这里不重复
+    tpl = os.path.join(root, "company-template")
+    if os.path.isdir(tpl):
+        company_dirs.append(tpl)   # 建司母版同样有披露层
+    out = []
+    for cdir in company_dirs:
+        for layer in _skill_layers(cdir):
+            for _name, rel in platforms:
+                out.append((os.path.join(layer, rel), os.path.join(layer, "skills")))
+    return out
+
+
+def _skill_layers(company_dir):
+    """一个公司内所有「技能层」目录（含 skills/ 的）：公司根 + 一级实体子目录。"""
+    layers = []
+    if not os.path.isdir(company_dir):
+        return layers
+    if os.path.isdir(os.path.join(company_dir, "skills")):
+        layers.append(company_dir)
+    for entry in sorted(os.listdir(company_dir)):
+        d = os.path.join(company_dir, entry)
+        if entry.startswith(".") or not os.path.isdir(d):
+            continue
+        if os.path.isdir(os.path.join(d, "skills")):
+            layers.append(d)
+    return layers
+
+
+def ensure_links(root=None):
+    """同步全部 OS 级链接（幂等，可反复跑）：
+    ① 稳定锚 companies/<cid> -> 真实公司目录（复用 sync_links）；
+    ② 各层技能披露 {层}/.workbuddy/skills -> {层}/skills（按 manifest [platform.*] 配置）。
+    返回 (ok_list, err_list)。scripts/link-company 与未来 watcher 都只调本函数。"""
+    root = root or _find_root()
+    if root is None:
+        return [], ["未找到 opc.toml（OPC 根）"]
+    ok, err = sync_links(root)
+    for link, target in _platform_skill_links(root):
+        if _link_resolves_to(link, target):
+            continue
+        if os.path.lexists(link) and not _remove_link(link):
+            err.append(f"{link}: 旧链接无法删除（请人工处理）")
+            continue
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        try:
+            _create_link(link, target)
+            ok.append(f"技能披露 {os.path.relpath(link, root)} -> skills/")
+        except Exception as e:
+            err.append(f"{link}: 建链失败：{e}")
+    return ok, err
+
+
+def check_disclosure_links(root=None):
+    """技能披露链接完整性（doctor 第 5 项，error 级）：根治「门禁假绿」——
+    披露链接缺失/断链时平台不披露技能，agent 行为退化，此前 doctor 却报全绿。"""
+    root = root or _find_root()
+    issues = []
+    for link, target in _platform_skill_links(root):
+        rel = os.path.relpath(link, root) if root else link
+        if not os.path.lexists(link):
+            issues.append(f"技能披露链接缺失：{rel} → 跑 `--ensure-links` 重建")
+        elif not _link_resolves_to(link, target):
+            issues.append(f"技能披露链接失效/指错：{rel} → 跑 `--ensure-links` 重建")
+    return issues
+
+
+def diff_template(root=None, cid=None):
+    """C001 ↔ company-template 双向 diff（2026-08-28 Q5 拍板：机制改动波及面
+    「C001/总管/template/根文档」四处同步，靠人记必漂移——机器发现、人工决策）。
+
+    归一化后比较（消除假差异）：
+      - 换行符（CRLF/LF）；
+      - 公司 ID 占位符：实例侧 `C001` ↔ 模板侧 `<本司ID>` 统一映射为 `<CID>`；
+    排除实例专属内容（两边都不比）：实体数据目录 E*/T*/P*、workbench/tasks|archive、
+    memory/、workspace/、.workbuddy、看板产物 *-data.js / tasks-data.json、台账/花名册。
+
+    返回 dict：{same: n, diff: [(rel, plus, minus)], only_company: [...], only_template: [...]}。
+    """
+    root = root or _find_root()
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    cids = [k for k in g.get("company", {}) if k != "DEFAULT"]
+    cid = cid or (cids[0] if cids else None)
+    if not cid:
+        raise ValueError("manifest 无公司，无可比对实例")
+    company_dir = load_company(cid).home_abs
+    template_dir = os.path.join(root, "company-template")
+
+    import difflib
+
+    def _norm(text):
+        t = text.replace("\r\n", "\n")
+        t = (t.replace(f"companies/{cid}", "companies/<CID>")
+              .replace(f"opc://company:{cid}", "opc://company:<CID>")
+              .replace(cid, "<CID>").replace("<本司ID>", "<CID>")
+              .replace("C00x", "<CID>"))   # 模板建司占位符（create-company 问卷用）
+        return t
+
+    _EXCL_DIRS = (".git", ".workbuddy", "workbench", "memory", "workspace", "node_modules")
+    _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index|roster\.md|patrol-log\.md|"
+                            r"patrol-state\.json|patrol-pending\.md|INDEX\.md)$")
+    _ENTITY = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})-")
+
+    def _walk(base):
+        """收集 {rel_path: abs_path}；workbench 只比 README/KANBAN_ARCHITECTURE 等机制文档，
+        tasks/affairs/archive 等数据区排除；实体目录（实例专属）排除，templates/ 骨架保留。"""
+        out = {}
+        if not os.path.isdir(base):
+            return out
+        for dirpath, dirs, files in os.walk(base):
+            rel_dir = os.path.relpath(dirpath, base)
+            parts = [] if rel_dir == "." else rel_dir.split(os.sep)
+            if any(p in _EXCL_DIRS or (p and _ENTITY.match(p)) for p in parts):
+                dirs[:] = []
+                continue
+            if "workbench" in parts and parts[-1] != "workbench":
+                dirs[:] = []      # workbench 数据子区（tasks/affairs/archive…）不比
+            dirs[:] = [d for d in dirs if d not in _EXCL_DIRS and not _ENTITY.match(d)]
+            if os.path.basename(dirpath) == "workbench":
+                dirs[:] = [d for d in dirs if not _ENTITY.match(d)]
+            for fn in files:
+                if _EXCL_FILE.search(fn) or fn.endswith(".tmp"):
+                    continue
+                fp = os.path.join(dirpath, fn)
+                rel = os.path.relpath(fp, base).replace(os.sep, "/")
+                if rel == "dashboard.html":
+                    continue      # 公司根 dashboard.html 是生成产物（模板真身在 page-templates/）
+                out[rel] = fp
+        return out
+
+    a, b = _walk(company_dir), _walk(template_dir)
+    diff, same = [], 0
+    for rel in sorted(set(a) & set(b)):
+        try:
+            ta = _norm(_read_file(a[rel]))
+            tb = _norm(_read_file(b[rel]))
+        except OSError:
+            continue
+        if ta == tb:
+            same += 1
+            continue
+        plus = sum(1 for l in difflib.ndiff(ta.splitlines(), tb.splitlines()) if l.startswith("+"))
+        minus = sum(1 for l in difflib.ndiff(ta.splitlines(), tb.splitlines()) if l.startswith("-"))
+        diff.append((rel, plus, minus))
+    return {"cid": cid, "same": same, "diff": diff,
+            "only_company": sorted(set(a) - set(b)),
+            "only_template": sorted(set(b) - set(a))}
+
+
 def _read_file(p):
     """读取文本文件，失败返回空串（用于钩子/配置探测）。"""
     try:
@@ -599,6 +774,13 @@ def doctor(root=None):
         errors.append(f"命名空间存在 {len(iss)} 处失效引用 → 跑 `python opc_resolver.py --check` 查看并修")
     else:
         warns.append("命名空间全文扫描自洽 ✓")
+
+    # 5. OS 级链接完整性（稳定锚已在第 2 项；这里查各层技能披露，缺失即阻断——防门禁假绿）
+    disc = check_disclosure_links(root)
+    if disc:
+        errors.extend(disc)
+    else:
+        warns.append("技能披露链接完整 ✓")
 
     return errors, warns
 
@@ -691,28 +873,50 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
     ap.add_argument("--check", action="store_true", help="校验命名空间路径自洽（含全文扫描）")
+    ap.add_argument("--ensure-links", action="store_true",
+                    help="同步全部 OS 级链接（稳定锚 + 各层技能披露；幂等，clone/改名后跑一次）")
     ap.add_argument("--sync-links", action="store_true",
-                    help="同步稳定锚：重指向 companies/<cid> 到真实目录（零参数，靠 company.md ID 发现）")
+                    help="--ensure-links 的别名（兼容 scripts/link-company 与既有文档）")
     ap.add_argument("--company", default=None, help="公司 id（--check 默认遍历全部公司）")
     ap.add_argument("--resolve", help="解析单个 opc:// URI 并打印绝对路径")
     ap.add_argument("--doctor", action="store_true",
-                    help="系统初始化自检（init gate）：检查 Python 版本/稳定锚/pre-commit/命名空间，全绿才开工")
+                    help="系统初始化自检（init gate）：检查 Python 版本/稳定锚/pre-commit/命名空间/技能披露，全绿才开工")
+    ap.add_argument("--diff-template", action="store_true",
+                    help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
     a = ap.parse_args()
 
     if a.resolve:
         print(resolve(a.resolve))
+    elif a.diff_template:
+        r = diff_template()
+        print(f"[diff-template] 实例 {r['cid']} ↔ company-template（忽略换行符与 <CID> 占位符）")
+        print(f"  一致：{r['same']} 份")
+        if r["diff"]:
+            print(f"  实质差异 {len(r['diff'])} 份（+ = 模板多此行 / - = 实例多此行）：")
+            for rel, plus, minus in r["diff"]:
+                print(f"    - {rel}（实例多 {minus} 行 / 模板多 {plus} 行）")
+        if r["only_company"]:
+            print(f"  仅实例有：{len(r['only_company'])} 份")
+            for rel in r["only_company"]:
+                print(f"    - {rel}")
+        if r["only_template"]:
+            print(f"  仅模板有：{len(r['only_template'])} 份")
+            for rel in r["only_template"]:
+                print(f"    - {rel}")
+        if not (r["diff"] or r["only_company"] or r["only_template"]):
+            print("  [ok] 双向零实质差异")
     elif a.selftest:
         sys.exit(selftest())
-    elif a.sync_links:
-        ok, err = sync_links()
+    elif a.sync_links or getattr(a, "ensure_links", False):
+        ok, err = ensure_links()
         for line in ok:
             print("[ok]", line)
         for line in err:
             print("[ERR]", line)
         if err:
             sys.exit(1)
-        print("[done] 稳定锚同步完成")
+        print("[done] OS 级链接同步完成（稳定锚 + 技能披露）")
     elif a.doctor:
         errs, ws = doctor()
         for w in ws:

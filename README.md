@@ -63,12 +63,12 @@ OPC/
 **前置条件（缺一不可）**
 1. **Python ≥ 3.11** —— resolver 依赖标准库 `tomllib`。Windows 一般用 `python --version`，macOS/Linux 一般用 `python3 --version`（下文以 `python3` 示例，按你的平台替换）。
    > ⚠️ 看板数据（`*-data.js` / `tasks-data.json`）不入库：clone 后跑一次下面「验证」里的生成命令即重建。
-2. **重建稳定锚 `companies/<cid>`** —— `companies/` 不入库（symlink/junction 不进 git），clone 后是空的，必须建：
+2. **重建 OS 级链接（稳定锚 + 技能披露）** —— `companies/` 锚与各层 `.workbuddy/skills` 披露链接都不入库（symlink/junction 不进 git），clone 后是空的，必须建：
    - Windows：`scripts/link-company.ps1`
-   - macOS / Linux：`scripts/link-company.sh`（内部调 `python3 opc_resolver.py --sync-links`）
-   - 公司目录改名后重跑一次即可自动重指向（零参数，靠 company.md「公司 ID」发现）。
+   - macOS / Linux：`scripts/link-company.sh`（内部调 `python3 opc_resolver.py --ensure-links`）
+   - 公司目录改名后重跑一次即可自动重指向（零参数，靠 company.md「公司 ID」发现；披露链接一并幂等重建）。
 3. **恢复 pre-commit 门禁**（提交前拦截失效引用，开发期便利）：`cp scripts/pre-commit .git/hooks/` 或 `git config core.hooksPath scripts/`。
-4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描四项），再跑一次 `run_boards once` 重建看板数据。
+4. **验证**：`python opc_resolver.py --doctor` → 全绿（Python 版本 / 稳定锚 / 钩子 / 命名空间扫描 / 技能披露链接五项），再跑一次 `run_boards once` 重建看板数据。
 
 ```bash
 # 最常用：init 自检（agent 开工前必跑；Windows 把 python3 换成 python）
@@ -106,7 +106,8 @@ scripts/link-company.ps1       # Windows
 
 **2. 接平台披露（以 WorkBuddy 为例）**
 - 把技能实体放 `{层}/skills/<name>/SKILL.md`；
-- 建 junction：`` New-Item -ItemType Junction -Path "{层}\.workbuddy\skills" -Target "{层}\skills" ``；
+- 建 junction：`` New-Item -ItemType Junction -Path "{层}\.workbuddy\skills" -Target "{层}\skills" ``（macOS/Linux 用 `ln -sfn`，或直接 `python opc_resolver.py --ensure-links` 全层幂等重建，`--doctor` 会校验）；
+- 技能触发词索引：`python opc_model.py --sync-index` 一键重生成各层 `skills/INDEX.md`（生成物，勿手改；`--list-skills` 实时查看）；
 - **新开会话**后技能被平台渐进式披露（会话启动时扫描，当前会话不刷新）。
 
 **3. 挂公司心跳（推荐，一次性）**——让公司不依赖你的注意力自己转：每天自动巡检（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/僵尸工位卡…），异常写入 `workbench/patrol-log.md` 并**弹系统通知**（A+ 报警通道，`opc.toml [patrol].notify` 可关），总管每会话按同一份清单处置：
