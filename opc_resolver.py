@@ -870,6 +870,9 @@ def selftest():
 
 
 if __name__ == "__main__":
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8", errors="replace")   # Windows cp1252 控制台/CI 下中文输出防崩（CI 实测）
     import argparse
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
     ap.add_argument("--check", action="store_true", help="校验命名空间路径自洽（含全文扫描）")
