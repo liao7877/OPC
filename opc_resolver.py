@@ -872,7 +872,7 @@ def doctor(root=None, auto_fix=True):
         import opc_patrol
         for cid in cids:
             if opc_patrol.heartbeat_registered(root, cid):
-                warns.append(f"公司心跳已挂 ✓（{opc_patrol.heartbeat_task_name(cid)}，每日巡检+系统通知）")
+                warns.append(f"公司心跳已挂 ✓（{opc_patrol.heartbeat_task_name(cid)}，定期巡检+数据自愈+系统通知）")
             else:
                 warns.append(f"公司心跳未挂（定期巡检与异常通知不会运行）→ `python opc_patrol.py --register-heartbeat --company {cid}` 或 --bootstrap")
     except Exception:
