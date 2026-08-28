@@ -33,6 +33,8 @@ triggers: [建工单, 创建任务, 派任务, 新建工单, 改状态, 流转, 
 2. **推荐方式（一条命令生成规范模板）**：
    ```
    python ../../../opc_tickets.py --company C001 --new TSKxxx 标题 [--owner E0001] [--project P0001]
+  - 原子取号（B5，2026-08-29 拍板）：编号可传 `--auto-id` 由生成器取「现有最大号+1」（目录存在性即锁，并发防撞号），建单自动在 task-index 台账登记一行；显式指定 TSK 号同样自动占台账。
+  - status 填非法值时工单**不再消失**：仍上板并标红（P11 不丢数据），修正 status 后恢复 normal 渲染。
    ```
    会自动创建 `opc://company:C001/workbench/tasks/TSKxxx-标题/task.md` 模板（frontmatter 已填好）。
 3. **手动方式**：建目录 + 写 task.md（模板见 §9）。

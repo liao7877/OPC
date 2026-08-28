@@ -172,6 +172,26 @@ def load_company(cid):
 # 实体解析（约定式 + 扫描发现式）—— Repository / 查询抽象层
 # ---------------------------------------------------------------------------
 
+def resolve_company(company=None, company_dir=None):
+    """生成器公共入口（D1 收敛，2026-08-29）：按 --company CID（走 manifest）或
+    --dir 目录（反查 ID）返回 CompanyConfig；home 断链时明确报错。
+    此前「读 company.md → 正则取 ID → load_company → 校验 home」在三份
+    resolve_ctx 里各抄一遍——正是 P25 想消灭的漂移点。"""
+    if company is None:
+        if not company_dir:
+            raise ValueError("需要 --company <cid> 或 --dir <公司根目录>")
+        company_dir = os.path.abspath(company_dir)
+        company = extract_company_id(read_text(os.path.join(company_dir, "company.md")))
+        if not company:
+            raise FileNotFoundError(f"{company_dir}/company.md 缺「公司 ID」声明，无法反查公司")
+    cfg = load_company(company)
+    if not os.path.isdir(cfg.home_abs):
+        raise FileNotFoundError(
+            f"公司 {company} 根不存在：{cfg.home_abs}（锚未建或目录被删）"
+            f"→ 在 OPC 根跑 `python opc_resolver.py --ensure-links` 重建锚")
+    return cfg
+
+
 def _require_dir(path, what):
     """严格存在性校验：目录不存在即抛错（绝不返回假路径让悬空引用漏网）。"""
     if not os.path.isdir(path):

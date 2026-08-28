@@ -31,15 +31,41 @@ triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳]
 ## 心跳模式（opc_patrol.py）
 
 ```
-python opc_patrol.py --company C001        # 单次巡检（计划任务/cron 每日调用）
-python opc_patrol.py --company C001 --once-only   # 只检查不写告警（干跑）
+python opc_patrol.py --company C001            # 巡检 + 写日志/闭环态
+python opc_patrol.py --company C001 --dry-run  # 只检查打印，不写任何文件
+python opc_patrol.py --company C001 --quiet    # 仅异常时输出（适合 cron）
+python opc_patrol.py --selftest                # 内置自测
 ```
 
-- 心跳把 1/2/3/4 号检查项的异常**追加**进看板告警流（`dashboard-data.js` 的 risks.warnings，
-  生成器重跑时由生成器口径重建，心跳告警存 `workbench/patrol-log.md`，幂等去重）。
-- 5~10 号需要判断/联动处置的项，心跳只产出待办清单打印 + 追加到 patrol-log，由总管会话处理。
+> ⚠️ 2026-08-29 修正：旧版文档写的 `--once-only` 参数**不存在**，实际是 `--dry-run`。
+
+### 产出物三件套（机器写、人类读）
+
+| 文件 | 性质 | 说明 |
+|---|---|---|
+| `workbench/patrol-log.md` | **审计流水**（只增不删） | 发现留痕，P2 主数据 |
+| `workbench/patrol-state.json` | **闭环态**（可改） | `open → handled → 再犯 reopened`；派生态，删了可从 log 重建 |
+| `workbench/patrol-pending.md` | **待办快照**（生成物） | 仅 open 项，critical 置顶；总管启动第 5 步读它 |
+
+- 发现异常时另弹**系统通知**（A+ 报警通道，`opc.toml [patrol].notify=false` 可关；Windows/macOS/Linux 三端尽力而为，失败不影响巡检）。
+- 心跳**不写** `dashboard-data.js`——那是生成器的投影，单向管道（P4）下投影永不写回。
 - 用户不需要懂任何机制：**开着计划任务 = 公司每天自己体检一次**；没挂计划任务时，
   总管每会话的巡检（本清单）兜底。
+
+## 自动化边界（PRINCIPLES P29）
+
+心跳只做「发现」，**不做「处置决策」**：
+
+| 段 | 谁做 | 状态 |
+|---|---|---|
+| 发现 | `opc_patrol.py` 心跳（1~10 号检查项） | ✅ 已实现 |
+| 留痕 / 闭环 | patrol-log + patrol-state + patrol-pending | ✅ 已实现 |
+| 报警 | 系统通知（可关） | ✅ 已实现 |
+| 处置（答复/转派/催办/补号） | **总管（人类在环）** | ✅ 已实现 |
+| 自动派单 / 自动处置 | `opc.toml [patrol].actor` | ⏸ **预留扩展位，默认不启用**——启用需显式拍板 |
+
+> **为什么到此为止**：用管人的抽象管 Agent，Agent 的失败模式与人根本不同（Multica issue #815 的教训）——人从"进行中"挪到"阻塞"只挪一次，Agent 卡在循环里 90 秒能刷五次状态迁移，自动处置会把看板淹掉。
+> **判据**：机器可以提醒「该开工了」，不可以替人决定「这就算做完了」。
 
 ## 巡检结果留痕
 

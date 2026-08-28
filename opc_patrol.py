@@ -86,11 +86,8 @@ def fkey(f):
 
 
 def resolve_ctx(company):
-    cfg = opc_resolver.load_company(company)
-    if not os.path.isdir(cfg.home_abs):
-        raise FileNotFoundError(
-            f"公司 {company} 根不存在：{cfg.home_abs}（锚未建或目录被删）"
-            f"→ 在 OPC 根跑 `python opc_resolver.py --sync-links` 重建锚")
+    """按 --company CID 返回 Ctx；身份解析/断链校验统一走 resolve_company（D1 收敛）。"""
+    cfg = opc_resolver.resolve_company(company)
     return Ctx(cfg, cfg.home_abs)
 
 
