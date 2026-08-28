@@ -28,7 +28,7 @@ window.TEAMBOARD_DATA = {
         "rate": 0.6,
         "done_7d": 3
       },
-      "mydesk": "../E0001-AI员工-分析员/mydesk.html"
+      "mydesk": "../../companies/C001/E0001-AI员工-分析员/mydesk.html"
     },
     {
       "eid": "E0002",
@@ -50,7 +50,7 @@ window.TEAMBOARD_DATA = {
         "rate": 0.25,
         "done_7d": 1
       },
-      "mydesk": "../E0002-AI员工-项目经理/mydesk.html"
+      "mydesk": "../../companies/C001/E0002-AI员工-项目经理/mydesk.html"
     }
   ],
   "stats": {
@@ -204,8 +204,8 @@ window.TEAMBOARD_DATA = {
     }
   ],
   "links": {
-    "dashboard": "../dashboard.html",
-    "kanban": "../workbench/kanban.html"
+    "dashboard": "../../companies/C001/dashboard.html",
+    "kanban": "../../companies/C001/workbench/kanban.html"
   },
   "status_meta": {
     "backlog": "待领",

@@ -1,7 +1,7 @@
 # 需求规格 v2：三级可视化看板系统（公司级 / 团队级 / 个人级）
 
 > 状态：已澄清确认（2026-08-27 两轮定稿：第一轮需求范围一问一答；第二轮四方评审找茬后补齐 A1/A2/A3/B1 四项决策）
-> 范围：在 v1《REQ-公司看板与工作记录系统》（`../workbench/REQ-公司看板与工作记录系统.md`，保留为历史基准）基础上扩展团队级，并将"单应用双视图"改为**三级目录各放各的独立页面**。
+> 范围：在 v1《REQ-公司看板与工作记录系统》（`opc://company:C001/workbench/REQ-公司看板与工作记录系统.md`，保留为历史基准）基础上扩展团队级，并将"单应用双视图"改为**三级目录各放各的独立页面**。
 > 定位：工单协作看板（`kanban.html`）管"派了什么活"；本体系管"公司与个人经营视图"。两者数据源不同、互不替代。
 > 需求分析过程：一问一答记录见文末附录 A。
 
@@ -13,7 +13,7 @@
 |---|---|---|
 | D1 | 与 v1 的关系 | **扩展不推翻**：v1 的公司级驾驶舱 + 个人工作台 + worklog 机制全部保留；新增团队级；页面落位方案按本文档执行（覆盖 v1 §4/§6 中集中式布局的描述） |
 | D2 | 数据源策略 | 三级看板**各有自有数据源**，与工单系统**联动但不是其翻版**。工单看板仅作为视觉风格与静态生成技术方案的参考 |
-| D3 | 页面落位 | 三级目录各放各的 HTML，本地双击即开：公司级 `C001根/dashboard.html`、团队级 `T001-AI开发团队/teamboard.html`、个人级 `E000x-AI员工-岗位/mydesk.html`（工具随看板走：生成器/模板/入口脚本在公司根，workbench/ 只归工单系统） |
+| D3 | 页面落位 | 三级目录各放各的 HTML，本地双击即开：公司级 `../../companies/C001/dashboard.html`、团队级 `T001-AI开发团队/teamboard.html`、个人级 `E000x-AI员工-岗位/mydesk.html`（工具随看板走：生成器/模板/入口脚本在公司根，workbench/ 只归工单系统） |
 | D4 | 项目归属 | `project.md` frontmatter 新增 `team: T001` 字段（可多值），引用制，与组织架构风格一致 |
 | D5 | 团队级内容 | 基础三件套（成员卡墙+团队统计+项目视图）+ 团队动态流 + 公告周报区 + 团队资产索引 |
 | D6 | 工单联动 | 全选三项：①各级跳转入口 ②个人台嵌入"我的在途工单" ③公司/团队级的"项目维度工单统计" |
@@ -26,7 +26,7 @@
 
 ## 三、三级看板规格
 
-### 3.1 公司级·经营驾驶舱（`C001根/dashboard.html`，默认页）
+### 3.1 公司级·经营驾驶舱（`../../companies/C001/dashboard.html`，默认页）
 
 插件式模块（沿用 v1 §6 模块注册表机制）：
 
@@ -107,7 +107,7 @@
 
 1. **单一生成器，一次扫描，分头产出**：递归扫描 company 根所有实体（roster / E*/worklog.md / T*/team.md+notices.md / P*/project.md）+ 复用工单产物 `tasks-data.json`（联动②③的数据来源，**不再重复解析 tasks/**，避免两套解析逻辑漂移；生成器检测 tasks-data.json 过期时告警提示先跑 generate_tasks.py）。
 2. **产出的数据文件**：
-   - `C001根/dashboard-data.js` → `window.DASHBOARD_DATA`（全量；dashboard.html 同在公司根）
+   - `../../companies/C001/dashboard-data.js` → `window.DASHBOARD_DATA`（全量；dashboard.html 同在公司根）
    - `T001-AI开发团队/teamboard-data.js` → `window.TEAMBOARD_DATA`（该公司下所有团队的切片包，前端按参数取用；单团队目录固定取自身 tid）
    - 每个 `E000x…/mydesk-data.js` → `window.MYDESK_DATA`（单人数据 + 其工单切片；mydesk.html 在员工目录根）
 3. **同步机制**：沿用 `--watch` 轮询 ≤3 秒重跑；页面轮询 data.js 自动刷新。**提供统一入口**（如一个脚本顺序拉起 generate_tasks 与 generate_dashboard 两个 watcher，避免两个常驻进程各自维护）。
@@ -191,6 +191,6 @@
 | **第四轮（实施方式调整，2026-08-27）** | | |
 | Q14 | 需求相关工单太多、流程复杂化怎么办？ | **撤销全部需求池工单**（00010~16 回收、17~20 不建单），改为在会话内按本文档直接实施；台账已注记编号空出 |
 | **第五轮（落位纠偏，2026-08-27）** | | |
-| Q15 | 公司级看板不该挤在 workbench/（那是工单系统的地盘）；公司级放根下、个人台也要从 E*/workbench/ 上提到员工根？ | 确认纠偏：**公司级→公司根 dashboard.html；团队级→T001 根；个人级→员工目录根 mydesk.html**；**工具随看板走**——generate_dashboard.py / page-templates/ / run_boards.bat / register-task.ps1 全部迁到公司根，workbench/ 只剩工单系统四件套（kanban/tasks/generate_tasks.py/tasks-data） |
+| Q15 | 公司级看板不该挤在 workbench/（那是工单系统的地盘）；公司级放根下、个人台也要从 E*/workbench/ 上提到员工根？ | 确认纠偏：**公司级→公司根 dashboard.html；团队级→T001 根；个人级→员工目录根 mydesk.html**；**工具随看板走**——generate_dashboard.py / ../../companies/C001/page-templates/ / run_boards.bat / register-task.ps1 全部迁到公司根，workbench/ 只剩工单系统四件套（kanban/tasks/generate_tasks.py/tasks-data） |
 
 > 分析师自纠备注：第一版文档遗留的"归属来源二选一"、指标无定义、文件撞名（board.md）、双记账未处理四项缺口均已在第二轮补齐。

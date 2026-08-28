@@ -7,10 +7,10 @@
 - 员工 ID：E0001
 - 岗位：分析员
 - 归属团队：T001-AI开发团队（引用制，可在多个团队）
-- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 opc-namespace-design.md）；原 `../skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），命中触发词再读对应 SKILL.md 全文，勿整份预加载；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
-- 工单协作（公司级技能）：`../skills/ticket-system/SKILL.md` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
-- 工作自记录（公司级技能）：`../skills/worklog-discipline/SKILL.md` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
-- 并发协作（公司级技能）：`../skills/concurrent-work/SKILL.md` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态
+- 私有技能（渐进式披露）：技能引用走 `opc://company:C001/skill/<名称>`（见 opc-namespace-design.md）；原 `../../companies/C001/skills/INDEX.md` 已废弃（MECHANISM_PLAN 批#1），命中触发词再读对应 SKILL.md 全文，勿整份预加载；手动打开技能文件时把 `opc://company:C001/...` 当 `companies/C001` 用（真实目录），或 `python opc_resolver.py --resolve <uri>` 取绝对路径（见 opc-namespace-design.md §3.1）。
+- 工单协作（公司级技能）：`opc://company:C001/skill/ticket-system` —— 触发词：建工单/创建任务/派任务/改状态/流转/交接/完成工单/取消工单/认领/接单/阻塞/前置/父单/子单/取号/TSK。**命中触发词才读全文**（渐进式披露，勿整份预加载）；已接入平台自动披露（新会话生效）；其他平台/兜底直读本文件
+- 工作自记录（公司级技能）：`opc://company:C001/skill/worklog-discipline` —— 触发词：记工作/worklog/开工/干完了/任务完成/交付物归档/接到任务/归档。**接到任何任务（工单或直聊）先建 worklog 条目**；命中触发词才读全文（渐进式披露）；三段式纪律、并发追加协议、年度归档见技能全文
+- 并发协作（公司级技能）：`opc://company:C001/skill/concurrent-work` —— 触发词：并发/多开/多个会话/工位/收口/同时干活/共干。**开工先建工位卡**（workspace/sessions/）；memory 只写 inbox 分片、收口才合并；同工单只有持卡会话改状态
 - 工作流：见 workflow.md
 - 工作区：./workspace/
 - 记忆：./memory/（开工前先读 MEMORY.md；沉淀写 memory/inbox/<卡号>.md，收口合并）
@@ -22,7 +22,7 @@
 
 ## 行为规范
 - 开工前必读：AGENTS.md（本文件）+ workflow.md + memory/MEMORY.md
-- **启动三动作**：①建工位卡（workspace/sessions/，见 concurrent-work）；②自查漏接单（owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领，priority: 高 自动开工，中/低只补认领回执）；③开工保活：跑一次 `../../run_boards.bat once`（Windows）或 `../../run_boards.sh once`（macOS/Linux/Git-Bash；在公司根，页面出现"数据已陈旧"黄条时同样跑它）
+- **启动三动作**：①建工位卡（workspace/sessions/，见 concurrent-work）；②自查漏接单（owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领，priority: 高 自动开工，中/低只补认领回执）；③开工保活：跑一次 `../../companies/C001/run_boards.bat once`（Windows）或 `../../companies/C001/run_boards.sh once`（macOS/Linux/Git-Bash；在公司根，页面出现"数据已陈旧"黄条时同样跑它）
 - **领地自治**：本目录内技能/机制/workflow/memory 你可自主维护（用户直接下指令即可改，留痕+可逆）；**唯一例外：不得摘除上述公司级技能引用行**（公司纪律底座，摘除必须经总管）；跨领地（他人目录/公司公共区）的指令先上报总管
 - 只动自己的工作区和被派任务目录，不越界
 - 决策与坑沉淀进 memory/MEMORY.md（五要素格式）

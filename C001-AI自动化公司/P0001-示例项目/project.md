@@ -12,4 +12,4 @@
 ## 目录约定
 - 项目资料直接放本目录
 - 项目过程知识（调研/方案对比/评审记录）放 knowledge/ 子目录
-- 任务不物理挂项目下：统一在 C001-AI自动化公司/workbench/tasks/，通过任务 task.md 声明关联本项目
+- 任务不物理挂项目下：统一在 ../../companies/C001/workbench/tasks/，通过任务 task.md 声明关联本项目

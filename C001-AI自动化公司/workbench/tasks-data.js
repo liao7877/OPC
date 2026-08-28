@@ -187,7 +187,7 @@ window.KANBAN_DATA = {
       "inputs": [
         {
           "name": "项目章程",
-          "path": "../P0001-示例项目/project.md",
+          "path": "../../companies/C001/P0001-示例项目/project.md",
           "valid": true
         },
         {

@@ -8,7 +8,7 @@
 
 | 页面 | 位置 | 打开方式 |
 |---|---|---|
-| 🏢 公司驾驶舱 | `C001根/dashboard.html` | 双击（统计/员工/团队/项目/动态/风险 六模块） |
+| 🏢 公司驾驶舱 | `../../companies/C001/dashboard.html` | 双击（统计/员工/团队/项目/动态/风险 六模块） |
 | 🧩 团队看板 | `T001-AI开发团队/teamboard.html` | 双击（成员/统计/项目/动态/公告/资产） |
 | 🧑‍💻 个人工作台 | `E000x-AI员工-岗位/mydesk.html` | 双击（身份/统计/工作记录/我的工单） |
 | 🗂 工单协作看板 | `workbench/kanban.html` | 双击（原有，支持深链 `?id=TSKxxx` / `?owner=` / `?participant=`） |
@@ -35,7 +35,7 @@ E0000…/roster.md        ←唯一权威    dashboard-data.js + dashboard.html�
   （岗位/在职/团队列）                  T001…/teamboard-data.js + teamboard.html
 E000x…/workspace/worklog.md          E000x…/mydesk-data.js + mydesk.html
   （个人工作记录，只增不删）
-P####…/project.md      ←team 字段     （HTML 模板放 page-templates/，公司根；
+P####…/project.md      ←team 字段     （HTML 模板放 ../../companies/C001/page-templates/，公司根；
 T001…/notices.md         决定归属       改模板后跑一次生成器即全员刷新）
 workbench/tasks/…/task.md ←工单数据
 ```

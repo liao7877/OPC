@@ -21,9 +21,9 @@ window.MYDESK_DATA = {
       "updated": "2026-08-27",
       "note": "四轮评审定稿",
       "aff": "",
-      "deliverable": "../P0004-公司看板与工作记录系统/REQ-三级可视化看板系统.md",
+      "deliverable": "../../companies/C001/P0004-公司看板与工作记录系统/REQ-三级可视化看板系统.md",
       "deliverable_valid": true,
-      "deliverable_href": "../P0004-公司看板与工作记录系统/REQ-三级可视化看板系统.md",
+      "deliverable_href": "../../companies/C001/P0004-公司看板与工作记录系统/REQ-三级可视化看板系统.md",
       "archived": false
     },
     {
@@ -93,7 +93,7 @@ window.MYDESK_DATA = {
       "priority": "高",
       "blocked_by": [],
       "paused": false,
-      "detail": "../workbench/kanban.html?id=TSK00007"
+      "detail": "../../companies/C001/workbench/kanban.html?id=TSK00007"
     }
   ],
   "all_tasks_done": [
@@ -122,8 +122,8 @@ window.MYDESK_DATA = {
     }
   ],
   "links": {
-    "dashboard": "../dashboard.html",
-    "kanban": "../workbench/kanban.html"
+    "dashboard": "../../companies/C001/dashboard.html",
+    "kanban": "../../companies/C001/workbench/kanban.html"
   },
   "warnings": []
 };

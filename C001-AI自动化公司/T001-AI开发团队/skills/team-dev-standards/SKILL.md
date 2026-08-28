@@ -28,7 +28,7 @@ description: T001 团队级开发规范技能（团队内部使用）。触发�
 
 | 场景 | 用哪个技能 |
 |---|---|
-| 建单 / 改状态 / 流转 / 完成 / 输入物 / 告警处理 | **公司级** `../skills/ticket-system/SKILL.md`（从团队目录为 `../../skills/ticket-system/SKILL.md`） |
+| 建单 / 改状态 / 流转 / 完成 / 输入物 / 告警处理 | **公司级** `opc://company:C001/skill/ticket-system`（从团队目录为 `opc://company:C001/skill/ticket-system`） |
 | 团队内交付规范 / 评审约定 / 命名规则 | **本技能**（团队级） |
 | 个人专属流程 | 员工私有 `skills/` |
 

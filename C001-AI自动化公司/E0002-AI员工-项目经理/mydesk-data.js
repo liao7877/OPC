@@ -12,7 +12,7 @@ window.MYDESK_DATA = {
     {
       "tid": "T001",
       "name": "AI开发团队",
-      "teamboard": "../T001-AI开发团队/teamboard.html"
+      "teamboard": "../../companies/C001/T001-AI开发团队/teamboard.html"
     }
   ],
   "entries": [
@@ -99,7 +99,7 @@ window.MYDESK_DATA = {
       "priority": "高",
       "blocked_by": [],
       "paused": false,
-      "detail": "../workbench/kanban.html?id=TSK00002"
+      "detail": "../../companies/C001/workbench/kanban.html?id=TSK00002"
     },
     {
       "id": "TSK00005",
@@ -109,7 +109,7 @@ window.MYDESK_DATA = {
       "priority": "低",
       "blocked_by": [],
       "paused": true,
-      "detail": "../workbench/kanban.html?id=TSK00005"
+      "detail": "../../companies/C001/workbench/kanban.html?id=TSK00005"
     }
   ],
   "all_tasks_done": [
@@ -130,8 +130,8 @@ window.MYDESK_DATA = {
     }
   ],
   "links": {
-    "dashboard": "../dashboard.html",
-    "kanban": "../workbench/kanban.html"
+    "dashboard": "../../companies/C001/dashboard.html",
+    "kanban": "../../companies/C001/workbench/kanban.html"
   },
   "warnings": [
     {

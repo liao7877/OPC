@@ -13,6 +13,7 @@ tasks_data = "workbench/tasks-data.json"
 roster = "E0000-AI员工-总管/roster.md"
 affairs = "workbench/affairs"
 page_templates = "page-templates"
+templates = "templates"           # 公司模板目录（新建员工骨架来源）
 skills = "skills"                  # 技能根目录：skill/<name> -> {home}/skills/<name>
 teams = ""                        # 团队目录前缀（空=在 home 根下，目录名 T00x-<描述>）
 projects = ""                     # 项目目录前缀（空=在 home 根下，目录名 P00x-<描述>）

@@ -5,7 +5,7 @@ title: 三级看板需求澄清（廖哥四轮问答）
 status: 已完成
 type: 直聊
 project: P0004
-deliverable: ../P0004-公司看板与工作记录系统/REQ-三级可视化看板系统.md
+deliverable: opc://company:C001/project/P0004/REQ-三级可视化看板系统.md
 updated: 2026-08-27
 note: 四轮评审定稿
 ---

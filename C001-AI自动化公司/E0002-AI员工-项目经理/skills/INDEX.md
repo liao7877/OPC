@@ -11,7 +11,7 @@
 | 技能 | 触发词（命中即加载） | 摘要 | 路径 |
 |---|---|---|---|
 | **material-archive** 资料归档 | 资料归档、收资料、整理文件、存一下 | 项目经理接收并归档用户投喂的项目资料（需求/会议纪要/进度表/合同等）到工作区的规范 | `skills/material-archive/SKILL.md` |
-| **worklog-discipline** 工作自记录（公司级） | 接到任务、干完了、记工作、worklog | 三段式自记录纪律：计划中→进行中→已完成，只增不删，双账一致（与工单核验联动） | `../skills/worklog-discipline/SKILL.md` |
+| **worklog-discipline** 工作自记录（公司级） | 接到任务、干完了、记工作、worklog | 三段式自记录纪律：计划中→进行中→已完成，只增不删，双账一致（与工单核验联动） | `opc://company:C001/skill/worklog-discipline` |
 | **project-plan-template** 项目规划 | 项目规划、做计划、WBS、排期、拆解任务、立项 | 项目经理接到项目资料或需求后，生成 WBS 拆解、排期与风险登记册的标准模板 | `skills/project-plan-template/SKILL.md` |
 | **status-report** 状态报告 | 周报、状态报告、汇报进度、项目进展、给我汇报一下 | 项目经理基于项目当前状态生成周报/状态报告，向总管或用户汇报 | `skills/status-report/SKILL.md` |
 
