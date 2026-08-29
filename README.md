@@ -128,9 +128,35 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 ## 仓库约定
 
-- **私有仓库**：本仓库为私有，含组织内部规范与示例数据，请勿外传。
-- `.gitignore` 已排除 `.workbuddy/`、`node_modules`、`*.log`、`.env`、`.pem` 等，避免本地记忆 / 缓存 / 凭据误入库。
+- **双远程模型**：`origin` 为私有备份（建议设为 Private），另设公开远程（如 `public` / `OPC-core`，设为 Public）只收「剥离私有路径后」的干净分支。详见下方「对外发布」。
+- `.gitignore` 已排除 `.workbuddy/`、`node_modules`、`*.log`、`.env`、`.pem` 等；发布时再按 `.opc-private-paths.txt` 二次剥离，双重保险。
 - 默认分支 `main`；提交信息用中文，聚焦「做了什么」。
+
+---
+
+## 对外发布（机制公开 / 私有备份）
+
+本仓库采用「单仓双远程」模型：机制改进对外公开，个人私有内容只做本地版本管理与备份，绝不进公开分支。
+
+- **私有远程（默认 `origin` = 你的个人仓）**：推送 `main` 全量（机制 + 私有）= 完整版本管理 + 异地备份。**建议设为 Private**。
+- **公开远程（如 `OPC-core`，设为 Public）**：只接收「按 `.opc-private-paths.txt` 剥离私有后」的干净分支，供他人 fork / 拉取机制完善。
+
+日常开发一切照旧：在 `main` 随便提交，推 `origin` 即为备份。需要把机制更新给别人时，跑一次发布脚本：
+
+```bash
+# 首次：建公开仓库并登记
+git remote add public https://github.com/liao7877/OPC-core.git
+git config opc.publicRemote public
+
+# 每次发布（自动剥离私有路径后推送公开远程）
+./scripts/opc-publish.sh        # Git Bash / macOS / Linux
+.\scripts\opc-publish.ps1       # Windows PowerShell
+```
+
+- **私有清单**：`.opc-private-paths.txt` 控制「公开分支剥离什么」；你后续引入的隐私文件往里加一行即可，公开分支自动不含它，且不影响 `main` 的备份。
+- **红线**：pre-push 钩子禁止从工作仓库直接推公开远程，只允许经发布脚本（在临时克隆里剥离后推送）。
+- ⚠️ 公开分支历史每次发布会重写，forkers 需偶尔 `git pull --rebase`（或重新 fork）。
+- 一旦私有文件误推公开远程，立即用 `git filter-repo` scrub 历史并轮换任何泄露凭据。
 
 ---
 

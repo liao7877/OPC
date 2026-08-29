@@ -43,3 +43,6 @@ tasks-data.json
 # 巡检运行时态（派生/可变：state 可重建，pending 是快照；patrol-log 是审计流水，保留入库）
 patrol-state.json
 patrol-pending.md
+
+# OPC 发布用临时构建目录（opc-publish 生成：剥离私有后的干净克隆，不入库）
+.opc-publish-build/

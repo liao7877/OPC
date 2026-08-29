@@ -1,0 +1,18 @@
+#!/bin/sh
+# OPC pre-push 守卫：禁止从工作仓库直接推送到公开远程（工作仓库的 main 含私有内容）。
+# 只能通过 scripts/opc-publish.* 发布——它在临时克隆里剥离后推送，该克隆不携带此钩子。
+public_remote=$(git config --get opc.publicRemote)
+if [ -z "$public_remote" ]; then
+  public_remote="public"
+fi
+
+while read -r local_ref local_sha remote_name remote_sha
+do
+  if [ "$remote_name" = "$public_remote" ]; then
+    echo "⛔ 禁止从工作仓库直接推送到公开远程 '$public_remote'。"
+    echo "   请改用：scripts/opc-publish（它会剥离私有路径后推送）。"
+    exit 1
+  fi
+done
+
+exit 0
