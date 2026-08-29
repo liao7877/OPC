@@ -29,6 +29,12 @@
 - 状态留痕：任务状态变更必须记录到 messages.md
 - 派发必须注入：员工人设（AGENTS.md）+ 工作流（workflow.md）+ 记忆（memory/ ——唯一权威；`.workbuddy/` 平台记忆是缓存，有价值条目必须回写 memory/，见 concurrent-work 记忆归一规则）
 - 培训不人肉：员工 AGENTS.md 已引用公司级技能，无需逐人重复培训；新员工入职只需确认该引用存在
+- **知识库治理（2026-08-30 决策 #19，依据 PRINCIPLES P33 / MECHANISM_PLAN §十七）**：三级同构——员工级 `E00xx/knowledge/` → 团队级 `T00x/knowledge/` → 公司级 `opc://company:C00x/knowledge/`（**本层由总管独占**）。
+  - **查询（三级加载）**：先读各级 `INDEX.md` 索引行（约 30 字符/条）→ 命中才读条目 `summary` → 确认有用才读全文。**由近及远、命中即停**，不整库预加载（省 token 靠不加载，不是靠少加载）。
+  - **上浮审批（你是公司级守门人）**：判两条准入——① 脱离原作者与原上下文仍成立；② 跨 N≥2 个角色有用。**不满足的挡回原层**（不是换个方式上浮，是不该上浮）；审批前**先查重**（有近似的先人工合并再收）；执行 `python opc_model.py --promote <条目路径> --to company --actor E0000`（物理搬家 + 原处留真实 `.md` 存根；作者署名答疑、维护人管格式，两者分离）。
+  - **登记通道**（外部资料 / 长报告，全文太重）：只存结论 + `source` 指针，收录即可、你过目防垃圾。
+  - **腐烂巡检 #14/#15/#16**：过期复审 / 疑似重复 / 长期零命中归档提醒——**机器只发现，处置由你人工裁决**；**永不自动删除**，只降级与归档（CPU 的 eviction 是硬件无损淘汰，知识不能照搬）。
+  - **索引是生成物**：`python opc_model.py --sync-index` 产出，勿手改；OPC 服务监听 `knowledge/` 目录自动重生成（开工跑一次兜底）。你手动改了目录结构，差异会写进 `KB-CHANGELOG.md`——**记得同步更新 `KB.md` 里那段人写的组织原则**（唯一会漂移的部分）。
 - **命名空间治理（2026-08-28 新增，依据 opc-namespace-design.md）**：物理路径唯一真相源在 `opc.toml`（OPC 根）——改名 / 改布局只改该文件一行，公司内所有引用零改动；公司内引用统一用 `opc://company:<本司ID>/...` 逻辑符号，禁止裸写 `../` 或绝对路径 `E:\OPC\...`；定期 `cd OPC根 && python opc_resolver.py --check` 巡检失效引用并修（先改 opc.toml 再查 consumer）；**agent 打开文件**：`opc://company:<本司ID>/...` 直接当稳定锚 `../../companies/<本司ID>/...` 用（真实目录，OS 透明解析，无需跑脚本），或 `python opc_resolver.py --resolve <uri>` 取绝对路径。详见 opc-namespace-design.md §3.1。
 - **共享读取器（2026-08-28 新增，依据 PRINCIPLES P25）**：实体卡（task/project/team/worklog/affair 等）的 frontmatter 读取统一走 OPC 根 `opc_model.py` 的 `parse_frontmatter`；写任何读取 / 扫描脚本都 `import` 它，禁止各脚本私写解析正则。加字段免费、改格式只动 `opc_model.py` 一处。
 - **人机协作三条（2026-08-29 新增，依据 PRINCIPLES P27~P29；来源：Multica 调研 `research/multica-调研报告.html`）**：

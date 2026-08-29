@@ -262,7 +262,7 @@ def resolve_entity(cid, etype, eid, sub=None):
         p = _require_dir(os.path.join(home, hits[0]), f"opc://company:{cid}/{etype}/{eid}")
     else:
         # 兼容 key 模式透传（opc://company:C001/workbench 等）；
-        # 带子路径时校验存在（2026-08-30：知识库等文档引用，URI 首段=「公司知识库」manifest key，子路径必须存在）
+        # 带子路径时校验存在（2026-08-30：知识库等文档引用，URI 首段=knowledge manifest key，子路径必须存在）
         if etype in cfg._m:
             if not eid:
                 return cfg._abs(etype)
@@ -346,16 +346,22 @@ def scan_refs(root):
 
     - 排除中文标点结尾的误吸（正文裸写 URI 后接句号/逗号，不是引用的一部分）
     - 不可解码文件（GBK 等）以 latin-1 兜底读取而非静默跳过——门禁不假绿
+    - **机制层豁免**：OPC 根下 `opc_*.py` 里的 opc:// 是**协议实现**（正则 / f-string /
+      自测字符串），不是文档引用，不参与失效校验（2026-08-30 决策 #19；否则门禁满是误报）
     """
     refs = {}
     skip_dirs = {".git", "node_modules", ".workbuddy"}
     exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
+    root_abs = os.path.abspath(root)
     for dirpath, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in skip_dirs]
         for fn in files:
             if not fn.lower().endswith(exts):
                 continue
             fp = os.path.join(dirpath, fn)
+            if (os.path.abspath(dirpath) == root_abs
+                    and fn.startswith("opc_") and fn.endswith(".py")):
+                continue
             try:
                 fh = open(fp, encoding="utf-8")
             except OSError:

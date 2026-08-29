@@ -102,9 +102,10 @@
     <a href="#s11"><b>11</b>容错哲学：绝不静默</a>
     <a href="#s12"><b>12</b>安全边界：最小写权限</a>
     <a href="#s13"><b>13</b>设计借鉴总表</a>
-    <a href="#s14"><b>14</b>知识飞轮：可复盘的组织学习</a>
-    <a href="#s15"><b>15</b>边界：明确不做什么</a>
-    <a href="#s16"><b>16</b>快速开始</a>
+    <a href="#s14"><b>14</b>三级知识库：查得到</a>
+    <a href="#s15"><b>15</b>知识飞轮：可复盘的组织学习</a>
+    <a href="#s16"><b>16</b>边界：明确不做什么</a>
+    <a href="#s17"><b>17</b>快速开始</a>
   </div>
 </section>
 
@@ -286,7 +287,7 @@
     <div class="arrow">↺</div>
     <div class="step"><b>④ 修正/告警</b>处置置 handled 闭环<br>同一问题再犯自动 reopened</div>
   </div>
-  <h3>13 项期望态检查（选摘）</h3>
+  <h3>16 项期望态检查（选摘）</h3>
   <table>
     <tr><th>检查</th><th>期望态被打破的样子</th></tr>
     <tr><td>#1 解锁待开工</td><td>前置工单已全部 done，本单还躺在 backlog——该开工了没人开</td></tr>
@@ -345,7 +346,7 @@
     <tr><td>OS · 微内核</td><td>watcher/计划任务/心跳三套调度打架</td><td>决策 #18 收敛单常驻服务，进程=宿主、公司=租户、服务可插拔</td></tr>
     <tr><td>OS · 中断与屏蔽</td><td>通知轰炸或漏报二选一</td><td>severity 优先级 + quiet_hours 屏蔽字 + 只报新发现（哈希去重）+ 每日摘要</td></tr>
     <tr><td>OS · 信号量 / WAL</td><td>双会话并发写台账互相覆盖</td><td>file_lock（O_EXCL+超时+抢占）、原子写唯一 tmp、先占号后建单</td></tr>
-    <tr><td>K8s · 控制循环</td><td>人盯人管理对 AI 组织失效</td><td>巡检 = reconcile：13 项期望态 → 观测 → diff → 修正闭环</td></tr>
+    <tr><td>K8s · 控制循环</td><td>人盯人管理对 AI 组织失效</td><td>巡检 = reconcile：16 项期望态 → 观测 → diff → 修正闭环</td></tr>
     <tr><td>算法 · DAG 拓扑</td><td>工单 A↔B 互锁永久卡死无人知</td><td>blocked_by/parent 建图查环（三色 DFS），生成器告警 + 巡检 #13 兜底</td></tr>
     <tr><td>设计模式 · 断路器</td><td>升级请求无人处理，工单无声卡死</td><td>超时自动升层：等 lead 2 天 → 越级总管 → 3 天 → 标注「等用户拍板」</td></tr>
     <tr><td>设计模式 · 模板方法 / 适配器</td><td>开新公司靠复制粘贴改几十处</td><td>company-template（骨架固定公司填空）、AGENTS.md/CLAUDE.md 平台适配、通知通道可插拔（策略）</td></tr>
@@ -356,6 +357,22 @@
 
 <section class="slide" id="s14">
   <div class="no">14</div>
+  <span class="kicker">组织学习 · 三级知识库</span>
+  <h2>查得到：知识放哪、谁管、怎么不烂？</h2>
+  <p class="oneline">员工学到的东西要么烂在自己记忆里别人看不到，要么塞进公司库等总管慢慢提炼；Agent 想查一条知识只能全目录翻找，token 全花在「找」而不是「用」上；存进去就没人管，过期、重复、失焦三重腐烂，半年后没人敢信。</p>
+  <div class="pain"><b>痛点</b>知识库最大的敌人不是「没写下来」，是<b>写下来了但查不到、而且会烂</b>。查不到 → 每次重新踩坑；会烂 → 查到了也不敢信。两头堵死，知识库就成了文件坟场。</div>
+  <div class="mech"><b>机制</b>三级同构——员工级 / 团队级 / 公司级，每级 = 人写的 <code>KB.md</code>（组织原则）+ 机器生成的 <code>INDEX.md</code>（条目清单）+ 主题子目录。同构不是美观问题：Agent 检索逻辑只写一份，上浮时零格式转换。配三条硬规矩：</div>
+  <table>
+    <tr><th style="width:132px">维度</th><th>设计</th><th>为什么</th></tr>
+    <tr><td><b>加载</b></td><td>索引行（常驻，约 30 字符/条）→ 摘要 → 全文，<b>命中才升级</b>；<code>tokens</code> 字段让 Agent 在摘要层就能判断全文值不值得读</td><td>省 token 靠<b>不加载</b>，不是靠少加载——就是 CPU 缓存行的思路：按 64B 取，不整块读</td></tr>
+    <tr><td><b>上浮</b></td><td><b>归属转移，不是复制</b>：物理搬家 + 原处留真实 .md 存根（承接历史 <code>opc://</code> 引用）；审批前查重；作者与维护人分离</td><td>复制即漂移。走 exclusive cache——一条知识物理上只存在一层，天然没有一致性负担</td></tr>
+    <tr><td><b>淘汰</b></td><td>永不自动删除，只降级与归档；过期 / 重复 / 冷门三条<b>只告警</b>，人工裁决</td><td>CPU 的 eviction 是硬件自动、无损淘汰（主存还有副本）；知识照搬就是数据丢失</td></tr>
+  </table>
+  <div class="land"><b>落点</b>关键解耦：<b>Agent 不需要「感知变更」，只需要「每次读到最新的索引」</b>——服务监听目录变动实时重生成，它要的是现状不是历史；差异另写 <code>KB-CHANGELOG.md</code> 给人看（KB.md 是三级里唯一人写的部分，也是唯一会漂的部分）。还有一处反直觉的取舍：KB.md 漂移检查实测 28 条全误报后<b>撤出了自动巡检</b>——机器给工具（<code>--kb-drift</code>），人决定何时用，而不是让告警淹掉看板。</div>
+</section>
+
+<section class="slide" id="s15">
+  <div class="no">15</div>
   <span class="kicker">组织学习 · 知识飞轮</span>
   <h2>可复盘：为什么经验不会随会话蒸发？</h2>
   <p class="oneline">AI 员工干完活会话一关，经验就蒸发了——失败单子的教训躺在 messages 里没人看，半年后同一个坑踩第二遍。人不复盘是惰性，AI 不复盘是没机制。</p>
@@ -375,8 +392,8 @@
   <div class="land"><b>落点</b>方法卡（适用/反适用场景）等结构化全是系统的副产品，用户无感；两级固化阶梯（知识库 → 方法卡 → 技能 → 机制）晋升门槛逐级升高，二次命中是廉价而真实的命中率代理。健康度每月摘要可见：新增教训 X 条、晋升 Y 条——连续两月为零 = 触发器失灵。</div>
 </section>
 
-<section class="slide" id="s15">
-  <div class="no">15</div>
+<section class="slide" id="s16">
+  <div class="no">16</div>
   <span class="kicker">工程判断</span>
   <h2>边界：明确不做什么</h2>
   <p class="oneline">一个系统的成熟度，看它拒绝了什么。</p>
@@ -389,8 +406,8 @@
   <div class="land"><b>落点</b>设计哲学一句话：<b>能用机制的不用自觉，能用文件的不用服务，能借经典的不自创。</b></div>
 </section>
 
-<section class="slide" id="s16">
-  <div class="no">16</div>
+<section class="slide" id="s17">
+  <div class="no">17</div>
   <span class="kicker">上手</span>
   <h2>快速开始</h2>
   <p class="oneline">对使用者只暴露两条命令；对 agent 只暴露一个工作区。</p>

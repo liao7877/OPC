@@ -52,6 +52,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import opc_dashboards
+import opc_model
 import opc_patrol
 import opc_resolver
 import opc_tickets
@@ -76,6 +77,27 @@ def _service_cfg():
 # ---------------------------------------------------------------------------
 # 租户（一个公司一个实例）
 # ---------------------------------------------------------------------------
+
+def _iter_knowledge_dirs(company_dir):
+    """公司内全部 knowledge/ 目录（公司级 + 员工/团队/项目级 + 建司骨架），供服务监听用。"""
+    if not os.path.isdir(company_dir):
+        return
+    top = os.path.join(company_dir, "knowledge")
+    if os.path.isdir(top):
+        yield top
+    for name in sorted(os.listdir(company_dir)):
+        d = os.path.join(company_dir, name)
+        if not os.path.isdir(d) or name.startswith("."):
+            continue
+        kb = os.path.join(d, "knowledge")
+        if os.path.isdir(kb):
+            yield kb
+        if name == "templates":                      # 建司骨架（未分配实体 ID）
+            for sub in sorted(os.listdir(d)):
+                s = os.path.join(d, sub)
+                if os.path.isdir(s) and os.path.isdir(os.path.join(s, "knowledge")):
+                    yield os.path.join(s, "knowledge")
+
 
 class Tenant:
     def __init__(self, cid):
@@ -104,6 +126,12 @@ class Tenant:
                     fn(ctx)
                 except Exception as e:      # 单侧失败不阻断另一侧（沿 safe_generate 容错口径）
                     errs.append(f"{name}: {e}")
+            # 知识库索引（决策 #19 §17.8）：条目一变动，INDEX.md 立即重生成——
+            # agent 开工读到的永远是当前全貌，无需额外「感知变更」；差异另写 KB-CHANGELOG.md 给人看。
+            try:
+                opc_model.sync_kb_index(self.pctx.cfg.root, self.cid)
+            except Exception as e:
+                errs.append(f"kb-index: {e}")
             self.last_gen_epoch = time.time()
             return (not errs), errs
 
@@ -115,7 +143,28 @@ class Tenant:
 
     def _sources_mtime(self):
         return max(opc_tickets.tasks_mtime(self.tctx),
-                   opc_dashboards.deps_mtime(self.dctx))
+                   opc_dashboards.deps_mtime(self.dctx),
+                   self._knowledge_mtime())
+
+    def _knowledge_mtime(self):
+        """三级 knowledge/ 目录下条目文件的最新 mtime（决策 #19 §17.8）。
+
+        **必须排除 INDEX.md**——索引由本服务自己重生成，若计入 mtime 会自我触发、
+        无限重算。CHANGELOG 同理是留痕产物，不参与触发。
+        """
+        latest = 0.0
+        base = self.base
+        for kb in _iter_knowledge_dirs(base):
+            for root, dirs, files in os.walk(kb):
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                for f in files:
+                    if not f.endswith(".md") or f in ("INDEX.md", "KB-CHANGELOG.md"):
+                        continue
+                    try:
+                        latest = max(latest, os.path.getmtime(os.path.join(root, f)))
+                    except OSError:
+                        pass
+        return latest
 
     def _watch_loop(self):
         """数据源监听：变动 → 重生成 → 即巡检（数据变动即巡检，决策 #18）。"""

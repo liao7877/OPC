@@ -25,6 +25,9 @@ companies/
 tasks-data.json
 *.tmp
 
+# 并发锁文件（file_lock 运行时产物；锁释放后即删，残留不该入库）
+*.lock
+
 # 环境变量/凭据（防御性，正常不存在）
 .env
 .env.*
@@ -32,6 +35,10 @@ tasks-data.json
 *.key
 
 **/skills/INDEX.md
+
+# 知识库索引（决策 #19 生成物：opc_model --sync-index 产出，勿手改；服务监听目录变动自动重生成，
+# 入库 = 永久噪音 diff。注：KB-CHANGELOG.md 是变更留痕（只增不删），**入库**保留审计价值）
+**/knowledge/INDEX.md
 
 # 巡检运行时态（派生/可变：state 可重建，pending 是快照；patrol-log 是审计流水，保留入库）
 patrol-state.json
