@@ -353,10 +353,18 @@ def parse_worklog(ctx, eid, emp_dir):
             valid_deliv = True
             deliv_href = ""
             if deliverable:
-                # 基准约定：deliverable 相对「员工目录根」书写（docstring 家规）。
-                # 校验真实存在性；同时换算成 mydesk.html（同在员工目录根）可用的纯相对链接。
-                full = os.path.normpath(os.path.join(ctx.base, emp_dir, deliverable))
-                valid_deliv = os.path.exists(full)
+                # 两种写法都支持（PRINCIPLES P26 命名空间）：
+                # ① opc:// 逻辑符号 —— 走 resolver 解析（文档层推荐写法，改名免疫）
+                # ② 裸相对路径 —— 以「员工目录根」为基准（旧写法，兼容保留）
+                if deliverable.startswith("opc://"):
+                    try:
+                        import opc_resolver   # 惰性导入：避免与 resolver 形成顶层循环依赖
+                        full = opc_resolver.resolve(deliverable)
+                    except Exception:
+                        full = None            # 解析失败按失效处理（告警文案指向 URI 本身）
+                else:
+                    full = os.path.normpath(os.path.join(ctx.base, emp_dir, deliverable))
+                valid_deliv = bool(full) and os.path.exists(full)
                 if not valid_deliv:
                     warnings.append({"scope": "核验", "msg": f"{eid}「{title}」deliverable 路径失效：{deliverable}"})
                 else:

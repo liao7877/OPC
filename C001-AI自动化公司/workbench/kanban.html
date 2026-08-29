@@ -148,6 +148,18 @@
     margin: 60px auto; text-align: center; color: var(--text-dim); max-width: 420px;
   }
   .no-data code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; color: var(--accent); }
+  /* ===== 克制动效（2026-08-29）：只做过渡与微反馈，不改布局/配色/控件 ===== */
+  @keyframes opc-fade-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .opc-enter { animation: opc-fade-up .28s ease both; }
+  .card, .stat-card { transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+  .card.click:hover, .card:hover, .btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .btn:active, .card.click:active { transform: translateY(0); }
+  body { transition: background-color .2s ease, color .2s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    .opc-enter { animation: none; }
+    .card, .stat-card, .btn, body { transition: none; }
+    .card.click:hover, .card:hover, .btn:hover { transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -460,12 +472,21 @@
     function groupKeys(by, list) {
       var keys = [];
       var seen = {};
+      // 状态分组：先铺满全部合法状态（空列也渲染，让人一眼看到有哪些分类；
+      // P11：状态不隐藏——否则出现该状态的工单时会无处渲染而静默消失）
+      if (by === "status") {
+        STATUS_ORDER.forEach(function (k) { if (!seen[k]) { seen[k] = 1; keys.push(k); } });
+      }
       list.forEach(function (t) {
         var k = groupValue(t, by);
         if (!seen[k]) { seen[k] = 1; keys.push(k); }
       });
       if (by === "status") {
-        keys.sort(function (a, b) { return STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b); });
+        // 合法状态按 STATUS_ORDER 排序；未知/非法状态追加在最后（P11：上板标红不隐藏）
+        keys.sort(function (a, b) {
+          var ia = STATUS_ORDER.indexOf(a), ib = STATUS_ORDER.indexOf(b);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        });
       } else {
         keys.sort();
       }
@@ -592,9 +613,12 @@
       // WIP 提示：仅「进行中」列超限时标记（上限常量 WIP_LIMIT 可改）
       var wip = (by === "status" && key === "in_progress" && list.length > WIP_LIMIT)
         ? '<span class="wip-flag" title="进行中 WIP 上限 ' + WIP_LIMIT + '">⚠️WIP</span>' : "";
+      // 空列文案分流：有筛选条件时=被筛掉；无筛选=该状态本来就没工单（避免误导）
+      var filtering = (state.priority !== "all" || state.type !== "all" ||
+                       String(state.search || "").trim() || state.tags.size > 0);
       var body = list.length
         ? list.map(cardHTML).join("")
-        : '<div class="empty-col">无匹配工单</div>';
+        : '<div class="empty-col">' + (filtering ? "无匹配工单" : "暂无工单") + "</div>";
       return '<div class="column" data-col-key="' + esc(key) + '">' +
         '<div class="col-head"' + titleAttr + '>' + dot + "<span>" + esc(label) + '</span>' + wip +
         '<span class="col-count">' + list.length + "</span></div>" +
@@ -964,5 +988,31 @@
     if (location.search.indexOf("selftest=1") !== -1) runFrontendSelftest();
   })();
   </script>
+
+<script>
+  /* 入场动效 + 数字滚动（2026-08-29 克制版）：初次渲染执行一次；尊重系统「减弱动效」 */
+  (function () {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    function run() {
+      var cards = document.querySelectorAll("#main .card, .board .card, .column .card, .grid .card");
+      Array.prototype.forEach.call(cards, function (el, i) {
+        el.classList.add("opc-enter");
+        el.style.animationDelay = Math.min(i * 25, 400) + "ms";
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".stat-card .num"), function (el) {
+        var to = parseInt(el.textContent, 10);
+        if (!to) return;
+        var t0 = performance.now();
+        (function step(now) {
+          var p = Math.min(1, (now - t0) / 400);
+          el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3)));
+          if (p < 1) requestAnimationFrame(step);
+        })(t0);
+      });
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { setTimeout(run, 0); });
+    else setTimeout(run, 0);
+  })();
+</script>
 </body>
 </html>
