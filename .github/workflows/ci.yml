@@ -1,6 +1,6 @@
 # OPC 三平台 CI（2026-08-28 拍板）：把 README「Windows/macOS/Linux 三端可用」的承诺变成每次提交的自动验证。
 # 验证内容：稳定锚重建（macOS/Linux 走 symlink 分支、Windows 走 junction 分支）→ doctor 门禁
-# → 6 个模块 selftest → 真实数据链路（run_boards once + --verify）。
+# → 7 个模块 selftest → 真实数据链路（run_boards once + --verify）。
 name: opc-ci
 on: [push, pull_request]
 
@@ -28,7 +28,7 @@ jobs:
       - name: init 自检门禁（全绿才允许继续）
         run: python opc_resolver.py --doctor
 
-      - name: 模块内置自测（6 件套）
+      - name: 模块内置自测（7 件套）
         run: |
           python opc_resolver.py --selftest
           python opc_model.py --selftest
@@ -36,6 +36,7 @@ jobs:
           python opc_tickets.py --selftest
           python opc_dashboards.py --selftest
           python opc_patrol.py --selftest
+          python opc_service.py --selftest
 
       - name: 真实数据链路（C001：工单 + 三级看板 + 一致性校验）
         run: |
@@ -43,6 +44,12 @@ jobs:
           python opc_dashboards.py --company C001
           python opc_dashboards.py --company C001 --verify
 
-      - name: 巡检 dry-run（不写日志；实盘公司有发现属常态，提示不阻断）
+      - name: 巡检 dry-run（不写日志；退出语义 0=无发现 / 1=有发现 / 2=崩溃，仅 2 阻断）
         shell: bash   # pwsh 下 cmdlet 不重置 LASTEXITCODE，`||` 掩不住退出码
-        run: python opc_patrol.py --company C001 --dry-run || echo "::warning::巡检有发现（实盘公司常态），CI 仅提示不阻断"
+        run: |
+          python opc_patrol.py --company C001 --dry-run; rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning::巡检有发现（实盘公司常态），CI 仅提示不阻断"
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi

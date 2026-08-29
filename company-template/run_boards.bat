@@ -5,8 +5,8 @@ rem 本脚本降级为手动应急的一次性生成工具（"once" 模式）或
 rem Mechanism code lives at OPC root (opc_tickets.py / opc_dashboards.py).
 rem This is a thin company-side wrapper: resolve company id, call root modules.
 rem Usage:
-rem   run_boards.bat         regenerate once, then start both watchers
-rem   run_boards.bat once    regenerate once only (for scheduled task / SOP)
+rem   run_boards.bat          regenerate once only (default; refresh is owned by opc_service)
+rem   run_boards.bat watch    emergency manual watchers (do NOT use while opc_service is running)
 setlocal
 cd /d "%~dp0"
 
@@ -31,13 +31,13 @@ echo [2/2] generating dashboard data ^(company/team/mydesk^)...
 python "%ROOT%opc_dashboards.py" --dir "%CD%"
 if errorlevel 1 goto :err
 
-if /i "%~1"=="once" (
-    echo done ^(one-shot mode^). Open dashboard.html
-    exit /b 0
-)
+if /i "%~1"=="watch" goto :watch
+echo done ^(one-shot mode^). Open dashboard.html
+exit /b 0
 
+:watch
 echo.
-echo starting watchers ^(close windows to stop^)...
+echo starting emergency watchers ^(close windows to stop^)...
 start "kanban-watcher" cmd /c "python "%ROOT%opc_tickets.py" --dir "%CD%" --watch"
 start "dashboard-watcher" cmd /c "python "%ROOT%opc_dashboards.py" --dir "%CD%" --watch"
 echo watchers started. Open dashboard.html

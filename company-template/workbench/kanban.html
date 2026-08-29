@@ -950,7 +950,7 @@
     function doSync() {
       if (location.protocol === "http:" || location.protocol === "https:") {
         // 实时模式（经 opc_service 打开）：点同步=真重算，再取新数据
-        fetch("../api/sync", { cache: "no-store" }).catch(function () {}).then(reloadData);
+        fetch("../api/sync", { method: "POST", cache: "no-store" }).catch(function () {}).then(reloadData);
       } else { reloadData(); }  // file:// 降级：仅重读数据文件
     }
     document.getElementById("syncBtn").addEventListener("click", doSync);

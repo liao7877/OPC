@@ -3,8 +3,8 @@
 # 机制代码已上提 OPC 根（opc_tickets.py / opc_dashboards.py），本脚本只是公司级薄壳：
 # 自动反查本公司 ID -> 调根模块生成。python3/python 自动探测（Windows Git Bash 无 python3 也能跑）。
 # Usage:
-#   ./run_boards.sh          regenerate once, then start both watchers
-#   ./run_boards.sh once     regenerate once only (for scheduled task / SOP)
+#   ./run_boards.sh          regenerate once only (default; refresh is owned by opc_service)
+#   ./run_boards.sh watch    emergency manual watchers (do NOT use while opc_service is running)
 set -e
 cd "$(dirname "$0")"
 
@@ -32,13 +32,13 @@ echo "[1/2] generating ticket kanban data..."
 echo "[2/2] generating dashboard data (company/team/mydesk)..."
 "$PY" "$ROOT/opc_dashboards.py" --dir "$PWD"
 
-if [ "$1" = "once" ]; then
+if [ "$1" != "watch" ]; then
     echo "done (one-shot mode). Open dashboard.html"
     exit 0
 fi
 
 echo ""
-echo "starting watchers (Ctrl+C to stop both; run them in separate terminals for independent control)..."
+echo "starting emergency watchers (Ctrl+C to stop both; do NOT run while opc_service is running)..."
 "$PY" "$ROOT/opc_tickets.py" --dir "$PWD" --watch &
 "$PY" "$ROOT/opc_dashboards.py" --dir "$PWD" --watch &
 wait
