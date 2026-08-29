@@ -21,15 +21,15 @@ OPC 不是某个具体产品，而是一套**方法论 + 目录规范 + 技能�
 ```
 OPC/
 ├── AGENT_ECOSYSTEM.md      # 多 Agent 平台接入规范（WorkBuddy/Claude Code/Codex 目录、披露机制、junction 接法）
-├── PRINCIPLES.md           # 组织级设计原则（P1~P26：架构哲学/技能体系/工程实践/协作流程/红线）
+├── PRINCIPLES.md           # 组织级设计原则（P1~P30：架构哲学/技能体系/工程实践/协作流程/红线/跨平台）
 ├── MECHANISM_PLAN.md       # 机制方案（运行 / 协作 / 派活机制的设计与规划）
 ├── opc_resolver.py / opc_model.py / opc_tickets.py / opc_dashboards.py  # 命名空间运行时 + 机制层生成器（公司目录零机制代码）
 ├── companies/C001/          # 示例公司稳定锚（junction→真实公司目录）：完整跑通的 AI 自动化公司
 │   ├── company.md          #   公司档案（定位 / 编制 / 边界）
 │   ├── AGENTS.md / CLAUDE.md # 公司级角色与红线（跨平台兜底）
-│   ├── E0000~E0002/        #   员工级工作区（总管 / 售前工程师 / 项目经理）；目录名 ID-only，显示名登记于 roster 岗位列，各含 mydesk/worklog/skills
+│   ├── E0000-AI员工-总管/ 等 E0000~E0002/  #   员工级工作区（决策 #17：ID-说明后缀命名，显示名登记于 roster 岗位列，各含 mydesk/worklog/skills）
 │   ├── T001/     #   团队级工作区（含 teamboard / 团队技能）
-│   ├── P0001~P0004/         #   项目目录（实体即目录，归属用字段声明）
+│   ├── P0004-…/             #   项目目录（实体即目录，归属用字段声明；决策 #17 ID-说明后缀）
 │   ├── workbench/           #   工单看板系统（tasks/ 为唯一真相，看板 HTML 为投影）
 │   ├── skills/              #   公司级技能实体（junction 接入平台披露）
 │   ├── dashboard.html                      # 公司看板（数据由 OPC 根生成器产出）
@@ -50,7 +50,7 @@ OPC/
 |---|---|
 | [`USER_GUIDE.html`](USER_GUIDE.html) | **用户手册**（浏览器打开）：怎么派活、怎么和员工对话、机制地图、命令速查、常见情况处置。 |
 | [`SYSTEM_GUIDE.html`](SYSTEM_GUIDE.html) | 系统总览（浏览器打开）：对外讲解 OPC 的理念、架构与机制亮点。 |
-| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P26）。搭任何新东西前先通读。 |
+| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P30）。搭任何新东西前先通读。 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范：各平台技能目录、渐进式披露、junction 接法。 |
 | [`MECHANISM_PLAN.md`](MECHANISM_PLAN.md) | 运行 / 协作 / 派活机制的设计方案与评审拍板记录。 |
 
@@ -112,7 +112,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 | 看板实时化 | 看板从 `http://127.0.0.1:8765/{公司ID}/dashboard.html` 打开，「同步」按钮=即时重算数据，自动刷新秒级生效 |
 | 巡检实时化 | 数据变动即巡检 + 周期兜底（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/**工单逾期与停滞预警**…），异常写入 `workbench/patrol-log.md` |
 | 主动通知 | 新发现实时弹系统通知（Windows/macOS/Linux 各自原生弹窗；`opc.toml [patrol].notify` 可关），每天 `09:00` 汇总重提未处理项 |
-| 只读 API | `/api/{公司ID}/tickets、/dashboard、/patrol` 供 agent 与外部服务查询；无任何写接口——文件仍是唯一真相 |
+| 只读 API + 唯一写边界 | GET `/api/{公司ID}/tickets、/dashboard、/patrol、/ping` 供 agent 与外部服务查询；唯一带副作用的动作是 POST `/api/{公司ID}/sync`（重算看板数据，同站校验）——文件仍是唯一真相 |
 
 - 进程=宿主、公司=租户：扫描 `opc.toml` 全部公司逐家装配，新公司自动纳管；`opc.toml [service]` 可配端口/巡检周期/每日摘要时间/通知通道。
 - 跨平台自启：Windows=启动文件夹 `OPC-Service.vbs`（headless 无窗口）；macOS/Linux=crontab `@reboot` 标记块。删自启项即卸载；`python opc_service.py` 可前台手动跑（`--open` 顺带开浏览器）。

@@ -29,6 +29,8 @@ import sys
 import tomllib
 import subprocess
 
+import opc_model    # 共享读取器（P25）；注释截断等口径与模型层共用一份实现
+
 # 实体类型内置默认（目录名前缀约定）；唯一真相在 opc.toml [entity_types]，可整体覆盖。
 # 加新实体类型（如客户/供应商）= manifest 加一行，resolver/生成器/巡检/结构自检自动跟随
 # （2026-08-29 拍板：实体类型注册表落地，消除「前缀正则散落 4+ 处」）。
@@ -127,15 +129,15 @@ class CompanyConfig:
 
 
 def extract_company_id(text):
-    """从 company.md 文本提取「公司 ID」值：去 markdown 加粗、截内联注释
-    （（...）或 (...) 之后不算 ID——允许 ID 行带说明文字而不破坏发现机制）。
+    """从 company.md 文本提取「公司 ID」值：去 markdown 加粗、截内联注释。
+    注释截断唯一实现在 opc_model.strip_inline_comment（P25 共用）。
     公开 API：所有「从 company.md 认公司身份」的 consumer（生成器反查、
     巡检、计划任务脚本）统一走本函数，禁止各处私写正则（P25/P26），
     否则「ID 行带注释」这类输入在不同模块解析出不同结果。"""
     m = re.search(r'\*?\*?公司\s*ID\*?\*?\s*[:：]\s*\**\s*(\S+)', text)
     if not m:
         return None
-    return m.group(1).strip().strip('*').split('（')[0].split('(')[0].strip()
+    return opc_model.strip_inline_comment(m.group(1).strip().strip('*'))
 
 
 def _discover_company_home(cid, root):
@@ -302,12 +304,22 @@ def resolve(uri):
         if root and os.path.isdir(root):
             norm = lambda s: "".join(c for c in s.lower() if c.isalnum())
             target = norm(name)
+            candidates = []
             for entry in sorted(os.listdir(root)):
                 if entry.startswith("."):
                     continue
                 base = os.path.splitext(entry)[0]
-                if norm(base).startswith(target):
+                n = norm(base)
+                if n == target:              # 精确命中优先返回
                     return os.path.join(root, entry)
+                if n.startswith(target):
+                    candidates.append(entry)
+            if len(candidates) == 1:
+                return os.path.join(root, candidates[0])
+            if candidates:                   # 绝不静默返回假路径：多命中报歧义
+                raise FileNotFoundError(
+                    f"org 引用有歧义：{name} 命中 {len(candidates)} 个文档 "
+                    f"{'、'.join(candidates)}——请写到可唯一定位的名字")
         raise FileNotFoundError(f"未找到 org 文档：{name}")
 
     raise ValueError(f"不支持的 URI 方案：{uri}（可用：opc://company:<cid>/... 或 opc://org/...）")
@@ -1132,8 +1144,8 @@ def diff_template(root=None, cid=None):
               .replace("C00x", "<CID>"))   # 模板建司占位符（create-company 问卷用）
         return t
 
-    _EXCL_DIRS = (".git", ".workbuddy", "workbench", "memory", "workspace", "node_modules")
-    _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index|roster\.md|patrol-log\.md|"
+    _EXCL_DIRS = (".git", ".workbuddy", "memory", "workspace", "node_modules")
+    _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index\.\w+|roster\.md|patrol-log\.md|"
                             r"patrol-state\.json|patrol-pending\.md|INDEX\.md)$")
     _ENTITY = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})(?:-.+)?$")
 
@@ -1151,6 +1163,8 @@ def diff_template(root=None, cid=None):
                 continue
             if "workbench" in parts and parts[-1] != "workbench":
                 dirs[:] = []      # workbench 数据子区（tasks/affairs/archive…）不比
+                if "archive" in parts:
+                    files = []    # 归档区=实例专属历史过程文档，整体不比
             dirs[:] = [d for d in dirs if d not in _EXCL_DIRS and not _ENTITY.match(d)]
             if os.path.basename(dirpath) == "workbench":
                 dirs[:] = [d for d in dirs if not _ENTITY.match(d)]
@@ -1178,9 +1192,21 @@ def diff_template(root=None, cid=None):
         plus = sum(1 for l in difflib.ndiff(ta.splitlines(), tb.splitlines()) if l.startswith("+"))
         minus = sum(1 for l in difflib.ndiff(ta.splitlines(), tb.splitlines()) if l.startswith("-"))
         diff.append((rel, plus, minus))
+    # 已知差异登记（机器发现 + 人工决策的闭环）：实例专属差异登记在根
+    # template-diff-allowlist.md（一行一个相对路径，# 注释）；未登记的差异会被
+    # 本函数标出并在 doctor 出 warning——不是禁止，但不许无人知情地漂移。
+    allow = set()
+    for ln in _read_file(os.path.join(root, "template-diff-allowlist.md")).splitlines():
+        ln = ln.split("#", 1)[0].strip()    # 行内 # 起为注释（清单是给人读的，允许行尾说明）
+        if ln:
+            allow.add(ln.rstrip("/"))
+    diffs = [rel for rel, _p, _m in diff]
+    unregistered = [rel for rel in diffs + sorted(set(a) - set(b)) + sorted(set(b) - set(a))
+                    if rel not in allow]
     return {"cid": cid, "same": same, "diff": diff,
             "only_company": sorted(set(a) - set(b)),
-            "only_template": sorted(set(b) - set(a))}
+            "only_template": sorted(set(b) - set(a)),
+            "unregistered": unregistered}
 
 
 def _read_file(p):
@@ -1340,6 +1366,19 @@ def doctor(root=None, auto_fix=True):
         errors.extend(disc)
     else:
         warns.append("技能披露链接完整 ✓")
+
+    # 6. 实例 ↔ 模板一致性（四处同步铁律的机器化）：未登记差异仅 warning 不阻断
+    #    （差异可能是实例专属内容——人工决策：登记 allowlist 或回改模板）
+    try:
+        dt = diff_template(root)
+        if dt.get("unregistered"):
+            warns.append(f"实例 ↔ company-template 有 {len(dt['unregistered'])} 份未登记差异"
+                         f"（{'、'.join(dt['unregistered'][:3])}…）"
+                         f"→ `python opc_resolver.py --diff-template` 查看，登记 template-diff-allowlist.md 或回改")
+        else:
+            warns.append("实例 ↔ 模板 diff 无未登记差异 ✓")
+    except Exception as e:
+        warns.append(f"模板 diff 检查未跑成（{e}）——不影响门禁，可手动 `--diff-template` 排查")
 
     return errors, warns
 
@@ -1562,6 +1601,11 @@ if __name__ == "__main__":
         if r["only_template"]:
             print(f"  仅模板有：{len(r['only_template'])} 份")
             for rel in r["only_template"]:
+                print(f"    - {rel}")
+        if r.get("unregistered"):
+            print("  [未登记] 以下差异不在 template-diff-allowlist.md 登记清单内——"
+                  "确认属实例专属后登记，或回改模板（四处同步铁律）：")
+            for rel in r["unregistered"]:
                 print(f"    - {rel}")
         if not (r["diff"] or r["only_company"] or r["only_template"]):
             print("  [ok] 双向零实质差异")

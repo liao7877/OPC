@@ -40,6 +40,7 @@ import subprocess
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
+import opc_model
 import opc_resolver
 from opc_schema import TASK_TERMINAL, TASK_ACTIVE, PATROL, PATROL_CHECKS
 
@@ -213,10 +214,8 @@ def find(ctx):
             if not f.endswith(".md"):
                 continue
             card = _read(os.path.join(sdir, f))
-            if "status: 工作中" not in card and "status: 工作中" not in card.replace("：", ": "):
-                # 状态字段可能是 status: 工作中 或被改为其他；宽松匹配工作中
-                if "工作中" not in card:
-                    continue
+            if "工作中" not in card:    # 宽松匹配：状态字段写法各异，卡上出现「工作中」即视为在岗
+                continue
             try:
                 mt = datetime.datetime.fromtimestamp(os.path.getmtime(os.path.join(sdir, f)))
             except OSError:
@@ -269,26 +268,33 @@ def find(ctx):
 
 
 def write_log(ctx, dry):
-    """发现写入 workbench/patrol-log.md（幂等：同日同条目不重复追加）。"""
+    """发现写入 workbench/patrol-log.md（幂等：同日同条目不重复追加）。
+    写路径全程持锁（opc_model.locked_update）：服务监听与周期兜底并发巡检时不重复追加。"""
     if not ctx.findings:
         return 0
     day = ctx.today.strftime("%Y-%m-%d")
-    existing = _read(ctx.log)
-    new_lines = []
-    for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
-        line = f"- [{day}] #{f['no']} {f['msg']}"
-        if line not in existing:
-            new_lines.append(line)
-    if not new_lines or dry:
+    lines = [f"- [{day}] #{f['no']} {f['msg']}"
+             for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or ""))]
+    header = ("# 巡检日志（patrol-log）\n\n> OPC 服务巡检自动追加（opc_patrol.py），"
+              "只增不删；处置由总管完成（在对应工单 messages.md 留痕）。\n")
+
+    def _merge(existing):
+        fresh = [l for l in lines if l not in existing]
+        _merge.n = len(fresh)
+        if not fresh:
+            return existing
+        body = existing or header
+        if not body.endswith("\n"):
+            body += "\n"
+        return body + "\n".join(fresh) + "\n"
+    _merge.n = 0
+
+    if dry:
+        _merge(_read(ctx.log))
         return 0
     os.makedirs(os.path.dirname(ctx.log), exist_ok=True)
-    if not existing:
-        existing = "# 巡检日志（patrol-log）\n\n> OPC 服务巡检自动追加（opc_patrol.py），只增不删；处置由总管完成（在对应工单 messages.md 留痕）。\n"
-    with open(ctx.log, "a", encoding="utf-8", newline="") as fh:
-        if not existing.endswith("\n"):
-            fh.write("\n")
-        fh.write("\n".join(new_lines) + "\n")
-    return len(new_lines)
+    opc_model.locked_update(ctx.log, _merge)
+    return _merge.n
 
 
 def _count_knowledge(ctx):
@@ -423,7 +429,8 @@ def _notify_windows(title, text):
         "Start-Sleep -Seconds 11\r\n"
         "$n.Dispose()\r\n" % (title, text)
     )
-    ps = os.path.join(tempfile.gettempdir(), "opc-patrol-notify.ps1")
+    # 唯一文件名：服务内多公司并发通知互不覆盖（固定名会串厂）
+    ps = os.path.join(tempfile.gettempdir(), f"opc-patrol-notify-{os.getpid()}-{time.time_ns()}.ps1")
     with open(ps, "w", encoding="utf-8", newline="") as fh:
         fh.write(script)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -634,7 +641,7 @@ def main(argv):
         return 0
     if "--selftest" in argv:
         return selftest()
-    company = argv[argv.index("--company") + 1] if "--company" in argv else None
+    company, _dir = opc_model.parse_company_args(argv)
     if not company:          # 友好提示而非抛栈（旧版有唯一公司自动推断，重构后显式要求）
         print(USAGE)
         return 1
