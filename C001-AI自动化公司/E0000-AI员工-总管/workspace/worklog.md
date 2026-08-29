@@ -60,3 +60,14 @@ updated: 2026-08-29
 note: 真实工单 TSK00010 与项目 P0004 保留；已用工单号不回收（防撞号）；worklog 中 8 条示例记录同步移除，避免巡检 #3 双账告警；台账号池改 TSK00011 起
 ---
 
+---
+wid: W-20260830-001
+date: 2026-08-30
+title: B站视频《阿尔都塞——征候阅读法》内容提取并归档公司知识库
+status: 已完成
+type: 直聊
+deliverable: opc://company:C001/公司知识库/common/阿尔都塞-征候阅读法.md
+updated: 2026-08-30
+note: 无官方字幕 → 走 wbi 签名取音频流 + faster-whisper(medium) 转写 + 人工术语校正；产出含四步法、术语校正表、与学术标准表述对照、Agent 场景迁移表。落 common/（外部背景资料，非员工经验，故不进 methods/）
+---
+

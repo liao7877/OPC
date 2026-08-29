@@ -159,8 +159,17 @@ class Tenant:
 # 通知（通道可插拔；windows 内置，其余通道加分支 + 配置即可）
 # ---------------------------------------------------------------------------
 
-def _notify(tenant, title, text):
-    for ch in _service_cfg().get("notify_channels") or ["windows"]:
+def realtime_allowed(cfg):
+    """实时弹窗判定：不在场模式（away_mode）下全部静默——摘要照常，绝不代决策（P29）。"""
+    return not bool(cfg.get("away_mode"))
+
+
+def _notify(tenant, title, text, force=False):
+    cfg = _service_cfg()
+    if not force and not realtime_allowed(cfg):
+        print(f"[service] 不在场模式：实时通知已静默（摘要照常）——{title}")
+        return
+    for ch in cfg.get("notify_channels") or ["windows"]:
         if ch == "windows":
             try:
                 opc_patrol.notify_user(tenant.pctx, text)   # A+ 报警唯一出口（toast 内部实现）
@@ -199,7 +208,10 @@ def _digest_loop(tenants):
                     continue
                 summary = "；".join(i.get("msg", "") for i in items[:3])
                 tail = f" 等共 {len(items)} 项" if len(items) > 3 else ""
-                _notify(t, f"OPC 每日待办（{t.cid}）", f"未处理 {len(items)} 项：{summary}{tail}")
+                away = not realtime_allowed(_service_cfg())
+                _notify(t, f"OPC 每日待办（{t.cid}）",
+                        ("不在场模式：" if away else "") + f"未处理 {len(items)} 项：{summary}{tail}",
+                        force=True)   # 摘要是不在场模式下的唯一触达通道，绕过实时静默
         except Exception:
             pass
 
@@ -383,8 +395,11 @@ def selftest():
         ok = ok and cond
 
     cfg = _service_cfg()
-    check("[service] 配置默认值齐全（port/patrol_interval/digest_time/notify_channels）",
-          all(k in cfg for k in ("port", "patrol_interval_minutes", "digest_time", "notify_channels")))
+    check("[service] 配置默认值齐全（port/patrol_interval/digest_time/notify_channels/away_mode）",
+          all(k in cfg for k in ("port", "patrol_interval_minutes", "digest_time", "notify_channels", "away_mode")))
+    check("[service] away_mode 默认关闭", cfg.get("away_mode") is False)
+    check("[service] realtime_allowed：默认放行", realtime_allowed({}) is True)
+    check("[service] realtime_allowed：away_mode 静默", realtime_allowed({"away_mode": True}) is False)
     hh, mm = _digest_time()
     check("[service] digest_time 解析为合法时分", 0 <= hh <= 23 and 0 <= mm <= 59)
     # 目录穿越防护（含 Windows 反斜杠 / 绝对盘符，P30）

@@ -6,7 +6,7 @@
    ```
    python ../../../opc_tickets.py --company C001 --new TSK00010 搭建日志系统 --owner E0001 --project P0001
    ```
-2. **开工**：打开 `opc://company:C001/workbench/tasks/TSK00010-搭建日志系统/task.md`，`status: in_progress`、`priority: 高`、填 `due`，更新 `updated`。
+2. **开工**：打开本单 `task.md`，把 `status` 改成 `in_progress`、`priority: 高`、填 `due`，顺手更新 `updated`。
 3. **干完**：交付物放 `deliverables/`，在 `messages.md` **追加**完成备注，`status: review`（交下一手审核）。
 4. **流转**（转给 E0002 实现）：改 `owner: E0002` + 追加 handoffs（**单行 JSON**）：
    ```yaml

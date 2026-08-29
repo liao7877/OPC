@@ -13,7 +13,7 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
 ## 流程
 1. **接需求**：听清总目标，不明确就走需求澄清（`skills/demand-clarify/SKILL.md`，一问一答 + PRD 存档，不瞎猜）
 2. **拆任务**：多工单需求按 `skills/ticket-split/SKILL.md` 拆分（三原则 + 四项自检 + 父单闭环）；**编号先查 `workbench/task-index.md` 台账**（避免重号）
-3. **建工单**：`python ../../../../../opc_tickets.py --company <本司ID> --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成 `workbench/tasks/TSKxxx-标题/task.md` 模板；拆分子单补 `parent`/`blocked_by`/`inputs` 字段）
+3. **建工单**：`python ../../../../../opc_tickets.py --company C00x --new TSKxxx 标题 [--owner E0001] [--project P0001]`（自动生成 `workbench/tasks/TSKxxx-标题/task.md` 模板；拆分子单补 `parent`/`blocked_by`/`inputs` 字段）
 4. **登记**：在 `workbench/task-index.md` 台账追加一行（ID / 标题 / 承接 / 创建时间 / 父单）
 5. **选人**：查 roster.md，按岗位匹配 + 负荷均衡（mydesk 统计）选员工；无命中则人工判断
 6. **派发（双模式，按平台能力选择）**：
@@ -43,15 +43,15 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
 - **机制落位走 mechanism-sop**：涉及改目录/技能/制度/字段的构想，一律先加载 `skills/mechanism-sop/SKILL.md` 按决策树落位（清单→过目→备份→执行→验证），不拍脑袋改文件
 
 ## 员工培训（不人肉）
-- 工单系统使用规范 = 公司级技能 `opc://company:<本司ID>/skill/ticket-system`（自解释、自包含）
+- 工单系统使用规范 = 公司级技能 `opc://company:C00x/skill/ticket-system`（自解释、自包含）
 - 新员工入职：确认其 AGENTS.md 已引用该技能即可，无需逐人培训
 
 ## 规章制度落实 SOP（2026-08-27 定稿）
 > 触发：用户说"把 XX 规章制度落实一下 / 按规章管理员工 / 改规范"。
-> **规章原文件统一放 `../../../../companies/<本司ID>/公司规章制度/`**（公司级/团队级/个体级内容都在这，**不复制到团队/员工目录**，单一真相）；**格式多样（word/excel/pdf/md 等），不做预处理，由总管自行解析**。
+> **规章原文件统一放 `../../../../companies/C00x/公司规章制度/`**（公司级/团队级/个体级内容都在这，**不复制到团队/员工目录**，单一真相）；**格式多样（word/excel/pdf/md 等），不做预处理，由总管自行解析**。
 
 1. **接指令**：确认要落实的规章（文件名或主题；不明确就问）
-2. **读规章**：到 `../../../../companies/<本司ID>/公司规章制度/` 定位文件，解析内容（任意格式，总管负责转换理解）
+2. **读规章**：到 `../../../../companies/C00x/公司规章制度/` 定位文件，解析内容（任意格式，总管负责转换理解）
 3. **按条款判范围**：**逐条判定**（一份混合规章可拆多条分别落实）——
    - 公司条款（"所有员工/全员"）→ 改**所有员工** AGENTS.md 及相关 skills
    - 团队条款（点名"T001 团队"）→ 改 **team.md + 团队 skills + 该团队所有成员**
@@ -60,7 +60,7 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
    - **⚠️ 先核对"已实现"**：条款要求的机制若已由现有目录结构/技能/文档实现（如工单规范已由 ticket-system 技能 + tasks/ 结构覆盖）→ **不改文件，仅确认引用行存在**（员工 AGENTS.md / team.md 是否已引用对应技能或规章）——避免重复落地、制造双份真相（P2）
 4. **出改动清单**：列出"将改哪些文件、每处怎么改（新增/修改/删除）"，**先给用户过目确认**（P24 零风险可逆）
 5. **备份**：确认后，被改文件先复制 `.bak`（同名备份，可回滚）
-6. **执行**：按清单改文件（AGENTS.md / team.md / skills 等；INDEX.md 属生成物，由 --sync-index 重生成）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/<本司ID>/公司规章制度/XX.md`
+6. **执行**：按清单改文件（AGENTS.md / team.md / skills 等；INDEX.md 属生成物，由 --sync-index 重生成）；**落实后在被改的 team.md / 员工 AGENTS.md 留「适用规章」引用行**（只引用不复制）：`适用规章：../../../../companies/C00x/公司规章制度/XX.md`
 7. **汇报**：改了哪些文件、备份位置、如何回滚
 
 ## 缓存失效纪律
@@ -68,20 +68,32 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
 - 药方：SKILL.md / INDEX.md / AGENTS.md 变更后，必须提醒「相关角色**重开会话**生效」；此条列入收尾检查
 
 ## 新建员工 SOP（2026-08-27 定稿，必须按新标准，禁止老结构）
-> 模板：`opc://company:<本司ID>/templates/employee-template/`（标准骨架，含全部机制文件与占位符）。
+> 模板：`opc://company:C00x/templates/employee-template/`（标准骨架，含全部机制文件与占位符）。
 
-1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E0003-AI员工-岗位/`
-2. **复制模板**：把 `opc://company:<本司ID>/templates/employee-template/` 整体复制为 `../E0003-AI员工-岗位/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
+1. **编号**：查 roster.md，取下一个编号（如 E0003），岗位名按职责定 → 目录 `../E000x-AI员工-<岗位名>/`（目录自解释：{编号}-{岗位}）
+2. **复制模板**：把 `opc://company:C00x/templates/employee-template/` 整体复制为 `../E000x-AI员工-<岗位名>/`（含 AGENTS.md / CLAUDE.md / workflow.md / memory/ / workspace/ / skills/ / .workbuddy/）
 3. **改人设**：编辑 AGENTS.md —— 替换全部【替换】占位符（编号/岗位名/职责/红线）；CLAUDE.md 保持一行 `@AGENTS.md`
 4. **建私有技能**：按需复制 `skills/_template/SKILL.md` 为 `<技能>/SKILL.md`，填 frontmatter（name + description + **triggers** + **summary**，技能元数据唯一真相在此）；建好即自动可被 `opc://company:<id>/skill/<名称>` 解析；跑 `python opc_model.py --sync-index` 重生成该员工 `skills/INDEX.md`（生成物，「登记」动作消失）
 5. **建 junction（关键，模板复制不会带过来）**：
    ```powershell
-   New-Item -ItemType Junction -Path "E0003-岗位/.workbuddy/skills" -Target "E0003-岗位/skills"
+   New-Item -ItemType Junction -Path "E000x-AI员工-<岗位名>/.workbuddy/skills" -Target "E000x-AI员工-<岗位名>/skills"
    ```
-   macOS/Linux：`ln -sfn "$(pwd)/E0003-岗位/skills" "E0003-岗位/.workbuddy/skills"`
+   macOS/Linux：`ln -sfn "$(pwd)/E000x-AI员工-<岗位名>/skills" "E000x-AI员工-<岗位名>/.workbuddy/skills"`
    或（推荐，全层幂等重建）：回 OPC 根跑 `python opc_resolver.py --ensure-links`
    验证：`ls -i .workbuddy/skills/<技能>/SKILL.md skills/<技能>/SKILL.md` inode 相同
 6. **登记 roster.md**：追加一行（ID / 岗位 / 目录路径）
 7. **验证三件套**：AGENTS.md（WorkBuddy/Codex 自动加载，技能引用走 `opc://company:<id>/skill/<名称>`）、CLAUDE.md（Claude Code 一行导入）、.workbuddy/skills junction（平台披露通道）— 原"公司级 skills/INDEX.md"披露层已废弃（公司级技能走平台披露），员工私有技能的 skills/INDEX.md **保留**为披露索引（生成物，--sync-index 重生成），四件套 = 三件套 + 员工私有索引
 
 > ⚠️ 新建员工**一律按本 SOP 新标准**（AGENTS.md/CLAUDE.md/INDEX(生成物)/junction）；老结构（单数 AGENT.md、无索引、无 junction）**已废弃**，不得沿用。
+
+## 员工改名 SOP（2026-08-29 决策 #17：改名零改动，一条命令）
+> 目录名保留自解释（`E0001-AI员工-售前工程师`），改名的一切机械动作由命令包办——引用层（opc:// / 实体 ID）本就免疫改名（ID 前缀扫描发现）。
+
+1. **一条命令**（OPC 根）：`python opc_resolver.py --rename-entity E0001 新岗位说明`
+   自动完成：git mv 改目录名 → 重建稳定锚/技能披露链接 → 同步 roster「路径」列与「岗位」列口径 → 重跑看板数据 → 全文旧目录名按 ID 映射自动改写 → 门禁终检
+   预演加 `--dry-run`。手动在资源管理器里改了目录名？跑 `python opc_resolver.py --heal-entity-refs` 同样一键自愈（OPC 服务巡检周期兜底时也会自动重建断链）
+2. **改人设**（命令管不到的内容）：该员工 AGENTS.md（标题/岗位字段/职责描述）+ workflow.md 标题；按需落新私有技能
+3. **留痕**：worklog 记一条 + task messages 留痕（机制/结构类工作不可免记）
+
+> 历史留痕区（worklog/memory/archive）里的旧目录名**不被改写**——旧名是历史事实（只增不删）。
+> 反模式（已废弃）：删旧目录新建目录、逐文件搜替换全名（2026-08-29 E0001 改名实际发生的全量手术）。

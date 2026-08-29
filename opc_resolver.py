@@ -25,6 +25,7 @@ URI 契约（与 opc-namespace-design.md §3 一致）：
 """
 import os
 import re
+import shutil
 import sys
 import tomllib
 import subprocess
@@ -260,9 +261,17 @@ def resolve_entity(cid, etype, eid, sub=None):
                 f"未找到实体 {etype}:{eid}（扫描 {home} 无匹配 {eid}-*）")
         p = _require_dir(os.path.join(home, hits[0]), f"opc://company:{cid}/{etype}/{eid}")
     else:
-        # 兼容 key 模式透传（opc://company:C001/workbench 等）
+        # 兼容 key 模式透传（opc://company:C001/workbench 等）；
+        # 带子路径时校验存在（2026-08-30：知识库等文档引用，URI 首段=「公司知识库」manifest key，子路径必须存在）
         if etype in cfg._m:
-            return cfg._abs(etype)
+            if not eid:
+                return cfg._abs(etype)
+            p = os.path.join(cfg._abs(etype), eid, *(sub or []))
+            if not os.path.exists(p):
+                raise FileNotFoundError(
+                    f"失效引用：opc://company:{cid}/{etype}/{eid}"
+                    + (f"/{'/'.join(sub)}" if sub else "") + f" -> {p}（不存在）")
+            return p
         raise ValueError(f"不支持的实体类型：{etype}（可用：skill 或注册表 {sorted(entity_types())} 或 manifest key）")
 
     if sub:
@@ -1270,12 +1279,113 @@ def diff_template(root=None, cid=None):
         if ln:
             allow.add(ln.rstrip("/"))
     diffs = [rel for rel, _p, _m in diff]
+    _allowed = lambda rel: rel in allow or any(rel.startswith(a + "/") for a in allow)   # 目录条目前缀匹配
     unregistered = [rel for rel in diffs + sorted(set(a) - set(b)) + sorted(set(b) - set(a))
-                    if rel not in allow]
+                    if not _allowed(rel)]
     return {"cid": cid, "same": same, "diff": diff,
             "only_company": sorted(set(a) - set(b)),
             "only_template": sorted(set(b) - set(a)),
             "unregistered": unregistered}
+
+
+# ---------------------------------------------------------------------------
+# 双份技能收口（方案 C，2026-08-30 拍板）：纪律类技能「实例先行」（P31 判例），
+# 真相源在实例（C001），--sync-skills 单向刷进 company-template（开司快照源）。
+# 实例↔模板允许的差异仍走 diff-template/allowlist；C002 开司换轨根层 junction
+# 见 create-company SKILL.md 三·七节（方案 B）。
+# ---------------------------------------------------------------------------
+
+# 相对实例根的技能目录；E0000* 按总管 ID 前缀匹配（决策 #17），模板侧固定 E0000-AI员工-总管
+_SYNC_SKILLS = (
+    "skills/ticket-system", "skills/worklog-discipline",
+    "skills/concurrent-work", "skills/patrol",
+    "E0000*/skills/dispatch-sop", "E0000*/skills/mechanism-sop", "E0000*/skills/ticket-split",
+)
+
+
+def _to_template_text(text):
+    """实例文本 → 模板占位符文本（C001→C00x，create-company 问卷回填约定，与 diff_template 归一口径一致）。"""
+    return text.replace("C001", "C00x")
+
+
+def sync_tree(src_dir, dst_dir, transform=None, dry_run=False, log=None):
+    """镜像同步 src → dst：递归复制、逐文件 transform 后写入、删除 dst 独有的文件/目录。
+    返回动作数。文本按 UTF-8 读写（保换行符）；不可解码文件原样字节复制。"""
+    log = log or (lambda m: print(m))
+    n = 0
+    for dirpath, _dirs, files in os.walk(src_dir):
+        rel = os.path.relpath(dirpath, src_dir)
+        target = dst_dir if rel == "." else os.path.join(dst_dir, rel)
+        if not dry_run:
+            os.makedirs(target, exist_ok=True)
+        for fn in sorted(files):
+            src_f, dst_f = os.path.join(dirpath, fn), os.path.join(target, fn)
+            rel_name = os.path.relpath(dst_f, dst_dir).replace(os.sep, "/")
+            try:
+                with open(src_f, "r", encoding="utf-8", newline="") as fh:
+                    content = fh.read()
+                if transform:
+                    content = transform(content)
+                if not dry_run:
+                    with open(dst_f, "w", encoding="utf-8", newline="") as fh:
+                        fh.write(content)
+            except UnicodeDecodeError:      # 非文本文件原样复制
+                if not dry_run:
+                    shutil.copyfile(src_f, dst_f)
+            log(f"  [sync·{'dry' if dry_run else '写'}] {rel_name}")
+            n += 1
+    for dirpath, dirs, files in os.walk(dst_dir, topdown=False):
+        rel = os.path.relpath(dirpath, dst_dir)
+        for fn in sorted(files):
+            dst_f = os.path.join(dirpath, fn)
+            src_f = os.path.join(src_dir, rel, fn)
+            if not os.path.isfile(src_f):
+                if not dry_run:
+                    os.remove(dst_f)
+                log(f"  [sync·删] {os.path.relpath(dst_f, dst_dir).replace(os.sep, '/')}"
+                    + ("（dry）" if dry_run else ""))
+                n += 1
+        for d in sorted(dirs):
+            dst_d = os.path.join(dirpath, d)
+            if not os.path.isdir(os.path.join(src_dir, rel, d)):
+                if not dry_run:
+                    shutil.rmtree(dst_d)
+                log(f"  [sync·删目录] {os.path.relpath(dst_d, dst_dir).replace(os.sep, '/')}"
+                    + ("（dry）" if dry_run else ""))
+                n += 1
+    return n
+
+
+def sync_skills(root=None, dry_run=False):
+    """执行单向同步（见上方方案 C 说明）。返回动作数。"""
+    root = root or _find_root()
+    g = _load_toml(os.path.join(root, "opc.toml"))
+    cids = [k for k in g.get("company", {}) if k != "DEFAULT"]
+    if not cids:
+        raise ValueError("manifest 无公司，无实例真相源可同步")
+    company = load_company(cids[0]).home_abs
+    template = os.path.join(root, "company-template")
+    total = 0
+    for rel in _SYNC_SKILLS:
+        pairs = []
+        if "*" in rel:
+            prefix, tail = rel.split("/", 1)
+            matches = sorted(n for n in os.listdir(company) if n.startswith(prefix.rstrip("*"))
+                             and os.path.isdir(os.path.join(company, n)))
+            if matches:
+                pairs.append((os.path.join(company, matches[0], tail),
+                              os.path.join(template, "E0000-AI员工-总管", tail)))
+        else:
+            pairs.append((os.path.join(company, rel), os.path.join(template, rel)))
+        for src, dst in pairs:
+            if not os.path.isdir(src):
+                print(f"  [sync·跳过] {os.path.relpath(src, root)}（实例侧不存在）")
+                continue
+            print(f"  [sync] {os.path.relpath(dst, root)} ← {os.path.relpath(src, root)}")
+            total += sync_tree(src, dst, transform=_to_template_text, dry_run=dry_run)
+    print(f"[sync-skills] {'dry-run 预览：' if dry_run else '完成：'}共 {total} 个动作"
+          + ("" if dry_run else "（建议跑 --diff-template 复核归一）"))
+    return total
 
 
 def _read_file(p):
@@ -1677,6 +1787,22 @@ def selftest():
         check("多公司：无上下文拒绝猜测并报候选", txt2 is not None and "E0001-旧岗位" in txt2
               and any("多公司同 ID" in i for i in issues))
         check("多公司：拒绝猜测不动原文", txt2 is not None and "另处无上下文提到 E0001-旧岗位 的历史" in txt2)
+    # sync_tree / 占位符转换（双份收口方案 C）
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = os.path.join(tmp, "src"), os.path.join(tmp, "dst")
+        os.makedirs(os.path.join(src, "sub"))
+        wr = lambda p, t: open(p, "w", encoding="utf-8", newline="").write(t)
+        rd = lambda p: open(p, encoding="utf-8").read()
+        wr(os.path.join(src, "a.md"), "opc:" + "//company:C001/x\n")   # 动态拼接：避免被 --check 全文扫描当真引用（沿用 1548 行先例）
+        wr(os.path.join(src, "sub", "b.md"), "C001")
+        os.makedirs(dst)
+        wr(os.path.join(dst, "stale.md"), "旧文件")
+        sync_tree(src, dst, transform=_to_template_text, log=lambda m: None)
+        check("sync_tree 复制 + C001→C00x 占位符转换", rd(os.path.join(dst, "a.md")) == "opc://company:C00x/x\n")
+        check("sync_tree 子目录递归", os.path.isfile(os.path.join(dst, "sub", "b.md")))
+        check("sync_tree 删除 dst 独有文件", not os.path.isfile(os.path.join(dst, "stale.md")))
+        sync_tree(src, dst, transform=_to_template_text, dry_run=True, log=lambda m: None)
+        check("sync_tree dry_run 不落盘", rd(os.path.join(dst, "a.md")) == "opc://company:C00x/x\n")
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -1704,6 +1830,8 @@ if __name__ == "__main__":
                     help="（兼容占位，已无心跳语义）巡检/通知节奏由 opc.toml [service] 配置")
     ap.add_argument("--diff-template", action="store_true",
                     help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
+    ap.add_argument("--sync-skills", action="store_true",
+                    help="纪律类技能 实例→company-template 单向同步（方案 C：实例为真相源；文本 C001→C00x 占位符化；配 --dry-run 预览）")
     ap.add_argument("--rename-entity", nargs=2, metavar=("E0001", "新说明"),
                     help="实体改名一条龙：git mv 物理目录 → 重建链接 → 同步 roster → 重跑看板 → 全文旧名改写 → 门禁验证（决策 #17）")
     ap.add_argument("--heal-entity-refs", action="store_true",
@@ -1738,6 +1866,8 @@ if __name__ == "__main__":
                 print(f"    - {rel}")
         if not (r["diff"] or r["only_company"] or r["only_template"]):
             print("  [ok] 双向零实质差异")
+    elif a.sync_skills:
+        sync_skills(dry_run=a.dry_run)
     elif a.rename_entity:
         try:
             acts, skipped, issues = rename_entity(None, a.rename_entity[0], a.rename_entity[1], dry_run=a.dry_run, cid=a.company)

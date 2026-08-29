@@ -98,6 +98,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 **1. 开一家新公司（推荐走技能）**
 - 加载 `create-company` 技能，按 `company-template/` 脚手架 + `PRINCIPLES.md` 规范拉起新公司目录。
 - 或手动复制 `company-template/` 重命名为 `C00X-xxx`，再填 `company.md` / `AGENTS.md`。
+- 纪律类技能（ticket-system 等 7 项）真相源在实例：改完实例侧跑 `python opc_resolver.py --sync-skills` 单向刷进模板（C 方案），`--diff-template` 复核归一。
 
 **2. 接平台披露（以 WorkBuddy 为例）**
 - 把技能实体放 `{层}/skills/<name>/SKILL.md`；
