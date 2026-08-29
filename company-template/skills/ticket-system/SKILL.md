@@ -60,6 +60,7 @@ handoffs: [{"from":"E0002","to":"E0003","at":"2026-08-27","reason":"一句话说
 
 `status: done` + `completed_at: YYYY-MM-DD`（**必填**，缺了告警；≤ due 按期，> due 标逾期完成）；被否决 → `cancelled`（不背逾期的锅）。
 **双账联动**：关单同一时刻把 worklog 里 ticket=本单 的条目改「已完成」（`opc://company:C00x/skill/worklog-discipline`）——只关一边会被交叉核验告警。
+**复盘标记（知识飞轮入口）**：关单前在 messages.md 追加一行 `[lesson: 一句话教训/有效做法] (日期)`——有标记 = 已复盘，教训由总管归位知识库（二次命中晋升技能素材，见 P31）。
 
 ## 6. 阻塞与父子单
 
