@@ -102,8 +102,9 @@
     <a href="#s11"><b>11</b>容错哲学：绝不静默</a>
     <a href="#s12"><b>12</b>安全边界：最小写权限</a>
     <a href="#s13"><b>13</b>设计借鉴总表</a>
-    <a href="#s14"><b>14</b>边界：明确不做什么</a>
-    <a href="#s15"><b>15</b>快速开始</a>
+    <a href="#s14"><b>14</b>知识飞轮：可复盘的组织学习</a>
+    <a href="#s15"><b>15</b>边界：明确不做什么</a>
+    <a href="#s16"><b>16</b>快速开始</a>
   </div>
 </section>
 
@@ -355,6 +356,27 @@
 
 <section class="slide" id="s14">
   <div class="no">14</div>
+  <span class="kicker">组织学习 · 知识飞轮</span>
+  <h2>可复盘：为什么经验不会随会话蒸发？</h2>
+  <p class="oneline">AI 员工干完活会话一关，经验就蒸发了——失败单子的教训躺在 messages 里没人看，半年后同一个坑踩第二遍。人不复盘是惰性，AI 不复盘是没机制。</p>
+  <div class="pain"><b>痛点</b>复盘靠「下次记得开个复盘会」？AI 组织没有例会可开——会话今天开明天关。复盘必须由机制触发：不靠自觉，靠「一行标记 + 双圈咬合」。</div>
+  <div class="mech"><b>机制</b>外圈是摄入旅程（接住 → 拆开 → 放对 → 问清 → 给出 → 查到 → 复盘）：用户丢一份资料 + 一句自然语言，拆解、归位、结构化全部是系统的副产品——「丢错人不等于放错地」（明显私有员工自收，疑似公共 escalate 总管，总管是唯一摄入守门人）。内圈是复盘回路：</div>
+  <div class="flow">
+    <div class="step"><b>① 干活</b>工单推进<br>巡检守着期望态</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>② 触发复盘</b>进终态即提醒<br>failed / done / 升级处置完</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>③ 一句话教训</b>owner 写 <code>[lesson: …]</code><br>两分钟，有标记 = 已复盘</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>④ 总管归位</b>知识库候选<br>二次命中 → 晋升候选</div>
+    <div class="arrow">↺</div>
+    <div class="step"><b>⑤ 能力升级</b>扩写挂进技能 L3<br>用户拍板 · 下次菜单更丰富</div>
+  </div>
+  <div class="land"><b>落点</b>方法卡（适用/反适用场景）等结构化全是系统的副产品，用户无感；两级固化阶梯（知识库 → 方法卡 → 技能 → 机制）晋升门槛逐级升高，二次命中是廉价而真实的命中率代理。健康度每月摘要可见：新增教训 X 条、晋升 Y 条——连续两月为零 = 触发器失灵。</div>
+</section>
+
+<section class="slide" id="s15">
+  <div class="no">15</div>
   <span class="kicker">工程判断</span>
   <h2>边界：明确不做什么</h2>
   <p class="oneline">一个系统的成熟度，看它拒绝了什么。</p>
@@ -367,8 +389,8 @@
   <div class="land"><b>落点</b>设计哲学一句话：<b>能用机制的不用自觉，能用文件的不用服务，能借经典的不自创。</b></div>
 </section>
 
-<section class="slide" id="s15">
-  <div class="no">15</div>
+<section class="slide" id="s16">
+  <div class="no">16</div>
   <span class="kicker">上手</span>
   <h2>快速开始</h2>
   <p class="oneline">对使用者只暴露两条命令；对 agent 只暴露一个工作区。</p>
