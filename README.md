@@ -21,7 +21,7 @@ OPC 不是某个具体产品，而是一套**方法论 + 目录规范 + 技能�
 ```
 OPC/
 ├── AGENT_ECOSYSTEM.md      # 多 Agent 平台接入规范（WorkBuddy/Claude Code/Codex 目录、披露机制、junction 接法）
-├── PRINCIPLES.md           # 组织级设计原则（P1~P30：架构哲学/技能体系/工程实践/协作流程/红线/跨平台）
+├── PRINCIPLES.md           # 组织级设计原则（P1~P31：架构哲学/技能体系/工程实践/协作流程/红线/跨平台/内容治理）
 ├── MECHANISM_PLAN.md       # 机制方案（运行 / 协作 / 派活机制的设计与规划）
 ├── opc_resolver.py / opc_model.py / opc_tickets.py / opc_dashboards.py  # 命名空间运行时 + 机制层生成器（公司目录零机制代码）
 ├── companies/C001/          # 示例公司稳定锚（junction→真实公司目录）：完整跑通的 AI 自动化公司
@@ -50,7 +50,7 @@ OPC/
 |---|---|
 | [`USER_GUIDE.html`](USER_GUIDE.html) | **用户手册**（浏览器打开）：怎么派活、怎么和员工对话、机制地图、命令速查、常见情况处置。 |
 | [`SYSTEM_GUIDE.html`](SYSTEM_GUIDE.html) | 系统总览（浏览器打开）：对外讲解 OPC 的理念、架构与机制亮点。 |
-| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P30）。搭任何新东西前先通读。 |
+| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级通用原则（P1~P31）。搭任何新东西前先通读。 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范：各平台技能目录、渐进式披露、junction 接法。 |
 | [`MECHANISM_PLAN.md`](MECHANISM_PLAN.md) | 运行 / 协作 / 派活机制的设计方案与评审拍板记录。 |
 
