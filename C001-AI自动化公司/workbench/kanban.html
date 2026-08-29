@@ -922,7 +922,13 @@
       document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 tasks-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
-    function doSync() { syncEl.src = "tasks-data.js#_=" + Date.now(); }
+    function reloadData() { syncEl.src = "tasks-data.js#_=" + Date.now(); }
+    function doSync() {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        // 实时模式（经 opc_service 打开）：点同步=真重算，再取新数据
+        fetch("../api/sync", { cache: "no-store" }).catch(function () {}).then(reloadData);
+      } else { reloadData(); }  // file:// 降级：仅重读数据文件
+    }
     document.getElementById("syncBtn").addEventListener("click", doSync);
 
     if (DATA) { buildTagChips(); render(); updateGenInfo(); }
@@ -952,7 +958,7 @@
       } catch (e) {}
     })();
 
-    setInterval(doSync, 3000);
+    setInterval(reloadData, 3000);
 
     // 前端冒烟自测入口：kanban.html?selftest=1
     if (location.search.indexOf("selftest=1") !== -1) runFrontendSelftest();

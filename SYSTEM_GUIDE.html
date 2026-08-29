@@ -68,7 +68,7 @@
 <h2>一、它解决什么问题</h2>
 <div class="grid g3">
   <div class="card"><span class="tag">问题</span><h3>人管不住细节</h3><p>AI 会话散落、结论不复用、改个目录名全文失效。OPC 用「文件即真相 + 符号化引用」把领域事实变成可版本化、可校验的资产。</p></div>
-  <div class="card"><span class="tag">问题</span><h3>Agent 公司不自转</h3><p>用户不来，公司就静止。OPC 给公司装了独立心跳：每日巡检 10 项检查、系统通知、待办闭环态——发现异常不依赖用户的注意力。</p></div>
+  <div class="card"><span class="tag">问题</span><h3>Agent 公司不自转</h3><p>用户不来，公司就静止。OPC 给组织装了常驻后台中枢（OPC 服务）：数据一变即巡检 12 项（含工单逾期与停滞预警）、系统通知、待办闭环态、看板实时化——发现异常不依赖用户的注意力。</p></div>
   <div class="card"><span class="tag">问题</span><h3>多会话互相踩</h3><p>多个 Agent 并发干活，谁改谁的文件？OPC 用工位卡划分领地、锁原语保护写路径、原子取号防撞号，把冲突面收敛到机制层。</p></div>
 </div>
 
@@ -89,7 +89,8 @@ OPC/
 ├── opc_resolver.py          <span class="c"># 命名空间解析器（DI 容器）：opc:// 符号 → 物理路径</span>
 ├── opc_tickets.py           <span class="c"># 工单看板生成器 + 建单（--auto-id 原子取号）</span>
 ├── opc_dashboards.py        <span class="c"># 三级看板生成器（公司/团队/个人）+ 交叉核验</span>
-├── opc_patrol.py            <span class="c"># 公司心跳：每日巡检 10 项 + 系统通知 + 待办闭环</span>
+├── opc_service.py           <span class="c"># OPC 服务（常驻中枢）：看板实时化 + 巡检 12 项 + 通知 + 待办闭环</span>
+├── opc_patrol.py            <span class="c"># 巡检标准清单（服务内置调用；也可手动跑一次）</span>
 ├── opc_schema.py            <span class="c"># 状态机与枚举唯一真相源（工单 7 态 / 巡检元数据）</span>
 ├── opc_model.py             <span class="c"># 实体共享读取器 + 并发锁原语 + 技能索引生成</span>
 ├── companies/C001/          <span class="c"># 稳定锚（junction/symlink）→ 真实公司目录，改名自愈</span>
@@ -121,11 +122,12 @@ OPC/
       <li><code>file_lock</code>（O_EXCL + 超时 + 过期抢占）保护台账/建账等热写路径</li>
       <li><code>--new --auto-id</code>：目录存在性即锁，并发建单不撞号、自动占台账</li>
     </ul></div>
-  <div class="card"><span class="tag">公司自转</span><h3>心跳巡检 + 通知 + 闭环</h3>
+  <div class="card"><span class="tag">公司自转</span><h3>OPC 服务：实时巡检 + 通知 + 闭环</h3>
     <ul class="clean">
-      <li>每日 10 项机器巡检：阻塞解锁 / 认领缺口 / 双账 / 脱期事务 / 升级信箱 / 号池 / 知识库增量…</li>
-      <li>发现异常弹系统通知；只有「升级信箱」是 critical 级，用户只被它打扰</li>
+      <li>数据一变即巡检（另有周期兜底）12 项：阻塞解锁 / 认领缺口 / 双账 / 脱期事务 / <b>工单逾期与停滞预警</b> / 升级信箱 / 号池 / 知识库增量…</li>
+      <li>发现新异常弹系统通知（只报新发现，不重复轰炸）；只有「升级信箱」是 critical 级，用户只被它打扰</li>
       <li>patrol-state 闭环态：处置完置 handled，再犯自动重开</li>
+      <li>看板实时化：「同步」按钮直调生成器重算，数据刷新秒级生效</li>
     </ul></div>
   <div class="card"><span class="tag">技能体系</span><h3>三层技能 + 生成物索引</h3>
     <ul class="clean">
@@ -151,8 +153,8 @@ OPC/
 <h2>六、快速开始</h2>
 <pre>
 <span class="c"># clone 后一次性自举（一条命令，详见 README「系统初始化」）</span>
-python opc_resolver.py --bootstrap      <span class="c"># 链接+钩子+看板数据+技能索引+公司心跳，自动完成</span>
-python opc_resolver.py --doctor         <span class="c"># 终检五项（自带自愈），全绿才开工</span>
+python opc_resolver.py --bootstrap      <span class="c"># 链接+钩子+看板数据+技能索引+OPC 服务自启并拉起，自动完成</span>
+python opc_resolver.py --doctor         <span class="c"># 终检五项（含服务探活，自带自愈），全绿才开工</span>
 
 <span class="c"># 日常：想派活，把 companies/C001/E0000/ 当工作区打开会话，直接说需求</span>
 </pre>

@@ -61,7 +61,9 @@ PATROL = {
     "ticket_pool_min": 5,       # 号池剩余 < N 时告警补号
     "worklog_stale_days": 14,   # 进行中 N 天未动 → 风险提示
     "archive_warn_year": None,  # 上一年度热文件提醒归档（None=运行时按当年推导）
-    "regen_stale_minutes": 30,  # 看板数据陈旧超过 N 分钟 → 心跳自动重生成（浏览器「同步」只能重读文件，刷新数据靠心跳）
+    "regen_stale_minutes": 30,  # 看板数据陈旧超过 N 分钟 → 服务自动重生成（数据刷新由 OPC 服务负责）
+    "due_soon_days": 3,         # 截止日剩余 ≤ N 天 → 预警（#11）
+    "stalled_days": 3,          # in_progress 超过 N 天无 updated → 无进展预警（#12）
 }
 
 # ---- 巡检检查项元数据（findings 结构化，2026-08-28 Q1 拍板 A 方案）----
@@ -80,6 +82,9 @@ PATROL_CHECKS = {
     8:  {"kind": "knowledge",      "severity": "info",     "action": "review_knowledge"},    # ⚠️ 机器侧未实现（见评审 B6）
     9:  {"kind": "zombie_seat",    "severity": "info",     "action": "close_seat"},
     10: {"kind": "stale_data",     "severity": "warn",     "action": "regen_boards"},
+    # 风险预警（2026-08-29 决策 #18：用户拍板要主动打扰的两类事件之一；windows 弹窗直达用户）
+    11: {"kind": "due_risk",       "severity": "warn",     "action": "notify_owner"},        # 已逾期 / 截止日≤due_soon_days
+    12: {"kind": "stalled",        "severity": "warn",     "action": "notify_owner"},        # in_progress 超 stalled_days 无更新
 }
 
 

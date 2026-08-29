@@ -138,7 +138,7 @@
     });
 
     // ---- 陈旧阈值（默认 10 分钟，localStorage 记忆）----
-    var staleMin = 1560;   // 默认 26 小时（心跳日更节奏；watcher 实时模式可在此调小）
+    var staleMin = 1560;   // 默认 26 小时（服务实时化后可在此调小，如 10 分钟）
     try { staleMin = parseInt(localStorage.getItem("boards-stale-min-v2"), 10) || 1560; } catch (e) {}
     var staleInput = document.getElementById("staleMin");
     staleInput.value = staleMin;
@@ -156,7 +156,7 @@
       var mins = Math.floor((Date.now() - g.getTime()) / 60000);
       if (mins > staleMin) {
         bar.style.display = "block";
-        bar.textContent = "⚠️ 数据已陈旧 " + mins + " 分钟——心跳会自动刷新，点「同步」即可取到新数据；若持续出现请检查心跳任务或跑 run_boards once（内容停留在 " + DATA.generated_at + "）";
+        bar.textContent = "⚠️ 数据已陈旧 " + mins + " 分钟——OPC 服务会自动刷新，点「同步」即可取到新数据；若持续出现请检查服务是否在运行（python opc_service.py）或跑 run_boards once（内容停留在 " + DATA.generated_at + "）";
       } else bar.style.display = "none";
     }
     setInterval(updateStale, 5000);
@@ -311,10 +311,16 @@
       document.getElementById("genInfo").textContent = "⚠️ 同步失败：找不到 dashboard-data.js（请运行 run_boards）";
     };
     document.body.appendChild(syncEl);
-    function doSync() { syncEl.src = "dashboard-data.js#_=" + Date.now(); }
+    function reloadData() { syncEl.src = "dashboard-data.js#_=" + Date.now(); }
+    function doSync() {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        // 实时模式（经 opc_service 打开）：点同步=真重算，再取新数据
+        fetch("api/sync", { cache: "no-store" }).catch(function () {}).then(reloadData);
+      } else { reloadData(); }  // file:// 降级：仅重读数据文件
+    }
     document.getElementById("syncBtn").addEventListener("click", doSync);
     render();
-    setInterval(doSync, 3000);
+    setInterval(reloadData, 3000);
   })();
   </script>
 </body>

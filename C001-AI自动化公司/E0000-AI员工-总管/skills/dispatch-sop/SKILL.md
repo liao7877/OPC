@@ -83,7 +83,7 @@ triggers: [派任务, 派发, 分配, 接需求, 调度, 建工单, 创建任务
 
 1. **一条命令**（OPC 根）：`python opc_resolver.py --rename-entity E0001 新岗位说明`
    自动完成：git mv 改目录名 → 重建稳定锚/技能披露链接 → 同步 roster「路径」列与「岗位」列口径 → 重跑看板数据 → 全文旧目录名按 ID 映射自动改写 → 门禁终检
-   预演加 `--dry-run`。手动在资源管理器里改了目录名？跑 `python opc_resolver.py --heal-entity-refs` 同样一键自愈（心跳巡检每 30 分钟也会重建断链）
+   预演加 `--dry-run`。手动在资源管理器里改了目录名？跑 `python opc_resolver.py --heal-entity-refs` 同样一键自愈（OPC 服务巡检周期兜底时也会自动重建断链）
 2. **改人设**（命令管不到的内容）：该员工 AGENTS.md（标题/岗位字段/职责描述）+ workflow.md 标题；按需落新私有技能
 3. **留痕**：worklog 记一条 + task messages 留痕（机制/结构类工作不可免记）
 

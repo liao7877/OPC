@@ -108,7 +108,7 @@
     <h3>过程与收尾</h3>
     <ul class="clean" style="list-style:none">
       <li>◇ 员工会先<b>认领工单</b>（worklog 建账）再动工，这是纪律，不用你催</li>
-      <li>◇ 遇到阻塞/需求不明，员工会在工单里<b>发升级信箱</b>，总管心跳会发现并<b>弹系统通知</b>找你——那是唯一会打扰你的事</li>
+      <li>◇ 遇到阻塞/需求不明，员工会在工单里<b>发升级信箱</b>，OPC 服务巡检会发现并<b>弹系统通知</b>找你——那是唯一会打扰你的事</li>
       <li>◇ 完成后你看成果、表态：<b>满意</b> → 说「验收通过」，工单关单；<b>不满意</b> → 说具体哪里不行，走返工</li>
       <li>◇ 对话产生的结论会自动留痕（worklog / 工单 messages），下次换会话不丢</li>
     </ul>
@@ -144,24 +144,26 @@
   <div class="card"><h3>🎫 工单系统（双车道）</h3><p><b>要验收的活</b>才建 <b>TSK 工单</b>（有人检验成果/要交接/跨会话/多人协作）；<b>干完就完的小活走直聊</b>——员工在 worklog 记一笔留痕，不用建单，你随便聊。工单的：标题/负责人/验收/截止/阻塞关系（blocked_by）/父子单。七个状态：<code>backlog → in_progress → review → done</code>，另有 failed / paused / cancelled。写错状态会<b>红牌上板</b>而不是消失。</p></div>
   <div class="card"><h3>📋 三级看板</h3><p>公司驾驶舱 <code>dashboard.html</code>、团队 <code>teamboard.html</code>、个人桌面 <code>mydesk.html</code>、工单墙 <code>kanban.html</code>。全部由真相自动生成——看板即进度，你随时打开浏览器看。</p></div>
   <div class="card"><h3>📝 worklog 双账</h3><p>员工干任何活都自记录（三段式：计划中→进行中→已完成），与工单状态<b>交叉核验</b>：认领了没记录、干完了单没关，都会被点名告警。</p></div>
-  <div class="card"><h3>💓 公司心跳</h3><p>每 30 分钟自动巡检 10 项：阻塞该开工的、没人认领的、双账不一致的、脱期事务、<b>升级信箱</b>（<span class="pill crit">critical</span> 唯一会打扰你）、号池水位、知识库增量、僵尸工位卡、看板数据陈旧等。异常 → 写日志 + <b>弹系统通知</b> → 生成待办快照给总管处置。</p></div>
+  <div class="card"><h3>🛰️ OPC 服务（常驻后台中枢）</h3><p>一个 headless 进程包办三件事：<b>看板实时化</b>（从 <code>http://127.0.0.1:8765/{公司ID}/dashboard.html</code> 打开，「同步」按钮=即时重算）、<b>巡检实时化</b>（数据一变就查，另有周期兜底，共 12 项：阻塞该开工的、没人认领的、双账不一致的、脱期事务、<b>工单逾期与停滞预警</b>、<b>升级信箱</b>（<span class="pill crit">critical</span> 唯一会打扰你）、号池水位、知识库增量、僵尸工位卡、看板数据陈旧等）、<b>主动通知</b>（新发现实时弹窗 + 每天 09:00 汇总重提未处理项）。异常 → 写 <code>patrol-log.md</code> + <b>弹系统通知</b> → 生成待办快照给总管处置。</p></div>
   <div class="card"><h3>🃏 工位卡与并发</h3><p>一个会话=一张工位卡。多会话各干各单；共干一单时只有持卡会话有权改状态。机制层写路径全部有<b>锁</b>，并发追加用 <code>--append</code> 命令——多开会话是安全的。</p></div>
   <div class="card"><h3>🧠 技能体系</h3><p>员工会什么=读了哪些技能（三层：公司级/团队级/私有）。每个技能自带触发词与全流程，命中才加载。总管新增能力=建一个技能文件，索引自动更新。</p></div>
-  <div class="card"><h3>📚 知识库三分</h3><p>查资料 → <code>公司知识库/common/</code>；员工经验 → <code>methods/</code>（总管提炼成技能/制度）；项目资料 → 各项目 <code>knowledge/</code>。心跳会自动发现新知识并提醒总管评审。</p></div>
+  <div class="card"><h3>📚 知识库三分</h3><p>查资料 → <code>公司知识库/common/</code>；员工经验 → <code>methods/</code>（总管提炼成技能/制度）；项目资料 → 各项目 <code>knowledge/</code>。OPC 服务巡检会自动发现新知识并提醒总管评审。</p></div>
   <div class="card"><h3>🚦 编号与台账</h3><p>一切实体有编号：公司 C/团队 T/员工 E/项目 P/工单 TSK/事务 AFF。台账 <code>task-index.md</code> 记录分配与预留号池，取号原子化防撞号。</p></div>
   <div class="card"><h3>🏢 开新公司</h3><p>对组织根会话说「建公司」即可：按模板一键拉起，总管自动入职。模板与实例的机制同步由 <code>--diff-template</code> 盯着，不会悄悄漂移。</p></div>
 </div>
 
 <h2 id="s6">⑥ 命令速查（99% 情况你只需要前两条）</h2>
 <pre>
-<span class="c"># —— 新电脑 / 新 clone（一条命令全搞定，含心跳定时任务）——</span>
-python opc_resolver.py --bootstrap       <span class="c"># 一键自举：链接+钩子+看板数据+技能索引+每日心跳</span>
-python opc_resolver.py --doctor          <span class="c"># 终检五项，全绿 = 可以正常使用（自带自愈）</span>
-run_boards.bat once                      <span class="c"># 可选：手动重建看板（bootstrap 已自动做过；macOS/Linux: ./run_boards.sh once）</span>
+<span class="c"># —— 新电脑 / 新 clone（一条命令全搞定，含 OPC 服务自启 + 当场拉起）——</span>
+python opc_resolver.py --bootstrap       <span class="c"># 一键自举：链接+钩子+看板数据+技能索引+OPC 服务自启并拉起</span>
+python opc_resolver.py --doctor          <span class="c"># 终检五项（含「OPC 服务在跑」探活），全绿 = 可以正常使用（自带自愈）</span>
+run_boards.bat once                      <span class="c"># 可选：手动重建看板（已降级为离线应急工具；macOS/Linux: ./run_boards.sh once）</span>
 
-<span class="c"># —— 心跳管理（默认每 30 分钟，异常弹系统通知；通知只报新发现不轰炸）——</span>
-python opc_patrol.py --register-heartbeat --company C001 --every 30   <span class="c"># 手动挂（bootstrap 已自动挂）</span>
-python opc_patrol.py --unregister-heartbeat --company C001            <span class="c"># 撤销</span>
+<span class="c"># —— OPC 服务（决策 #18：看板实时化/巡检/通知全由它承载；通知只报新发现不轰炸）——</span>
+python opc_service.py                    <span class="c"># 前台运行（Ctrl+C 停）</span>
+python opc_service.py --open             <span class="c"># 运行并打开默认公司看板</span>
+python opc_service.py --register         <span class="c"># 注册开机自启（bootstrap 已自动做）</span>
+python opc_service.py --unregister       <span class="c"># 撤销自启（删 OPC-Service.vbs / crontab 标记块）</span>
 
 <span class="c"># —— 总管/员工日常用（你不用记）——</span>
 python opc_tickets.py --company C001 --new --auto-id 标题 --owner E0001   <span class="c"># 原子取号建单+占台账</span>
@@ -178,7 +180,7 @@ python opc_resolver.py --diff-template                                   <span c
   <tr><th style="width:34%">情况</th><th>怎么办</th></tr>
   <tr><td>看板上有<b>红牌工单</b></td><td>它的 status 写了非法值（坏数据会上板不隐藏）。跟总管说「把 XX 工单状态修正一下」即可。</td></tr>
   <tr><td>弹了系统通知「[高优] 升级」</td><td>有员工在工单里举手求助（<span class="pill crit">critical</span>，唯一会打扰你的项）。开总管会话说「处理一下巡检待办」，总管会按 <code>patrol-pending.md</code> 逐项处置。</td></tr>
-  <tr><td>换了电脑 / 重新 clone 了仓库</td><td>跑 <code>python opc_resolver.py --bootstrap</code> 一条命令即可——链接、钩子、看板数据、技能索引、心跳定时任务全部自动重建并终检。</td></tr>
+  <tr><td>换了电脑 / 重新 clone 了仓库</td><td>跑 <code>python opc_resolver.py --bootstrap</code> 一条命令即可——链接、钩子、看板数据、技能索引、OPC 服务自启（并当场拉起）全部自动重建并终检。</td></tr>
   <tr><td>想改公司/员工/项目目录名</td><td>随便改。改完在 OPC 根跑一次 <code>python opc_resolver.py --ensure-links</code>，所有引用自愈。</td></tr>
   <tr><td>觉得某个员工能力不对/缺技能</td><td>对总管说「给 E0001 加一个 XX 技能」——总管按落位 SOP 建技能、更新索引，你不用碰文件。</td></tr>
   <tr><td>同一个活想多人/多会话并行</td><td>直接开多个会话。工位卡 + 锁保证不互相覆盖；谁持卡谁有权改单子状态。</td></tr>
