@@ -44,10 +44,11 @@ import opc_resolver
 from opc_model import (parse_frontmatter,                    # 共享读取器（P25，禁私写正则）
                        normalize_day as normalize_date,    # 日期规整（D2 收敛）
                        read_text_warn as read_text,        # 告警读（D2 收敛）
-                       atomic_write)                       # 原子写（D3 收敛）
+                       atomic_write,                       # 原子写（D3 收敛）
+                       parse_company_args)                 # CLI 参数提取（D 收敛）
 from opc_schema import (WORKLOG_STATUS, TASK_ACTIVE as ACTIVE_TS,   # 状态机唯一真相源
-                        TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS, PATROL,
-                        EMPLOYEE_STATUS)
+                        TASK_STATUS_ORDER, TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS,
+                        PATROL, EMPLOYEE_STATUS)
 WORKLOG_STATUS = set(WORKLOG_STATUS)
 AFF_STATUS = set(AFF_STATUS)
 
@@ -169,7 +170,7 @@ def scan_entity_dirs(base):
     return emp, team, proj
 
 
-def dir_label(dirname, prefix_len):
+def dir_label(dirname):
     """目录名去 ID 前缀取显示名后缀（{ID}-{说明} -> {说明}，如 E0001 带后缀目录取「售前工程师」）。
     决策 #17 修订：目录后缀即显示名（目录自解释，目录名为准），
     roster 岗位列与之做一致性告警；裸 ID 目录（无后缀）回退 roster/原目录名。"""
@@ -247,7 +248,7 @@ def parse_project(ctx, dirname):
     raw = read_text(os.path.join(ctx.base, dirname, "project.md"))
     fm, _, has = parse_frontmatter(raw)
     if has:
-        name = fm.get("name") or dir_label(dirname, 2)
+        name = fm.get("name") or dir_label(dirname)
         owner = fm.get("owner")
         status = fm.get("status") or "active"
         team = fm.get("team")
@@ -259,7 +260,7 @@ def parse_project(ctx, dirname):
             teams = []
     else:
         kv = parse_md_kv(raw, {"项目 ID": "pid", "名称": "name", "负责人": "owner", "状态": "status"})
-        name = kv.get("name") or dir_label(dirname, 2)
+        name = kv.get("name") or dir_label(dirname)
         owner = kv.get("owner")
         status = kv.get("status") or "active"
         # team 归属只认 frontmatter 显式声明（REQ §4.2）：markdown 正文提到的 T 编号
@@ -273,7 +274,7 @@ def parse_team(ctx, dirname):
     tid = dirname.split("-", 1)[0]
     raw = read_text(os.path.join(ctx.base, dirname, "team.md"))
     kv = parse_md_kv(raw, {"团队 ID": "tid", "名称": "name"})
-    return {"tid": kv.get("tid") or tid, "name": kv.get("name") or dir_label(dirname, 2), "dir": dirname}
+    return {"tid": kv.get("tid") or tid, "name": kv.get("name") or dir_label(dirname), "dir": dirname}
 
 
 def parse_notices(ctx, team_dir):
@@ -618,7 +619,7 @@ def generate_all(ctx):
             print(f"  [警告] roster 登记 {eid} 但公司根下无目录，已忽略")
             continue
         # 显示名以目录名后缀为准（决策 #17 修订：目录自解释）；裸 ID 目录才退 roster 岗位
-        name = dir_label(d, 1)
+        name = dir_label(d)
         registered = r is not None
         if not registered:
             print(f"  [警告] 员工目录 {d} 未在 roster.md 登记，看板标记「未登记」")
@@ -689,13 +690,14 @@ def generate_all(ctx):
                 stale_refs.append({"eid": e["eid"], "name": e["name"], "title": w["title"], "updated": w["updated"]})
 
     gen_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    common = {"generated_at": gen_at, "page_version": PAGE_VERSION, "config": {"stale_days": STALE_DAYS_DEFAULT}}
+    common = {"generated_at": gen_at, "page_version": PAGE_VERSION, "config": {"stale_days": STALE_DAYS_DEFAULT,
+                        "active_status": [s2 for s2 in TASK_STATUS_ORDER if s2 in ACTIVE_TS]}}
 
     # 公司名：company.md「公司名」为权威（P2 实体卡）；无卡片时才退回目录名。
     # Z 方案下 base 是稳定锚 companies/<cid>，目录名兜底会退化成裸 ID（历史 bug）。
     base_name = os.path.basename(base_dir)
     comp_name = (parse_md_kv(read_text(os.path.join(base_dir, "company.md")), {"公司名": "name"}).get("name")
-                 or (dir_label(base_name, 1) if "-" in base_name else base_name))
+                 or (dir_label(base_name) if "-" in base_name else base_name))
 
     # ================= 公司级 dashboard-data.js =================
     dash = {
@@ -1030,12 +1032,7 @@ def selftest():
 def main(argv):
     if "--selftest" in argv:
         return selftest()
-    company = None
-    company_dir = None
-    if "--company" in argv:
-        company = argv[argv.index("--company") + 1]
-    if "--dir" in argv:
-        company_dir = argv[argv.index("--dir") + 1]
+    company, company_dir = parse_company_args(argv)
     ctx = resolve_ctx(company, company_dir)
     if "--watch" in argv:
         watch(ctx)

@@ -41,10 +41,11 @@ from opc_model import (parse_frontmatter,                      # 共享读取器
                        normalize_dt as normalize_date,         # 日期时间规整（D2 收敛）
                        read_text_warn as read_text,            # 告警读（D2 收敛）
                        atomic_write,                           # 原子写（D3 收敛）
-                       file_lock, locked_append, locked_update)  # 并发互斥（2026-08-29 拍板）
+                       file_lock, locked_append, locked_update,  # 并发互斥（2026-08-29 拍板）
+                       parse_company_args)                       # CLI 参数提取（D 收敛）
 import opc_resolver
 from opc_schema import (TASK_STATUS as VALID_STATUS,          # 状态机唯一真相源（opc_schema）
-                        TASK_STATUS_ORDER as STATUS_ORDER,
+                        TASK_STATUS_ORDER, TASK_STATUS_ORDER as STATUS_ORDER,
                         TASK_TERMINAL)
 
 
@@ -281,6 +282,7 @@ def build_record(ctx, task_dir, dirname):
                 seg = item.split("@")
                 status_history.append({"to": seg[0].strip(), "at": seg[1].strip() if len(seg) > 1 else ""})
 
+    _msg_text = read_text(os.path.join(task_dir, "messages.md"))   # messages 与 escalations 同源，读一次复用
     return {
         "id": tid,
         "title": title,
@@ -298,8 +300,8 @@ def build_record(ctx, task_dir, dirname):
         "updated": fm.get("updated"),
         "completed_at": completed_at,
         "description": body,
-        "messages": read_text(os.path.join(task_dir, "messages.md")),
-        "escalations": extract_escalations(read_text(os.path.join(task_dir, "messages.md"))),
+        "messages": _msg_text,
+        "escalations": extract_escalations(_msg_text),
         "deliverables": list_files(ctx.tasks_dir, os.path.join(task_dir, "deliverables")),
         "logs": list_files(ctx.tasks_dir, os.path.join(task_dir, "logs")),
         "handoffs": handoffs,
@@ -463,6 +465,7 @@ def generate(ctx):
         "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source": "workbench/tasks/",
         "status_meta": {k: v for k, v in VALID_STATUS.items()},
+        "status_order": list(TASK_STATUS_ORDER),   # 列序唯一真相（前端兜底仅容错）
         "employees": emp_reg,
         "projects": proj_reg,
         "tasks": tasks,
@@ -679,7 +682,11 @@ def append_worklog_entry(ctx, owner, tid, title, project):
     双账从源头一致；员工开工只需推进状态。owner 为空或目录不存在则跳过。"""
     if not owner:
         return
-    emp_dirs = [d for d in os.listdir(ctx.company_dir)
+    try:
+        names = os.listdir(ctx.company_dir)
+    except OSError:
+        names = []    # 公司目录不可读不阻断 --new 主流程（走员工自行补记提示）
+    emp_dirs = [d for d in names
                 if (d == owner or d.startswith(owner + "-"))
                 and os.path.isdir(os.path.join(ctx.company_dir, d))]
     if not emp_dirs:
@@ -715,7 +722,8 @@ def check_structure(ctx):
     即为历史遗留副本，会被作为未登记条目报出（机制代码不落公司目录）。"""
     company = ctx.company_dir
     required_dirs = ["skills", "workbench", "templates", "page-templates", "公司规章制度", "公司知识库"]
-    required_files = ["company.md", "AGENTS.md", "CLAUDE.md", "workflow.md", "目录结构说明书.md"]
+    required_files = ["company.md", "workflow.md", "目录结构说明书.md"]
+    platform_files = ("AGENTS.md", "CLAUDE.md")   # 平台入口任一即可（P27 Runtime 中立）
     # 已知一级条目：文件用模式匹配（跨平台入口脚本 .bat/.sh/.ps1/.py 等都认，P2a）
     known_extra_dirs = {".workbuddy", ".tools"}
     known_extra_file_patterns = [re.compile(p) for p in (
@@ -733,6 +741,8 @@ def check_structure(ctx):
     for f in required_files:
         if not os.path.isfile(os.path.join(company, f)):
             problems.append(f"缺少必需文件：{f}")
+    if not any(os.path.isfile(os.path.join(company, f)) for f in platform_files):
+        problems.append(f"缺少平台入口文件：{'/'.join(platform_files)} 任一即可（P27）")
     if not any((n == "E0000" or n.startswith("E0000-")) and os.path.isdir(os.path.join(company, n)) for n in os.listdir(company) if os.path.isdir(os.path.join(company, n))):
         problems.append("缺少总管目录（E0000）")
     known_subdirs = {"workbench": {"tasks", "affairs", "archive"}}  # affairs=常设事务区；archive=历史过程文档存档
@@ -740,7 +750,8 @@ def check_structure(ctx):
         if name.startswith("."):
             continue
         full = os.path.join(company, name)
-        if entity_re.match(name) or name in required_dirs or name in required_files or name in known_extra_dirs:
+        if entity_re.match(name) or name in required_dirs or name in required_files \
+                or name in platform_files or name in known_extra_dirs:
             continue
         if os.path.isfile(full) and any(p.match(name) for p in known_extra_file_patterns):
             continue
@@ -873,12 +884,7 @@ def selftest():
 def main(argv):
     if "--selftest" in argv:
         return selftest()
-    company = None
-    company_dir = None
-    if "--company" in argv:
-        company = argv[argv.index("--company") + 1]
-    if "--dir" in argv:
-        company_dir = argv[argv.index("--dir") + 1]
+    company, company_dir = parse_company_args(argv)
     ctx = resolve_ctx(company, company_dir)
     if "--watch" in argv:
         watch(ctx)

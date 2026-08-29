@@ -214,7 +214,8 @@
   <script>
   (function () {
     var DATA = window.KANBAN_DATA;
-    var STATUS_ORDER = ["backlog", "in_progress", "review", "done", "failed", "paused", "cancelled"];
+    var STATUS_ORDER = (DATA && DATA.status_order) ||
+      ["backlog", "in_progress", "review", "done", "failed", "paused", "cancelled"]; // 兜底仅容错，真相在 tasks-data.js status_order（opc_schema 单一真相）
     var STATUS_LABEL = (DATA && DATA.status_meta) || {
       backlog: "待领", in_progress: "进行中", review: "待审", done: "完成", failed: "失败", paused: "暂停", cancelled: "取消"
     };

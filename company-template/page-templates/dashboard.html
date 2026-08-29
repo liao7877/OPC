@@ -238,7 +238,7 @@
       var onJob = emps.filter(function (e) { return e.status === "在职"; }).length;
       var rate = agg.t ? agg.d / agg.t : null;
       var tk = DATA.tickets || { total: 0, active: 0, done: 0, overdue: 0, paused: 0, failed: 0, cancelled: 0, byStatus: {} };
-      var tkSub = ["backlog", "in_progress", "review"].map(function (k) { return (sm[k] || k) + " " + (tk.byStatus[k] || 0); }).join(" · ");
+      var tkSub = (((DATA.config || {}).active_status) || ["backlog", "in_progress", "review"]).map(function (k) { return (sm[k] || k) + " " + (tk.byStatus[k] || 0); }).join(" · ");
       var tkTail = [["paused", "暂停"], ["failed", "失败"], ["cancelled", "取消"]]
         .filter(function (x) { return tk[x[0]] > 0; })
         .map(function (x) { return x[1] + " " + tk[x[0]]; }).join(" · ");
