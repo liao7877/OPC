@@ -69,7 +69,7 @@ PATROL = {
 # ---- 巡检检查项元数据（findings 结构化，2026-08-28 Q1 拍板 A 方案）----
 # B 阶段（agent 自动处置）的地基：每项检查的 kind/severity/suggested_action 唯一真相在此。
 # severity：info=处置后留痕即可 | warn=催办 | critical=必须打扰用户。
-# 10 项里只有 #5（升级信箱）是 critical——用户只被它打扰，其余由总管/未来 agent actor 处置。
+# 13 项里只有 #5（升级信箱）是 critical——用户只被它打扰，其余由总管/未来 agent actor 处置。
 PATROL_SEVERITIES = ("info", "warn", "critical")
 PATROL_CHECKS = {
     1:  {"kind": "unblock",        "severity": "info",     "action": "notify_owner"},
@@ -85,6 +85,8 @@ PATROL_CHECKS = {
     # 风险预警（2026-08-29 决策 #18：用户拍板要主动打扰的两类事件之一；windows 弹窗直达用户）
     11: {"kind": "due_risk",       "severity": "warn",     "action": "notify_owner"},        # 已逾期 / 截止日≤due_soon_days
     12: {"kind": "stalled",        "severity": "warn",     "action": "notify_owner"},        # in_progress 超 stalled_days 无更新
+    # 依赖环（2026-08-29）：blocked_by/parent 成环 → 工单永久无法开工且无外力可解
+    13: {"kind": "dep_cycle",      "severity": "warn",     "action": "notify_owner"},
 }
 
 

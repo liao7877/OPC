@@ -68,7 +68,7 @@
 <h2>一、它解决什么问题</h2>
 <div class="grid g3">
   <div class="card"><span class="tag">问题</span><h3>人管不住细节</h3><p>AI 会话散落、结论不复用、改个目录名全文失效。OPC 用「文件即真相 + 符号化引用」把领域事实变成可版本化、可校验的资产。</p></div>
-  <div class="card"><span class="tag">问题</span><h3>Agent 公司不自转</h3><p>用户不来，公司就静止。OPC 给组织装了常驻后台中枢（OPC 服务）：数据一变即巡检 12 项（含工单逾期与停滞预警）、系统通知、待办闭环态、看板实时化——发现异常不依赖用户的注意力。</p></div>
+  <div class="card"><span class="tag">问题</span><h3>Agent 公司不自转</h3><p>用户不来，公司就静止。OPC 给组织装了常驻后台中枢（OPC 服务）：数据一变即巡检 13 项（含工单逾期与停滞预警）、系统通知、待办闭环态、看板实时化——发现异常不依赖用户的注意力。</p></div>
   <div class="card"><span class="tag">问题</span><h3>多会话互相踩</h3><p>多个 Agent 并发干活，谁改谁的文件？OPC 用工位卡划分领地、锁原语保护写路径、原子取号防撞号，把冲突面收敛到机制层。</p></div>
 </div>
 
@@ -89,7 +89,7 @@ OPC/
 ├── opc_resolver.py          <span class="c"># 命名空间解析器（DI 容器）：opc:// 符号 → 物理路径</span>
 ├── opc_tickets.py           <span class="c"># 工单看板生成器 + 建单（--auto-id 原子取号）</span>
 ├── opc_dashboards.py        <span class="c"># 三级看板生成器（公司/团队/个人）+ 交叉核验</span>
-├── opc_service.py           <span class="c"># OPC 服务（常驻中枢）：看板实时化 + 巡检 12 项 + 通知 + 待办闭环</span>
+├── opc_service.py           <span class="c"># OPC 服务（常驻中枢）：看板实时化 + 巡检 13 项 + 通知 + 待办闭环</span>
 ├── opc_patrol.py            <span class="c"># 巡检标准清单（服务内置调用；也可手动跑一次）</span>
 ├── opc_schema.py            <span class="c"># 状态机与枚举唯一真相源（工单 7 态 / 巡检元数据）</span>
 ├── opc_model.py             <span class="c"># 实体共享读取器 + 并发锁原语 + 技能索引生成</span>
@@ -122,11 +122,12 @@ OPC/
       <li><code>file_lock</code>（O_EXCL + 超时 + 过期抢占）保护台账/建账等热写路径</li>
       <li><code>--new --auto-id</code>：目录存在性即锁，并发建单不撞号、自动占台账</li>
     </ul></div>
-  <div class="card"><span class="tag">公司自转</span><h3>OPC 服务：实时巡检 + 通知 + 闭环</h3>
+  <div class="card"><span class="tag">公司自转</span><h3>巡检 = 控制循环（reconcile）</h3>
+    <p>AI 员工会漏接单、忘推进、改了 A 忘了 B——人盯人是盯不住的。OPC 借 Kubernetes 控制循环：先声明<b>期望态</b>，再周期观测<b>实际态</b>，diff 出偏差就修正或告警——公司自转不靠人盯。</p>
     <ul class="clean">
-      <li>数据一变即巡检（另有周期兜底）12 项：阻塞解锁 / 认领缺口 / 双账 / 脱期事务 / <b>工单逾期与停滞预警</b> / 升级信箱 / 号池 / 知识库增量…</li>
+      <li>13 项期望态检查（数据一变即巡检，另有周期兜底）：阻塞解锁 / 认领缺口 / 双账 / 脱期事务 / <b>工单逾期与停滞预警</b> / 升级信箱 / 号池 / 知识库增量…</li>
       <li>发现新异常弹系统通知（只报新发现，不重复轰炸）；只有「升级信箱」是 critical 级，用户只被它打扰</li>
-      <li>patrol-state 闭环态：处置完置 handled，再犯自动重开</li>
+      <li>patrol-state 闭环态：处置完置 handled，再犯自动重开——偏差处置本身也有状态机</li>
       <li>看板实时化：「同步」按钮直调生成器重算，数据刷新秒级生效</li>
     </ul></div>
   <div class="card"><span class="tag">技能体系</span><h3>三层技能 + 生成物索引</h3>
@@ -153,6 +154,18 @@ OPC/
       <li><code>create-company</code> 技能按模板一键开新公司，机制零复制</li>
       <li><code>--diff-template</code> 双向 diff 防模板与实例漂移</li>
     </ul></div>
+  <div class="card"><span class="tag">设计借鉴</span><h3>站在六十年沉淀上偷师</h3>
+    <p>这套系统的很多设计不是拍脑袋，是站在计算机科学六十年沉淀上偷的师——但 AI 组织的「硬件」是人、文件和会话。</p>
+    <ul class="clean">
+      <li>技能三层渐进披露 = CPU 多级缓存（L1 元数据常驻 / L2 正文按需 / L3 附属文件冷存）</li>
+      <li><code>opc://</code> 符号引用 + 稳定锚 = 虚拟内存寻址（resolver 是 MMU，公司改名 = 页表重映射）</li>
+      <li>决策 #18 收敛单服务 = 微内核化</li>
+      <li>巡检 = 控制循环（Kubernetes reconcile）</li>
+      <li>升级超时升层 = 断路器</li>
+      <li>台账先占号后建单 = 写前日志（WAL）</li>
+    </ul>
+    <p class="muted">每条映射的设计动机详见仓库 PRINCIPLES 与机制文档（设计借鉴手册沉淀中）。</p>
+  </div>
 </div>
 
 <h2>五、容错哲学（P11）</h2>
