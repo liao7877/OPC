@@ -866,7 +866,8 @@ def rename_entity(root, eid, new_label, dry_run=False, cid=None):
 
 def check_links(cid=None, root=None):
     """链接器自检：① manifest 定义的 key 必须物理存在（遍历全部公司，不单查一家）；
-    ② 全文 opc:// 引用必须可解析；③ 结构审计（锚点）。"""
+    ② 全文 opc:// 引用必须可解析；③ 结构审计（锚点）；④ 裸路径散文扫描；
+    ⑤ SKILL.md 正文相对链接（L2 路由层断链此前静默通过）。"""
     root = root or _find_root()
     issues = []
 
@@ -919,6 +920,71 @@ def check_links(cid=None, root=None):
     #    必须与现存目录全名一致——治「opc:// 门禁全绿、散文里旧目录名漂移」盲区
     issues += scan_stale_dir_refs(root)
 
+    # ⑤ SKILL.md 相对链接（2026-08-29）：L2 路由层的 Markdown 相对链接此前不在
+    #    扫描范围，断链静默通过——L3 附属文件里的链接不递归（控制范围，只管路由层）
+    issues += scan_skill_links(root)
+
+    return issues
+
+
+# Markdown 链接目标：[text](target)，target 不含空白/右括号/尖括号（含空格须写 %20）
+_MD_LINK_RE = re.compile(r'\[[^\]]*\]\(\s*<?([^)\s<>]+)')
+
+
+def scan_skill_links(root=None):
+    """SKILL.md 正文（frontmatter 之后）相对链接校验。
+    遍历口径与 doctor 第 7 项一致：company-template + 各公司 home_abs，
+    跳过 .git/.workbuddy/node_modules/memory/workspace/archive，realpath 去重
+    （实例锚/披露链接会致同文件多路到达）。只管相对路径目标（http/https/opc/
+    mailto/#锚点/仓库绝对路径跳过）；目标带 #锚点/?查询串时去掉后按 SKILL.md
+    所在目录解析。存在即过，不存在记 error（与失效 opc:// 同语义）。"""
+    root = root or _find_root()
+    issues = []
+    if root is None or not os.path.isdir(root):
+        return issues
+    bases = [os.path.join(root, "company-template")]
+    try:
+        for cid in all_company_ids(root):
+            try:
+                bases.append(load_company(cid).home_abs)
+            except Exception:
+                continue    # 锚断链时 ① 段会报，这里不重复
+    except Exception:
+        pass                # 无 manifest（selftest 临时根等）只扫模板基目录
+    skip = {".git", ".workbuddy", "node_modules", "memory", "workspace", "archive"}
+    seen = set()
+    for base in bases:
+        for dirpath, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in skip]
+            if "SKILL.md" not in files:
+                continue
+            fp = os.path.join(dirpath, "SKILL.md")
+            rp = os.path.realpath(fp)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            lines = _read_file(fp).splitlines()
+            start = 0       # 正文起点：frontmatter（--- ... ---）之后
+            if lines and lines[0].strip() == "---":
+                for j in range(1, len(lines)):
+                    if lines[j].strip() == "---":
+                        start = j + 1
+                        break
+            for i in range(start, len(lines)):
+                for m in _MD_LINK_RE.finditer(lines[i]):
+                    target = m.group(1)
+                    if target.startswith("#") or target.startswith(("/", "\\")):
+                        continue    # 纯锚点 / 仓库绝对路径：不在相对链接口径内
+                    low = target.lower()
+                    if low.startswith("mailto:") or "://" in low:
+                        continue    # 外链 / opc://（② 段已管）
+                    path_part = re.split(r"[#?]", target, maxsplit=1)[0]
+                    if not path_part:
+                        continue    # 去掉锚点/查询串后为空（纯锚点写法变体）
+                    abs_p = os.path.normpath(os.path.join(dirpath, path_part))
+                    if not os.path.exists(abs_p):
+                        issues.append(f"技能断链：{path_part} -> {abs_p}（不存在）"
+                                      f" @ {os.path.relpath(fp, root)}:{i + 1}")
     return issues
 
 
@@ -1561,6 +1627,28 @@ def selftest():
         found2 = scan_refs(tmp)
         uris = [u for u in found2 if u.startswith("opc://company:C001/roster")]
         check("正文句号后缀不吸入", all(not u.endswith("。") for u in uris))
+    # 10b) SKILL.md 相对链接校验：断链被抓、有效链接与外链/锚点不误报
+    #      （夹具按真实口径放 company-template 层——scan_skill_links 只扫模板+公司层）
+    with tempfile.TemporaryDirectory() as tmp:
+        sdir = os.path.join(tmp, "company-template", "skills", "t")
+        os.makedirs(sdir)
+        sk = os.path.join(sdir, "SKILL.md")
+        with open(sk, "w", encoding="utf-8") as fh:
+            fh.write("---\nname: t\n---\n"
+                     "# 路由\n"
+                     "[有效](exists.md) [断链](templates-不存在.md)\n"
+                     "[外链](https://example.com/a.md) [锚点](#sec) [锚变体](exists.md#x?q=1)\n")
+        with open(os.path.join(sdir, "exists.md"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        iss = scan_skill_links(tmp)
+        rel = os.path.relpath(sk, tmp)
+        check("SKILL.md 断链被抓", len(iss) == 1 and "templates-不存在.md" in iss[0]
+              and f"{rel}:5" in iss[0])
+        check("SKILL.md 有效链接/外链/锚点不误报", all("exists.md" not in i for i in iss))
+        # frontmatter 里的链接不算正文（不复读机式误报防护）
+        with open(sk, "w", encoding="utf-8") as fh:
+            fh.write("---\nname: t\nlink: [断的](fm-不存在.md)\n---\n[有效](exists.md)\n")
+        check("frontmatter 内链接不扫", scan_skill_links(tmp) == [])
     # 11) 多公司同 ID：旧名改写按上下文归司，绝不跨公司误改（决策 #17 多公司兼容）
     with tempfile.TemporaryDirectory() as tmp:
         def w(rel, text):
