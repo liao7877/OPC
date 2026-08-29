@@ -16,3 +16,10 @@
 ## 启动门禁（init · 新建公司继承）
 - 本模板新建的公司，其总管 `E0000/AGENTS.md` 启动流程**第 0 步为环境 init 自检**：在 OPC 根跑 `python opc_resolver.py --doctor`（Windows 用 `python`，macOS/Linux 用 `python3`），**全绿才开工**；不绿按 OPC 根 `README.md`「系统初始化」补齐（建稳定锚 `companies/C00x` / 装 pre-commit / 修失效引用）。
 - 组织根治理与机制维护见 OPC 根 `AGENTS.md` 与 `opc-namespace-design.md`；命名空间/共享读取器铁律见 `PRINCIPLES.md`（P25/P26）。
+
+## 推送与隐私剥离（新建公司继承 · 任何推送动作前必读）
+- **红线 ⛔ 禁止 `git push origin`**：`origin` 是**公开**远程，而工作仓库 `main` **含私有内容**。pre-push 守卫（`opc.publicRemote=origin`）会拦下直推。
+- **发布到公开仓库只走** `scripts/opc-publish.sh`（Windows PowerShell 用 `scripts/opc-publish.ps1`）：在临时克隆里按清单剥离后，force-push 干净 `main`。
+- **备份走私有远程**：`main` 可直推私有远程（默认名 `backup`）做版本管理与异地备份——允许且应做。
+- **清单维护**：私有路径点名写进仓库根 `.opc-private-paths.txt`（每行一相对路径，`*` 通配、`**` 跨目录，`#` 注释）。判据：**拿不准就加**。
+- 唯一权威流程见 `opc://company:<本司ID>/skill/privacy-publish`（对外发布与隐私剥离）。

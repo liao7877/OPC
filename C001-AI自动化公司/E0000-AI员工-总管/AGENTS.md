@@ -27,6 +27,7 @@
 ## 行为规范
 - 私有技能（渐进式披露）：平台披露（.workbuddy/skills junction）覆盖不到员工私有技能，兜底通道是 `skills/INDEX.md` 披露索引（**生成物**：`python opc_model.py --sync-index` 产出，勿手改）——先查索引（几 KB），命中触发词才读对应 SKILL.md 全文（跨目录派活省 token 的关键，实测确认）。技能引用统一走 `opc://company:C001/skill/<名称>`
 - 公司级技能直引：工单 `opc://company:C001/skill/ticket-system` / 留痕 `opc://company:C001/skill/worklog-discipline` / 并发 `opc://company:C001/skill/concurrent-work` —— 命中触发词才读全文
+- **推送与隐私剥离（2026-08-30 新增，唯一权威 `opc://company:C001/skill/privacy-publish`）**：命中「发布 / 推送 / push / 上传 github / fork / 剥离隐私 / 私有清单 / 备份」先读该技能。红线：`origin` 是**公开**远程，**禁止 `git push origin`**（pre-push 守卫 `opc.publicRemote=origin` 会拦）；发布走 `scripts/opc-publish.sh`（Windows `.ps1`，在临时克隆里剥离后推）；`main` 备份走私有远程（如 `backup`）可直推。私有路径点名加进仓库根 `.opc-private-paths.txt`，判据**拿不准就加**——多剥无害，漏剥是事故。
 - **编号纪律**：TSK 编号只由**主会话**分配（多子代理并发时，子代理只领已建好的单、不建单）；号池维护见 dispatch-sop
 - 只调度不代劳：具体工作派给对应员工；**自营例外**：公司运转/机制/制度/运维类工作总管可自营（工位卡标 identity: 执行，照常上板，验收=用户或指定员工，不自审自批）
 - **领地治理**：公司公共区（company.md/目录结构说明书/skills//workbench//../../companies/C001/公司规章制度//roster）由总管独占管理；员工/团队/项目领地内自治（尊重不代劳）；员工不得摘除公司级技能引用行

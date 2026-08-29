@@ -128,7 +128,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 ## 仓库约定
 
-- **双远程模型**：`origin` 为私有备份（建议设为 Private），另设公开远程（如 `public` / `OPC-core`，设为 Public）只收「剥离私有路径后」的干净分支。详见下方「对外发布」。
+- **双远程模型**：`origin`（github.com/liao7877/OPC）是**公开**远程，供他人 fork，只收「剥离私有路径后」的干净 `main`；另设私有远程（默认名 `backup`，建议 Private）承载**含私有的全量** `main` = 版本管理 + 异地备份。详见下方「对外发布」。
 - `.gitignore` 已排除 `.workbuddy/`、`node_modules`、`*.log`、`.env`、`.pem` 等；发布时再按 `.opc-private-paths.txt` 二次剥离，双重保险。
 - 默认分支 `main`；提交信息用中文，聚焦「做了什么」。
 
@@ -136,24 +136,26 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 ## 对外发布（机制公开 / 私有备份）
 
-本仓库采用「单仓双远程」模型：机制改进对外公开，个人私有内容只做本地版本管理与备份，绝不进公开分支。
+本仓库采用「单仓双远程」模型：机制改进对外公开供 fork，私有内容只留在 `main` 与私有远程做版本管理与备份，绝不进公开分支。
 
-- **私有远程（默认 `origin` = 你的个人仓）**：推送 `main` 全量（机制 + 私有）= 完整版本管理 + 异地备份。**建议设为 Private**。
-- **公开远程（如 `OPC-core`，设为 Public）**：只接收「按 `.opc-private-paths.txt` 剥离私有后」的干净分支，供他人 fork / 拉取机制完善。
+- **公开远程 `origin`**（github.com/liao7877/OPC，Public）：只接收「按 `.opc-private-paths.txt` 剥离私有后」的干净 `main`。**禁止从工作仓库直推**——pre-push 守卫已启用（`opc.publicRemote=origin`）。
+- **私有远程 `backup`**（登记后可用，建议 Private）：直推 `main` 全量（机制 + 私有）= 完整版本管理 + 异地备份。**允许且应当做**。
 
-日常开发一切照旧：在 `main` 随便提交，推 `origin` 即为备份。需要把机制更新给别人时，跑一次发布脚本：
+日常开发一切照旧：在 `main` 随便提交。备份与发布各一条命令：
 
 ```bash
-# 首次：建公开仓库并登记
-git remote add public https://github.com/liao7877/OPC-core.git
-git config opc.publicRemote public
+# 首次：登记私有远程（换成你自己的私有仓库地址）
+git remote add backup <私有仓库URL>
 
-# 每次发布（自动剥离私有路径后推送公开远程）
+# 备份：推私有远程（含私有，做版本管理）——允许直推
+git push backup main
+
+# 发布：自动剥离私有路径后推公开远程 origin —— 唯一合法途径
 ./scripts/opc-publish.sh        # Git Bash / macOS / Linux
 .\scripts\opc-publish.ps1       # Windows PowerShell
 ```
 
-- **私有清单**：`.opc-private-paths.txt` 控制「公开分支剥离什么」；你后续引入的隐私文件往里加一行即可，公开分支自动不含它，且不影响 `main` 的备份。
+- **私有清单**：`.opc-private-paths.txt` 控制「公开分支剥离什么」；引入隐私文件往里加一行即可，公开分支自动不含它，且不影响 `main` 的备份。完整操作（怎么加 / 怎么剥 / 怎么发）见 `opc://company:C001/skill/privacy-publish`。
 - **红线**：pre-push 钩子禁止从工作仓库直接推公开远程，只允许经发布脚本（在临时克隆里剥离后推送）。
 - ⚠️ 公开分支历史每次发布会重写，forkers 需偶尔 `git pull --rebase`（或重新 fork）。
 - 一旦私有文件误推公开远程，立即用 `git filter-repo` scrub 历史并轮换任何泄露凭据。
