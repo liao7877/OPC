@@ -8,6 +8,8 @@
 > - `CLAUDE.md` = Claude Code 导入适配（一行 `@AGENTS.md`）
 > - 员工目录同理：`{员工}/AGENTS.md` + `{员工}/CLAUDE.md`
 
+> **内容治理（P31，写/改文件前必读）**：新建或改动规范、原则、技能类文件 → 三问法归位 + 「精准高效、本质而非肤浅」（唯一真相 `opc://org/principles` P31）；记忆/日志/worklog/messages 等事实记录类不受此限，细节优先。
+
 ## 模板约定（建司前必读）
 - 本模板所有 `<本司ID>` / `opc://company:<本司ID>` 为建司占位符：create-company 流程会统一替换为新公司 ID；漏改会被 OPC 根 `--check` 门禁拦下（公司 ID 全局唯一）。
 
