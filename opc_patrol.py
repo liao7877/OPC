@@ -125,6 +125,8 @@ def find(ctx):
         return
     tasks = td.get("tasks", [])
     tmap = {t["id"]: t for t in tasks}
+    # 知识回流第 0 步的判定数据（最省口径：复用本次已加载工单，不重复扫描）
+    ctx.has_failed = any(t.get("status") == "failed" for t in tasks)
     dd = _load_json(ctx.dash_data)
     if dd is None:
         # P11：投影损坏/未生成必须告警，绝不静默跳过检查项 2/3/4（认领/双账/脱期）
@@ -475,6 +477,18 @@ def new_findings(ctx, pre_open):
     return [f for f in sorted(ctx.findings, key=lambda x: x["no"]) if fkey(f) not in pre_open]
 
 
+_KB_BACKFLOW_HINT = ("[提示] 检测到升级/失败工单——建议总管把教训一句话沉淀进 "
+                     "公司知识库/methods/（P31 事实记录，细节优先），避免同类坑二次踩")
+
+
+def kb_backflow_hint(ctx):
+    """知识回流第 0 步（2026-08-29）：本轮发现升级（#5）或存在 failed 工单时，
+    打一行沉淀提示——P29 自动化边界在「发现」，本函数只提示、不写 state、不弹通知、
+    不做任何处置；教训回不回家的「路」由总管走。每轮最多提示一次。"""
+    if any(f["no"] == 5 for f in ctx.findings) or getattr(ctx, "has_failed", False):
+        print(_KB_BACKFLOW_HINT)
+
+
 # 心跳注册已随决策 #18 退役：定时巡检/通知/自愈整体并入 OPC 服务（opc_service.py），
 # 机器级副作用收敛为启动文件夹一条自启项（OPC-Service.vbs）。
 
@@ -586,6 +600,23 @@ def selftest():
     check("通知去重：open 项不算新", all(f["no"] != 8 for f in fresh))
     fresh_all = new_findings(ctxk2, set())
     check("通知去重：空集合全算新", any(f["no"] == 8 for f in fresh_all))
+    # 知识回流第 0 步：含 #5 / failed 工单时提示出现，不含时不出现（P29：只提示不处置）
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        kb_backflow_hint(ctx)               # ctx 含 #5（TSKC 有升级）
+    check("知识回流提示:含 #5 出现", "公司知识库/methods" in buf.getvalue())
+    buf2 = io.StringIO()
+    with redirect_stdout(buf2):
+        kb_backflow_hint(Ctx(cfg, tmp))     # 无 #5 无 failed，且 find 未跑（无 has_failed）
+    check("知识回流提示:不含不出现", buf2.getvalue() == "")
+    ctxf = Ctx(cfg, tmp)
+    ctxf.has_failed = True                  # 模拟 find() 复用已加载工单算出的 failed 标记
+    buf3 = io.StringIO()
+    with redirect_stdout(buf3):
+        kb_backflow_hint(ctxf)
+    check("知识回流提示:failed 工单触发", "公司知识库/methods" in buf3.getvalue())
     # 勿扰屏蔽（notify_allowed 纯函数）：critical 恒放行；warn/info 时段内静默
     cfgq = {"quiet_hours": "22:00-08:00"}   # 跨零点
     check("勿扰:critical 恒放行", notify_allowed("critical", datetime.time(23, 0), cfgq))
@@ -666,6 +697,7 @@ def _run_once_locked(ctx, dry, quiet):
     if not ctx.findings:
         if not quiet:
             print(f"[patrol] {ctx.today} 巡检完成：无异常 ✓")
+            kb_backflow_hint(ctx)   # failed 工单可能不伴随其他发现，无发现也要提示回流
         # 无发现也要刷新待办快照：state 里残留的 open 项（等处置）保持可见，处置完即收敛
         write_pending(ctx, load_state(ctx))
         return ctx, []
@@ -674,6 +706,7 @@ def _run_once_locked(ctx, dry, quiet):
         print(f"[patrol] {ctx.today} 巡检发现 {len(ctx.findings)} 项待办：")
         for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
             print(f"  #{f['no']} [{f['severity']}] {f['msg']}")
+        kb_backflow_hint(ctx)   # 知识回流第 0 步：发现汇总之后轻量提示一次
         if written:
             print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
     fresh = []
