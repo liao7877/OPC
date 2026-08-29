@@ -10,7 +10,7 @@ opc_patrol.py —— 公司巡检器（机制层，OPC 根单例）
 > 消费 skills/patrol/SKILL.md 定义的同一份巡检清单（机器与总管共享标准，不漂移）。
 
 职责边界（与总管分工）：
-  - 本脚本只「发现」：1~12 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
+  - 本脚本只「发现」：1~13 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
     （追加式、幂等去重），并打印待办清单；不做任何处置决策。
     例外（2026-08-29 拍板）：看板数据缺失/陈旧时自动重生成（auto_refresh）——数据刷新
     由 OPC 服务完成，属机械性自愈而非处置决策。
@@ -19,6 +19,7 @@ opc_patrol.py —— 公司巡检器（机制层，OPC 根单例）
     通知去重：open 态旧待办不重复弹）；B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
   - 11/12 号风险预警（决策 #18）：活跃工单已逾期/截止日临近/长期无进展——用户拍板的
     两类主动打扰之一，windows 弹窗直达用户。
+  - 13 号依赖环（2026-08-29）：blocked_by/parent 成环 → 永久无法开工，告警交总管拆环。
 
 用法（cwd 无关）：
     python opc_patrol.py --company C001              # 巡检 + 写 log
@@ -43,6 +44,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 import opc_model
 import opc_resolver
+import opc_tickets
 from opc_schema import TASK_TERMINAL, TASK_ACTIVE, PATROL, PATROL_CHECKS
 
 
@@ -267,6 +269,13 @@ def find(ctx):
             ctx.findings.append(_mk(12, f"工单 {t['id']}「{t['title']}」进行中已 {idle} 天无更新（last={upd}，"
                                         f"owner={t.get('owner') or '?'}）——催办或转 paused", ref=t["id"], owner=t.get("owner") or ""))
 
+    # 13) 依赖环（2026-08-29）：blocked_by/parent 成环 → 永久无法开工且无外力可解。
+    #     图直接从本函数已加载的 tasks 构建，查环算法复用 opc_tickets.find_cycles（单一实现）
+    dep_graph = {t["id"]: [b for b in t.get("blocked_by", []) if b in tmap] for t in tasks if t.get("id")}
+    parent_graph = {t["id"]: [t["parent"]] for t in tasks if t.get("id") and t.get("parent") in tmap}
+    for cyc in opc_tickets.find_cycles(dep_graph) + opc_tickets.find_cycles(parent_graph):
+        ctx.findings.append(_mk(13, "工单依赖环（永久无法开工，找总管拆环）：" + " → ".join(cyc), ref="→".join(cyc)))
+
 
 def write_log(ctx, dry):
     """发现写入 workbench/patrol-log.md（幂等：同日同条目不重复追加）。
@@ -388,6 +397,23 @@ def write_pending(ctx, state):
     os.replace(tmp, ctx.pending)
 
 
+def notify_allowed(severity, now_time, cfg):
+    """勿扰屏蔽判定（OS 中断屏蔽字思路，纯函数可直测）：critical 恒放行；
+    quiet_hours（"HH:MM-HH:MM"，支持跨零点如 "22:00-08:00"）启用时 warn/info
+    在时段内被静默（并入每日摘要重提）。配置缺失/非法按未启用处理（容错不阻断）。"""
+    if severity == "critical":
+        return True
+    m = re.match(r"^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$", str(cfg.get("quiet_hours") or "").strip())
+    if not m:
+        return True
+    start = datetime.time(int(m.group(1)), int(m.group(2)))
+    end = datetime.time(int(m.group(3)), int(m.group(4)))
+    if start == end:
+        return True
+    in_window = (start <= now_time < end) if start < end else (now_time >= start or now_time < end)
+    return not in_window
+
+
 def notify_user(ctx, summary):
     """A+ 报警通道（2026-08-28 拍板）：发现异常时弹系统通知，用户不守着机器也能被 critical 打扰。
     跨平台尽力而为：Windows 弹 Toast（PowerShell BalloonTip）、macOS 弹 osascript 通知、
@@ -504,6 +530,27 @@ def selftest():
     check("#9 僵尸工位卡发现", any("僵尸" in m for m in msgs))
     check("#10 数据陈旧发现", any("未刷新" in m for m in msgs))
     check("findings 结构化（kind/action/ref）", all(f.get("kind") and f.get("action") and "ref" in f for f in ctx.findings))
+    check("#13 无环不误报", not any(f["no"] == 13 for f in ctx.findings))
+    # 13) 依赖环：blocked_by A↔B 互锁 + parent 父子互嵌 → 永久无法开工
+    with open(os.path.join(wb, "tasks-data.json"), "w", encoding="utf-8") as fh:
+        json.dump({
+            "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "tasks": [
+                {"id": "TSKA", "title": "已解锁待开工", "status": "backlog", "owner": "E1", "blocked_by": ["TSKB"]},
+                {"id": "TSKB", "title": "上游", "status": "done", "owner": ""},
+                {"id": "TSKC", "title": "有升级", "status": "in_progress", "owner": "E2",
+                 "escalations": [{"reason": "需求不明", "date": "2026-08-28"}]},
+                {"id": "TSKX", "title": "环X", "status": "backlog", "owner": "E1", "blocked_by": ["TSKY"]},
+                {"id": "TSKY", "title": "环Y", "status": "backlog", "owner": "E1", "blocked_by": ["TSKX"]},
+                {"id": "TSKP", "title": "子嵌", "status": "backlog", "owner": "E1", "parent": "TSKQ"},
+                {"id": "TSKQ", "title": "父嵌", "status": "backlog", "owner": "E1", "parent": "TSKP"},
+            ],
+        }, fh, ensure_ascii=False)
+    ctxc = Ctx(cfg, tmp)
+    find(ctxc)
+    cyc_msgs = [f["msg"] for f in ctxc.findings if f["no"] == 13]
+    check("#13 blocked_by 依赖环发现", any("TSKX → TSKY" in m or "TSKY → TSKX" in m for m in cyc_msgs))
+    check("#13 parent 父子环发现", any("TSKP → TSKQ" in m or "TSKQ → TSKP" in m for m in cyc_msgs))
     # 闭环态：open → handled → 同问题再犯 reopened（A 方案 ③）
     state = update_state(ctx)
     check("state 初始全 open", state and all(v.get("status") == "open"
@@ -539,6 +586,17 @@ def selftest():
     check("通知去重：open 项不算新", all(f["no"] != 8 for f in fresh))
     fresh_all = new_findings(ctxk2, set())
     check("通知去重：空集合全算新", any(f["no"] == 8 for f in fresh_all))
+    # 勿扰屏蔽（notify_allowed 纯函数）：critical 恒放行；warn/info 时段内静默
+    cfgq = {"quiet_hours": "22:00-08:00"}   # 跨零点
+    check("勿扰:critical 恒放行", notify_allowed("critical", datetime.time(23, 0), cfgq))
+    check("勿扰:跨零点时段内屏蔽(warn/info)",
+          not notify_allowed("warn", datetime.time(23, 30), cfgq)
+          and not notify_allowed("info", datetime.time(2, 0), cfgq))
+    check("勿扰:时段外放行", notify_allowed("warn", datetime.time(12, 0), cfgq))
+    cfgn = {"quiet_hours": "12:00-14:00"}   # 普通时段
+    check("勿扰:普通时段内屏蔽", not notify_allowed("warn", datetime.time(13, 0), cfgn))
+    check("勿扰:未启用放行", notify_allowed("warn", datetime.time(23, 0), {}))
+    check("勿扰:配置非法按未启用", notify_allowed("warn", datetime.time(23, 0), {"quiet_hours": "abc"}))
     # 写日志幂等
     n1 = write_log(ctx, dry=False)
     n2 = write_log(ctx, dry=False)
@@ -626,12 +684,20 @@ def _run_once_locked(ctx, dry, quiet):
             opens = sum(1 for k2, v in state.items()
                         if not k2.startswith("_") and v.get("status") != "handled")
             print(f"  闭环态已更新：{ctx.state}（open {opens} 项）→ 待办快照 {ctx.pending}")
-        if _patrol_cfg().get("notify", True):
+        pcfg = _patrol_cfg()
+        if pcfg.get("notify", True):
             fresh = new_findings(ctx, pre_open)
             if fresh:
-                summary = "；".join(f["msg"] for f in fresh[:3])
-                if notify_user(ctx, summary) and not quiet:
-                    print(f"  已发系统通知（新发现 {len(fresh)} 项；A+ 报警通道，可在 opc.toml [patrol] notify=false 关闭）")
+                # 勿扰屏蔽（2026-08-29）：quiet_hours 时段内 warn/info 静默（并入每日摘要），critical 恒放行
+                now_t = datetime.datetime.now().time()
+                allowed = [f for f in fresh if notify_allowed(f["severity"], now_t, pcfg)]
+                muted = len(fresh) - len(allowed)
+                if allowed:
+                    summary = "；".join(f["msg"] for f in allowed[:3])
+                    if notify_user(ctx, summary) and not quiet:
+                        print(f"  已发系统通知（新发现 {len(allowed)} 项；A+ 报警通道，可在 opc.toml [patrol] notify=false 关闭）")
+                if muted and not quiet:
+                    print(f"  勿扰时段：{muted} 项已按勿扰配置静默（次日 09:00 摘要重提）")
             elif not quiet:
                 print("  通知去重：无新发现（open 待办见 patrol-pending.md），不再重复打扰")
     return ctx, fresh

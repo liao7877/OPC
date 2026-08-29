@@ -388,6 +388,41 @@ def _roster_roles(ctx):
         return {}
 
 
+def find_cycles(graph):
+    """引用图查环（迭代式 DFS 三色标记，防深递归——工单量大时递归会爆栈，P30）。
+    graph: {id: [被引用 id...]}（指向不存在节点的边由调用方滤掉，引用有效性另有告警）。
+    返回环路径列表，每个环首尾闭合（如 [A, B, A]）；同一环只报一次（三色保证节点只展开一次）。"""
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color = {}
+    cycles = []
+    for start in graph:
+        if color.get(start, WHITE) != WHITE:
+            continue
+        color[start] = GRAY
+        path = [start]
+        stack = [(start, iter(graph.get(start, ())))]
+        while stack:
+            node, it = stack[-1]
+            advanced = False
+            for nxt in it:
+                if nxt not in graph:
+                    continue
+                c = color.get(nxt, WHITE)
+                if c == WHITE:
+                    color[nxt] = GRAY
+                    path.append(nxt)
+                    stack.append((nxt, iter(graph.get(nxt, ()))))
+                    advanced = True
+                    break
+                if c == GRAY:   # 回边指向栈内节点 → 环
+                    cycles.append(path[path.index(nxt):] + [nxt])
+            if not advanced:
+                color[node] = BLACK
+                path.pop()
+                stack.pop()
+    return cycles
+
+
 def generate(ctx):
     """扫描 ctx.tasks_dir 生成 ctx.out_json / ctx.out_js。"""
     tasks = []
@@ -427,6 +462,14 @@ def generate(ctx):
     for t in tasks:
         if t.get("parent"):
             children_map.setdefault(t["parent"], []).append(t["id"])
+    # 依赖环检测（机制扩展 #13）：blocked_by/parent 成环 → 永久锁死（A 阻塞 B、B 阻塞 A 谁也开不了工），
+    # 只告警不阻断（P11），拆环由总管处置
+    dep_graph = {t["id"]: [b for b in t.get("blocked_by", []) if b in tmap] for t in tasks if t.get("id")}
+    for cyc in find_cycles(dep_graph):
+        print(f"  [警告] blocked_by 依赖环（互相阻塞永久无法开工，找总管拆环）：" + " → ".join(cyc))
+    parent_graph = {t["id"]: [t["parent"]] for t in tasks if t.get("id") and t.get("parent") in tmap}
+    for cyc in find_cycles(parent_graph):
+        print(f"  [警告] parent 父子环（父单/子单互相嵌套锁死，找总管拆环）：" + " → ".join(cyc))
     for t in tasks:
         # blocked_by 引用有效性
         for b in t.get("blocked_by", []):
@@ -847,11 +890,20 @@ def selftest():
         ("I7-已解锁", "---\nid: TSKI7\ntitle: 已解锁\nstatus: backlog\nblocked_by: [TSKI1]\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
         ("I8-违规开工", "---\nid: TSKI8\ntitle: 违规开工\nstatus: in_progress\nblocked_by: [TSKI6]\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
         ("I9-坏引用", "---\nid: TSKI9\ntitle: 坏引用\nstatus: backlog\nblocked_by: [TSKZZZ]\nparent: TSKYYY\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        # 依赖环用例（机制扩展 #13）：blocked_by A↔B 互锁、parent 父子互嵌
+        ("I10-环A", "---\nid: TSKI10\ntitle: 环A\nstatus: backlog\nblocked_by: [TSKI11]\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("I11-环B", "---\nid: TSKI11\ntitle: 环B\nstatus: backlog\nblocked_by: [TSKI10]\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("I12-子嵌", "---\nid: TSKI12\ntitle: 子嵌\nstatus: backlog\nparent: TSKI13\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("I13-父嵌", "---\nid: TSKI13\ntitle: 父嵌\nstatus: backlog\nparent: TSKI12\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
     ]:
         os.makedirs(os.path.join(itasks, sub), exist_ok=True)
         _iw(os.path.join(itasks, sub, "task.md"), md)
     ictx = Ctx(itmp, itmp, itasks, os.path.join(itmp, "out.json"), os.path.join(itmp, "out.js"))
-    generate(ictx)
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        generate(ictx)
+    gen_out = buf.getvalue()
     with open(ictx.out_json, encoding="utf-8") as fh:
         idata = json.load(fh)
     i_ids = [t["id"] for t in idata["tasks"]]
@@ -863,6 +915,26 @@ def selftest():
     check("集成:blocked_by 解析入 payload", t_by_id.get("TSKI8", {}).get("blocked_by") == ["TSKI6"])
     check("集成:parent 解析入 payload", t_by_id.get("TSKI6", {}).get("parent") == "TSKI5")
     check("集成:无阻塞工单 blocked_by 为空数组", t_by_id.get("TSKI2", {}).get("blocked_by") == [])
+    # 依赖环检测（机制扩展 #13）：发现 A↔B 环 / 父子环，且方向不限（DFS 入口决定路径起点）
+    check("集成:blocked_by 依赖环告警(A↔B)",
+          "依赖环" in gen_out and ("TSKI10 → TSKI11" in gen_out or "TSKI11 → TSKI10" in gen_out))
+    check("集成:parent 父子环告警", "父子环" in gen_out and "TSKI12 → TSKI13" in gen_out)
+    # 无环不误报：干净的链式依赖（C1 阻塞于 C2、C3 父单 C4）不应产生环告警
+    jtmp = tempfile.mkdtemp(prefix="kanban_clean_")
+    jtasks = os.path.join(jtmp, "tasks")
+    for sub, md in [
+        ("J1-下游", "---\nid: TSKJ1\ntitle: 下游\nstatus: backlog\nblocked_by: [TSKJ2]\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("J2-上游", "---\nid: TSKJ2\ntitle: 上游\nstatus: in_progress\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("J3-子单", "---\nid: TSKJ3\ntitle: 子单\nstatus: backlog\nparent: TSKJ4\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+        ("J4-父单", "---\nid: TSKJ4\ntitle: 父单\nstatus: in_progress\ncreated: 2026-08-01\nupdated: 2026-08-01\n---\n"),
+    ]:
+        os.makedirs(os.path.join(jtasks, sub), exist_ok=True)
+        _iw(os.path.join(jtasks, sub, "task.md"), md)
+    jctx = Ctx(jtmp, jtmp, jtasks, os.path.join(jtmp, "out.json"), os.path.join(jtmp, "out.js"))
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        generate(jctx)
+    check("环检测:无环不误报", "依赖环" not in buf2.getvalue() and "父子环" not in buf2.getvalue())
 
     # ---- --auto-id 原子取号：目录存在性即锁（B5）----
     check("auto-id: 首号 = 最大已用号+1", _alloc_and_create_dir(ictx, "占号验证A")[0] == "TSK00001")

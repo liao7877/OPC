@@ -24,6 +24,8 @@ home = "companies/C001"
 # ---- 巡检报警（opc_patrol 消费）----
 [patrol]
 notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS / Linux notify-send，失败不影响巡检）
+quiet_hours = ""     # 勿扰时段（可选）："HH:MM-HH:MM"，空=不启用；跨零点如 "22:00-08:00" 合法。
+                     # 时段内 warn/info 通知静默（并入每日 09:00 摘要重提），critical 永远放行
 # actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
 
 # ---- 实体类型注册表（2026-08-29 拍板：前缀唯一真相，resolver/生成器/巡检/结构自检统一消费）----
