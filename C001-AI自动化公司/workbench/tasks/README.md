@@ -156,8 +156,8 @@ completed_at: 2026-08-27   # 实际完成时间，必须填
 | 命令 | 作用 |
 |---|---|
 | `python ../../../opc_tickets.py --company C001` | 手动生成看板数据 |
-| `./run_boards.sh` / `run_boards.bat` | 统一入口：生成 + 双 watcher（日常建议挂着） |
+| `./run_boards.sh` / `run_boards.bat` | 手动应急一次性重生成（默认 once；日常刷新由 OPC 服务负责，`watch` 参数为显式应急、勿与服务并发） |
 | `python ../../../opc_tickets.py --company C001 --new TSKxxx 标题 [--owner E0001] [--project P0001]` | **一键生成规范工单模板目录**（推荐建单方式，避免手抄出错） |
 | `python ../../../opc_tickets.py --selftest` | **内置自测**（解析/校验/容错用例），全过退出码 0 |
 
-> 注意：`--watch` 保持**单个实例**即可（双开会互相覆盖写）；文件轮询为 1 秒级感知，极端同秒并发改动可能延迟 1 秒才上板，属正常。
+> 注意：数据刷新日常由 OPC 服务（opc_service.py）包办；`--watch` 仅应急且保持**单个实例**（双开会互相覆盖写，与服务并发亦然）；文件轮询为 1 秒级感知，极端同秒并发改动可能延迟 1 秒才上板，属正常。
