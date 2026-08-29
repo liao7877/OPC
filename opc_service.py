@@ -18,13 +18,14 @@
           通道可插拔：windows 弹窗内置（opc_patrol.notify_user 唯一出口），
           将来 agent 平台/webhook 在此扩展 channel，配置驱动。
 
-只读 API（给 agent 与未来外部服务；无任何写接口）：
-  GET /api/ping                    服务健康 + 租户清单
-  GET /api/{CID}/ping              租户状态
-  GET/POST /api/{CID}/sync         重算该公司看板数据 + 联动巡检（前端「同步」按钮用）
-  GET /api/{CID}/tickets           工单投影 JSON
-  GET /api/{CID}/dashboard         驾驶舱投影 JSON
-  GET /api/{CID}/patrol            巡检待办（open 项）
+只读 API（给 agent 与未来外部服务；写边界只留一个显式重算动作）：
+  GET  /api/ping                   服务健康 + 租户清单
+  GET  /api/{CID}/ping             租户状态
+  POST /api/{CID}/sync             重算该公司看板数据 + 联动巡检（看板「同步」按钮用；
+                                   只收 POST 且同站校验——GET 已退役，防任意网页滥用）
+  GET  /api/{CID}/tickets          工单投影 JSON
+  GET  /api/{CID}/dashboard        驾驶舱投影 JSON
+  GET  /api/{CID}/patrol           巡检待办（open 项）
 
 开机自启：--register 写启动文件夹 OPC-Service.vbs（pythonw headless，免管理员，
 删文件即卸载）。旧 schtasks 心跳（OPC-Patrol-*）已随本服务退役。
@@ -86,6 +87,7 @@ class Tenant:
         self.gen_lock = threading.Lock()
         self.last_gen_epoch = 0.0
         self.last_findings = []      # 最近一轮巡检发现（/api/{cid}/patrol 用）
+        self.last_error = ""         # 后台循环最近一次异常（/api/{cid}/ping 可查，防静默）
 
     # ---- 生成 + 巡检 ----
 
@@ -127,8 +129,9 @@ class Tenant:
                     self.regenerate("watch")
                     self.patrol()
                 last = self._sources_mtime()
-            except Exception:
-                pass    # 监听线程永不退出（单轮失败不断服务）
+            except Exception as e:
+                # 监听线程永不退出（单轮失败不断服务），但异常必须可查（防静默失能）
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} watch: {e!r}"
 
     def _patrol_loop(self, interval_minutes):
         """周期兜底巡检：数据源 mtime 之外的第二触发源（如 worklog 无 mtime 变化的语义问题）。"""
@@ -136,8 +139,8 @@ class Tenant:
             time.sleep(max(1, int(interval_minutes)) * 60)
             try:
                 self.patrol()
-            except Exception:
-                pass
+            except Exception as e:
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} patrol: {e!r}"
 
     def open_items(self):
         """state 里未处置（open/reopened）的待办，每日摘要重提用。"""
@@ -193,6 +196,31 @@ def _digest_loop(tenants):
 # HTTP：公司路由 + 只读 API
 # ---------------------------------------------------------------------------
 
+def _safe_join(base, rest):
+    """租户内路径解析（防目录穿越，P30 行为收敛在本函数）：
+    段按 / 和 \\ 双分隔符切分并滤掉 . ..（Windows 下 URL 编码反斜杠 %5C 可绕过
+    单一分隔符过滤），再以 realpath 前缀校验兜底——落点必须仍在租户 base 内，
+    越界（绝对盘符、符号链等）一律落回租户根。"""
+    parts = [s for s in re.split(r"[\\/]+", rest) if s and s not in (".", "..")]
+    p = os.path.normpath(os.path.join(base, *parts))
+    try:
+        rb, rp = os.path.realpath(base), os.path.realpath(p)
+        if rp == rb or rp.startswith(rb + os.sep):
+            return p
+    except (OSError, ValueError):
+        pass
+    return base
+
+
+def _same_origin(headers):
+    """同站校验（写动作 POST /sync 专用）：浏览器跨站上下文必带 Origin 或
+    Sec-Fetch-Site: cross-site；本机工具直连（两头皆空）放行。"""
+    origin = headers.get("Origin")
+    if origin:
+        return urllib.parse.urlparse(origin).netloc == (headers.get("Host") or "")
+    return headers.get("Sec-Fetch-Site") in (None, "same-origin", "same-site", "none")
+
+
 def make_handler(tenants, default_cid):
     from http.server import SimpleHTTPRequestHandler
     cfg = _service_cfg()
@@ -219,8 +247,7 @@ def make_handler(tenants, default_cid):
                 return super().translate_path(path)
             if rest.endswith("/"):
                 rest += "index.html"
-            parts = [s for s in rest.split("/") if s and s not in (".", "..")]  # 防目录穿越
-            return os.path.normpath(os.path.join(tenant.base, *parts))
+            return _safe_join(tenant.base, rest)
 
         def _json(self, obj, code=200):
             body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -264,9 +291,10 @@ def make_handler(tenants, default_cid):
         def _api(self, t, sub):
             if sub == "/ping":
                 return self._json({"ok": True, "company": t.cid, "base": t.base,
-                                   "open_patrol_items": len(t.open_items())})
+                                   "open_patrol_items": len(t.open_items()),
+                                   "last_error": t.last_error or None})
             if sub == "/sync":
-                return self._api_sync(t)
+                return self._json({"ok": False, "error": "/sync 只收 POST（GET 已退役，防跨站滥用）"}, 405)
             if sub == "/tickets":
                 return self._json(opc_patrol._load_json(t.tctx.out_json) or {})
             if sub == "/dashboard":
@@ -277,7 +305,26 @@ def make_handler(tenants, default_cid):
             return self._json({"ok": False, "error": f"unknown api {sub}"}, 404)
 
         def do_POST(self):
-            return self.do_GET()    # /sync 支持双动词；其余无写接口（架构铁律）
+            # 写边界（架构铁律）：唯一带副作用的动作是 /sync（重算落盘），只收 POST
+            # 且需同站——防任意网页 <img>/<form> 跨站触发全公司重算与通知
+            if not _same_origin(self.headers):
+                return self._json({"ok": False, "error": "cross-site request rejected"}, 403)
+            p = urllib.parse.urlparse(self.path).path
+            m = re.match(r"^/api/([A-Za-z]\d{3})(/.*)?$", p)
+            if m:
+                cid = m.group(1).upper()
+                if cid not in tenants:
+                    return self._json({"ok": False, "error": f"unknown company {cid}"}, 404)
+                t, sub = tenants[cid], m.group(2) or "/"
+            else:
+                t, rest = self._route()
+                if not rest.startswith("/api/"):
+                    return self._json({"ok": False, "error": "no writable endpoint"}, 405)
+                t, sub = t, rest[len("/api"):]
+            if sub != "/sync":
+                return self._json({"ok": False,
+                                   "error": f"{sub} 无写接口（架构铁律）；仅 /sync 可 POST"}, 405)
+            return self._api_sync(t)
 
         def _api_sync(self, t):
             ok, errs = t.regenerate("sync")
@@ -295,13 +342,20 @@ def make_handler(tenants, default_cid):
 # ---------------------------------------------------------------------------
 
 def service_alive(port=None):
-    """TCP 探活：能连上服务端口即在跑（0.5s 快速失败，不拖慢 doctor）。"""
-    import socket
-    try:
-        with socket.create_connection(("127.0.0.1", port or _service_cfg()["port"]), timeout=0.5):
-            return True
-    except OSError:
-        return False
+    """HTTP 探活：请求 /api/ping 并校验响应体——只测 TCP 会被占用端口的无关进程
+    误报「服务在跑」，也不感知端口顺延。未指定端口时扫 [port, port+10)（与启动
+    顺延口径一致）。0.5s 快速失败，不拖慢 doctor。"""
+    import urllib.request
+    base = int(_service_cfg()["port"])
+    ports = [port] if port else list(range(base, base + 10))
+    for p in ports:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=0.5) as r:
+                if b"opc-service" in (r.read() or b""):
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def selftest():
@@ -318,6 +372,22 @@ def selftest():
           all(k in cfg for k in ("port", "patrol_interval_minutes", "digest_time", "notify_channels")))
     hh, mm = _digest_time()
     check("[service] digest_time 解析为合法时分", 0 <= hh <= 23 and 0 <= mm <= 59)
+    # 目录穿越防护（含 Windows 反斜杠 / 绝对盘符，P30）
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        base = os.path.realpath(tmp)
+        ok_join = _safe_join(base, "/dashboard.html") == os.path.normpath(os.path.join(base, "dashboard.html"))
+        check("[service] _safe_join：正常路径落在租户内", ok_join)
+        for evil in ("/..\\..\\..\\Windows\\win.ini",
+                     "/..\\..\\secret", "/C:/Windows/win.ini", "/a/../../b"):
+            check(f"[service] _safe_join：穿越 {evil!r} 被拦回落回租户根",
+                  _safe_join(base, evil) == base or
+                  os.path.realpath(_safe_join(base, evil)).startswith(base + os.sep))
+    check("[service] 同站校验：跨站 Origin 拒绝",
+          not _same_origin({"Origin": "http://evil.example", "Host": "127.0.0.1:8765"}))
+    check("[service] 同站校验：同站 Origin / 无头本机工具放行",
+          _same_origin({"Origin": "http://127.0.0.1:8765", "Host": "127.0.0.1:8765"})
+          and _same_origin({}))
     check("[service] 探活：关闭端口返回 False（未启动属正常）",
           service_alive(1) is False)     # 端口 1 不可 bind/connect，稳定关闭
     check("[service] ensure_started CI 护栏（CI 环境不拉进程）",
@@ -343,7 +413,7 @@ def register_startup(port):
         pyw = (sys.executable or "python").replace("python.exe", "pythonw.exe")
         vbs = (f"' OPC service autostart -- delete this file to uninstall\r\n"
                f"CreateObject(\"WScript.Shell\").Run \"\"\"{pyw}\"\" "
-               f"\"\"{os.path.abspath(__file__)}\" --port {port} --open\"\", 0, False\r\n")
+               f"\"\"{os.path.abspath(__file__)}\" --port {port}\"\", 0, False\r\n")
         os.makedirs(_startup_dir(), exist_ok=True)
         p = os.path.join(_startup_dir(), STARTUP_VBS)
         with open(p, "w", encoding="utf-8") as f:

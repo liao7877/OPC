@@ -638,7 +638,12 @@ def main(argv):
     if not company:          # 友好提示而非抛栈（旧版有唯一公司自动推断，重构后显式要求）
         print(USAGE)
         return 1
-    ctx, _fresh = run_once(company, dry="--dry-run" in argv, quiet="--quiet" in argv)
+    try:
+        ctx, _fresh = run_once(company, dry="--dry-run" in argv, quiet="--quiet" in argv)
+    except SystemExit:
+        raise
+    except Exception:
+        return 2    # 巡检自身崩溃（区别于「有发现」的 1；退出语义：0 无发现 / 1 有发现 / 2 崩溃）
     return 1 if ctx.findings else 0
 
 
