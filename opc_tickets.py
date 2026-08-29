@@ -363,7 +363,7 @@ def build_registry(ctx, tasks):
 
 
 def dir_suffix_label(dirname):
-    """目录名去 ID 前缀取显示名后缀（P0001-示例项目 -> 示例项目；E0001 -> E0001）。"""
+    """目录名去 ID 前缀取显示名后缀（P0004-公司看板与工作记录系统 -> 公司看板与工作记录系统；E0001 -> E0001）。"""
     return dirname.split("-", 1)[1] if "-" in dirname else dirname
 
 
