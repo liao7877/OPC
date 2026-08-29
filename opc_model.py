@@ -109,14 +109,21 @@ def read_card(path):
         return {}, "", False
 
 
+def strip_inline_comment(value):
+    """截内联注释：（...）或 (...) 之后不算值——允许「ID：xxx（说明）」行带说明
+    文字而不破坏解析。唯一实现在此（P25：消灭口径漂移），resolver 与本模块共用。"""
+    return str(value).split("（")[0].split("(")[0].strip()
+
+
 def extract_id(text, fm_key="id", prose_pat=r"ID[：:]\s*(\S+)"):
     """实体 ID 提取：优先 frontmatter 的 fm_key（如 id），回退散文「XX ID：...」。
-    兼容 P0001（散文）与 P0002/P0003（frontmatter）两种注册格式，不强制单一写法。"""
+    兼容 P0001（散文）与 P0002/P0003（frontmatter）两种注册格式，不强制单一写法。
+    散文兜底与 resolver.extract_company_id 同样截内联注释（strip_inline_comment）。"""
     fm, _, _ = parse_frontmatter(text)
     if fm.get(fm_key):
         return fm[fm_key].strip()
     m = re.search(prose_pat, text)
-    return m.group(1).strip() if m else None
+    return strip_inline_comment(m.group(1)) if m else None
 
 
 def _read(p):
@@ -234,8 +241,27 @@ def locked_update(path, transform):
         atomic_write(path, transform(existing))
 
 
+def parse_company_args(argv):
+    """--company / --dir 参数提取（生成器 CLI 共用，D 收敛）：取值缺失友好报错，不裸栈。"""
+    vals = {}
+    for flag in ("--company", "--dir"):
+        if flag in argv:
+            i = argv.index(flag)
+            if i + 1 >= len(argv):
+                raise SystemExit(f"[ERR] 参数 {flag} 缺少取值（示例：{flag} C001）")
+            vals[flag] = argv[i + 1]
+    return vals.get("--company"), vals.get("--dir")
+
+
 def build_indexes(company_root):
-    """发现并索引公司内实体（task/project/team/employee），返回 dict。"""
+    """发现并索引公司内实体（task/project/team/employee），返回 dict。
+    实体目录前缀唯一真相在 opc.toml [entity_types]（P25：消费注册表，不私写正则）。"""
+    import opc_resolver    # 延迟导入（本模块零耦合 manifest 的口径不变；仅此一处按需取注册表）
+    etypes = opc_resolver.entity_types()
+    kind_of = {v: k for k, v in etypes.items()}          # 前缀 -> 类型
+    emp_pfx = etypes.get("employee", "E")
+    card_map = {"project": ("project.md", r"项目\s*ID[：:]\s*(\S+)"),
+                "team": ("team.md", r"团队\s*ID[：:]\s*(\S+)")}
     root = Path(company_root)
     tasks, projects, teams, employees = {}, {}, {}, {}
     for tm in root.glob("workbench/tasks/*/task.md"):
@@ -244,31 +270,30 @@ def build_indexes(company_root):
         if tid:
             tasks[tid] = {"fm": fm, "path": str(tm)}
     for d in root.iterdir():
-        if d.is_dir() and re.match(r"^P\d+", d.name):
-            pm = d / "project.md"
-            if pm.is_file():
-                pid = extract_id(_read(pm), "id", r"项目\s*ID[：:]\s*(\S+)")
-                if pid:
-                    projects[pid] = {"path": str(pm)}
-        elif d.is_dir() and re.match(r"^T\d+", d.name):
-            tm = d / "team.md"
-            if tm.is_file():
-                tid = extract_id(_read(tm), "id", r"团队\s*ID[：:]\s*(\S+)")
-                if tid:
-                    teams[tid] = {"path": str(tm)}
+        if not d.is_dir():
+            continue
+        kind = next((k for p, k in kind_of.items() if re.match(rf"^{p}\d+", d.name)), None)
+        if kind not in card_map:
+            continue
+        card, prose_pat = card_map[kind]
+        pm = d / card
+        if pm.is_file():
+            pid = extract_id(_read(pm), "id", prose_pat)
+            if pid:
+                (projects if kind == "project" else teams)[pid] = {"path": str(pm)}
     # roster 位置真相源在 opc.toml [company.*].roster（本读取器保持零耦合不读 manifest），
     # 此处按约定发现：E0000 目录（决策 #17 ID-only 命名）优先，E0000-* 遗留带名兜底。
-    roster = root / "E0000" / "roster.md"
+    roster = root / f"{emp_pfx}0000" / "roster.md"
     if not roster.is_file():
         for d in root.iterdir():
-            if d.is_dir() and re.match(r"^E0000", d.name):
+            if d.is_dir() and re.match(rf"^{emp_pfx}0000", d.name):
                 r2 = d / "roster.md"
                 if r2.is_file():
                     roster = r2
                     break
     if roster.is_file():
         for line in _read(roster).splitlines():
-            m = re.match(r"\|\s*(E\d{4})\s*\|", line)
+            m = re.match(rf"\|\s*({emp_pfx}\d{{4}})\s*\|", line)
             if m:
                 employees[m.group(1)] = {"path": str(roster)}
     return {"task": tasks, "project": projects, "team": teams, "employee": employees}
