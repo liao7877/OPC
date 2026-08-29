@@ -51,7 +51,7 @@ from opc_schema import (WORKLOG_STATUS, TASK_ACTIVE as ACTIVE_TS,   # 状态机�
 WORKLOG_STATUS = set(WORKLOG_STATUS)
 AFF_STATUS = set(AFF_STATUS)
 
-PAGE_VERSION = "v1.2"
+PAGE_VERSION = "v1.3"
 STALE_DAYS_DEFAULT = PATROL["worklog_stale_days"]   # 「N 天未动」阈值（opc_schema 统一）
 
 
@@ -82,14 +82,12 @@ def resolve_ctx(company=None, company_dir=None):
 
 # ---------- 基础工具 ----------
 
-def anchor_prefix(ctx, subdir):
-    """返回 base_dir/subdir 指向稳定锚 companies/<cid>/ 的相对前缀（深度自适配）。
-    cid 取自 manifest 注入的 ctx，零硬编码公司 ID（P26）。"""
-    out_dir = os.path.realpath(os.path.join(ctx.base, subdir))
-    base = os.path.realpath(ctx.base)
-    rel = os.path.relpath(out_dir, base)          # 如 'E0001' / '.' / 'T001'
-    depth = 0 if rel == "." else len(rel.split(os.sep))
-    return ("../" * (depth + 1)) + f"companies/{ctx.cid}/"
+def sibling_nav_links():
+    """看板页内跳转链接（公司根下一级子目录页面 → 公司级页面/工单看板）。
+    一律用纯相对路径（公司根下所有页面互为近邻），file:// 直开与 opc_service
+    的 /CID/ 路由两种模式都成立——锚前缀 companies/<cid>/ 在服务模式下会与
+    URL 里的 /CID/ 双重拼接导致 404（2026-08-29 跳转 bug 修复，锚前缀退役）。"""
+    return {"dashboard": "../dashboard.html", "kanban": "../workbench/kanban.html"}
 
 
 def split_blocks(text):
@@ -428,6 +426,25 @@ def cross_validate(ctx, emp_entries, tasks):
             warnings.append({"scope": "核验", "msg": f"{t['owner']} 的 {t['id']} 工单在途，但 worklog 记录非「进行中」"})
 
 
+def ticket_summary(tasks):
+    """工单口径汇总（2026-08-29 拆对象统计）：在途=活跃态（待领/进行中/待审）；
+    已完成=done；暂停/失败/取消单列不混入；逾期=在途且已过 due。
+    工作条目(worklog)与工单是两套账，公司/团队统计分别成卡，不互相概括。"""
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    s = {"total": len(tasks), "active": 0, "done": 0, "overdue": 0,
+         "paused": 0, "failed": 0, "cancelled": 0, "byStatus": {}}
+    for t in tasks:
+        st = t["status"]
+        s["byStatus"][st] = s["byStatus"].get(st, 0) + 1
+        if st in ACTIVE_TS:
+            s["active"] += 1
+            if t.get("due") and t["due"] < today:
+                s["overdue"] += 1
+        elif st in ("done", "paused", "failed", "cancelled"):
+            s[st] += 1
+    return s
+
+
 def ticket_stats_by_project(tasks):
     """项目维度工单统计（联动③）：总数/状态分布/逾期中数。
     「今天」函数内实时取（原模块级常量在 watch 长驻进程下会冻结，逾期判定失真）。"""
@@ -484,8 +501,10 @@ def parse_affairs(ctx):
 
 
 def link_affairs(affairs, emp_entries):
-    """worklog 推导各事务 last_touched（含归档，全量扫描）：扫 aff 字段。"""
+    """worklog 推导各事务 last_touched（含归档，全量扫描）：扫 aff 字段。
+    同时收集 touches 全量推进记录（供驾驶舱事务详情弹层展示），最新在前。"""
     touched = {}
+    touches = {}
     for eid, entries in emp_entries.items():
         for e in entries:
             aff = str(e.get("aff") or "").strip()
@@ -494,10 +513,15 @@ def link_affairs(affairs, emp_entries):
             day = e.get("updated") or e.get("date") or ""
             if aff not in touched or day > touched[aff][0]:
                 touched[aff] = (day, eid)
+            touches.setdefault(aff, []).append(
+                {"date": day, "eid": eid, "title": e.get("title") or "",
+                 "status": e.get("status") or ""})
     for a in affairs:
         t = touched.get(a["id"])
         a["last_touched"] = t[0] if t else ""
         a["last_by"] = t[1] if t else ""
+        a["touches"] = sorted(touches.get(a["id"], []),
+                              key=lambda x: x["date"], reverse=True)[:50]
         # 逾期判定：active + 有节奏 + 超阈值
         a["overdue"] = False
         a["never_done"] = False
@@ -547,6 +571,10 @@ def verify_outputs(ctx):
         with open(ctx.tasks_data, "r", encoding="utf-8") as fh:
             task_ids = {t["id"] for t in json.load(fh).get("tasks", [])}
         for label, p in payloads:
+            # mydesk.tickets 是在途工单列表（深链校验对象）；dashboard/teamboard 的
+            # tickets 是工单口径汇总 dict（2026-08-29），跳过
+            if not isinstance(p.get("tickets"), list):
+                continue
             for t in p.get("tickets", []):
                 if t.get("id") and t["id"] not in task_ids:
                     problems.append(f"{label} 深链死链：{t['id']} 不存在于工单数据")
@@ -672,6 +700,7 @@ def generate_all(ctx):
                    "teamboard": os.path.join(t["dir"], "teamboard.html").replace(os.sep, "/")} for t in teams],
         "projects": [{**p, "ticket_stats": ticket_stats.get(p["pid"], {"total": 0, "byStatus": {}, "overdue": 0})} for p in projects],
         "affairs": affairs,
+        "tickets": ticket_summary(tasks),
         "activity": activity[:300],
         "risks": {"stale": stale_refs, "warnings": warnings},
         "links": {"kanban": "workbench/kanban.html"},
@@ -683,21 +712,23 @@ def generate_all(ctx):
     # ================= 团队级 T*/teamboard-data.js + html =================
     team_tpl = os.path.join(ctx.page_tpl, "teamboard.html")
     for t in teams:
-        ap_team = anchor_prefix(ctx, t["dir"])
         members = [e for e in employees if e["eid"] in t["members"]]
         agg = stats_of([w for e in members for w in e["entries"]])
         t_projects = [p for p in projects if t["tid"] in p["teams"]]
         t_activity = [a for a in activity if a["eid"] in t["members"]][:200]
+        member_eids = set(t["members"])
         payload = {
             **common, "tid": t["tid"], "name": t["name"], "member_count": len(members),
+            "leads": t["leads"],
             "members": [{k: v for k, v in e.items() if k != "entries"} | {
                 "mydesk": os.path.join("..", e["dir"], "mydesk.html").replace(os.sep, "/")} for e in members],
             "stats": agg,
+            "tickets": ticket_summary([x for x in tasks if x.get("owner") in member_eids]),
             "projects": [{**p, "ticket_stats": ticket_stats.get(p["pid"], {"total": 0, "byStatus": {}, "overdue": 0})} for p in t_projects],
             "activity": t_activity,
             "notices": parse_notices(ctx, t["dir"]),
             "assets": parse_skills(ctx, t["dir"]),
-            "links": {"dashboard": ap_team + "dashboard.html", "kanban": ap_team + "workbench/kanban.html"},
+            "links": sibling_nav_links(),
             "status_meta": tasks_data.get("status_meta", {}),
         }
         write_js(os.path.join(base_dir, t["dir"], "teamboard-data.js"), "TEAMBOARD_DATA", payload)
@@ -707,7 +738,6 @@ def generate_all(ctx):
     desk_tpl = os.path.join(ctx.page_tpl, "mydesk.html")
     done_ids = [t["id"] for t in tasks if t["status"] == "done"]
     for e in employees:
-        ap_emp = anchor_prefix(ctx, e["dir"])
         tid_list = [t for t in teams if e["eid"] in t["members"]]
         my_tickets = []
         needs_done_ids = False
@@ -723,7 +753,7 @@ def generate_all(ctx):
                     "due": t.get("due") or "", "priority": t.get("priority") or "",
                     "blocked_by": bb,
                     "paused": t["status"] == "paused",
-                    "detail": ap_emp + "workbench/kanban.html?id=" + t["id"],
+                    "detail": "../workbench/kanban.html?id=" + t["id"],
                 })
         my_warnings = [w for w in warnings if e["eid"] in w["msg"]]
         payload = {
@@ -732,7 +762,7 @@ def generate_all(ctx):
                        "teamboard": os.path.join("..", t["dir"], "teamboard.html").replace(os.sep, "/")} for t in tid_list],
             "entries": e["entries"], "stats": e["stats"], "tickets": my_tickets,
             "skills": parse_skills(ctx, e["dir"]),
-            "links": {"dashboard": ap_emp + "dashboard.html", "kanban": ap_emp + "workbench/kanban.html"},
+            "links": sibling_nav_links(),
             "warnings": my_warnings,
         }
         if needs_done_ids:
@@ -862,10 +892,10 @@ def selftest():
         hot = [e for e in ents if not e["archived"]][0]
         cold = [e for e in ents if e["archived"]][0]
         check("archived 标记正确", hot["title"] == "热条目" and cold["title"] == "归档条目")
-        # anchor_prefix 深度自适配（cid 来自 ctx，非硬编码）：
-        # 页面在 base 一级子目录 -> 2 跳到 OPC 根；页面在 base 本身 -> 1 跳
-        check("anchor 一级子目录 2 跳", anchor_prefix(ctx, "E0001-甲") == "../../companies/C999/")
-        check("anchor 公司根本身 1 跳", anchor_prefix(ctx, ".") == "../companies/C999/")
+        # 看板页内跳转链接：纯相对路径（file:// 与 opc_service /CID/ 路由双模式成立），
+        # 锚前缀 companies/<cid>/ 在服务模式下与 URL 前缀双重拼接 → 404（跳转 bug 修复）
+        check("页内跳转双模式相对路径", sibling_nav_links() == {"dashboard": "../dashboard.html",
+                                                                "kanban": "../workbench/kanban.html"})
     # 3) project.md 双格式解析
     with tempfile.TemporaryDirectory() as tmp:
         cfg = opc_resolver.CompanyConfig("C999", tmp, {})
@@ -922,8 +952,20 @@ def selftest():
     a2 = [a for a in affairs if a["id"] == "AFF0002"][0]
     a3 = [a for a in affairs if a["id"] == "AFF0003"][0]
     check("事务 last_touched 推导", a1["last_touched"] == "2026-08-20" and a1["last_by"] == "E0002")
+    check("事务 touches 推进记录", len(a1["touches"]) == 1 and a1["touches"][0]["eid"] == "E0002"
+          and a1["touches"][0]["status"] == "已完成")
+    check("事务 无推进 touches 为空", a3["touches"] == [])
     check("事务 按需不判逾期", a2["overdue"] is False and a2["never_done"] is False)
     check("事务 从未推进标记", a3["never_done"] is True)
+    # 4c) 工单口径汇总（与 worklog 条目分账）
+    ts = ticket_summary([
+        {"id": "A", "status": "backlog"}, {"id": "B", "status": "in_progress", "due": "2000-01-01"},
+        {"id": "C", "status": "review"}, {"id": "D", "status": "done"},
+        {"id": "E", "status": "paused"}, {"id": "F", "status": "failed"}, {"id": "G", "status": "cancelled"},
+    ])
+    check("工单汇总 在途/完成/单列", ts["active"] == 3 and ts["done"] == 1
+          and ts["paused"] == 1 and ts["failed"] == 1 and ts["cancelled"] == 1 and ts["total"] == 7)
+    check("工单汇总 逾期=在途且过due", ts["overdue"] == 1)
     # 5) 统计口径
     st = stats_of([{"status": "计划中"}, {"status": "进行中"}, {"status": "进行中"}, {"status": "已完成"}])
     check("统计 累计口径/在途", st["total"] == 4 and st["ongoing"] == 3 and st["rate"] == 0.25)
@@ -943,8 +985,8 @@ def selftest():
             fh.write("---\nwid: W1\ndate: 2026-08-27\ntitle: 干活\ntype: 直聊\nstatus: 进行中\nupdated: 2026-08-27\n---\n")
         os.makedirs(os.path.join(base, "E0000"), exist_ok=True)
         with open(os.path.join(base, "E0000", "roster.md"), "w", encoding="utf-8") as fh:
-            fh.write("| 员工 ID | 路径 | 岗位 | 状态 | 团队 | 备注 |\n|---|---|---|---|---|---|\n"
-                     "| E0001 | E0001-分析员/ | 分析员 | 在职 | T001 | x |\n")
+            fh.write("| 员工 ID | 路径 | 岗位 | 状态 | 团队 | 角色 | 备注 |\n|---|---|---|---|---|---|---|\n"
+                     "| E0001 | E0001-分析员/ | 分析员 | 在职 | T001 | lead | x |\n")
         with open(os.path.join(wb, "tasks-data.json"), "w", encoding="utf-8") as fh:
             json.dump({"tasks": [{"id": "TSK1", "title": "x", "status": "in_progress", "owner": "E0001", "project": "P1",
                                   "blocked_by": []}],
@@ -957,12 +999,20 @@ def selftest():
         with open(os.path.join(base, "T001-开发", "teamboard-data.js"), encoding="utf-8") as fh:
             tj = fh.read()
         check("集成: 团队切片含成员统计", '"member_count": 1' in tj and '"E0001"' in tj)
+        tj_data = json.loads(re.match(r"^window\.\w+ = ([\s\S]*);\s*$", tj).group(1))
+        check("集成: 团队切片含 lead 与工单汇总", tj_data["leads"] == ["E0001"]
+              and tj_data["tickets"]["active"] == 1)
+        check("集成: 团队切片跳转纯相对路径", tj_data["links"] == {"dashboard": "../dashboard.html",
+                                                                   "kanban": "../workbench/kanban.html"})
         with open(os.path.join(base, "E0001-分析员", "mydesk-data.js"), encoding="utf-8") as fh:
             mj = fh.read()
         check("集成: 个人台含在途工单与未认领告警", '"TSK1"' in mj and "未认领" in mj)
+        check("集成: 个人台工单深链纯相对路径", '"../workbench/kanban.html?id=TSK1"' in mj)
         with open(os.path.join(base, "dashboard-data.js"), encoding="utf-8") as fh:
             dj = fh.read()
         check("集成: 公司级动态流", "干活" in dj)
+        dj_data = json.loads(re.match(r"^window\.\w+ = ([\s\S]*);\s*$", dj).group(1))
+        check("集成: 公司级工单汇总", dj_data["tickets"]["active"] == 1 and dj_data["tickets"]["total"] == 1)
         check("集成: cid 来自 manifest 非目录名解析", '"cid": "C888"' in dj)
         check("集成: 公司名来自 company.md 实体卡", '"name": "测试公司甲"' in dj)
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))

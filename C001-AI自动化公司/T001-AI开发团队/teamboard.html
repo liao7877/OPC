@@ -54,6 +54,27 @@
   .stat-card { text-align: center; }
   .stat-card .num { font-size: 26px; font-weight: 700; }
   .stat-card .lbl { font-size: 12px; color: var(--text-dim); }
+  .stat-card .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .stat-card .sub .bad { color: var(--bad); }
+  /* ---- 组织架构树（纯 CSS 连接线：负责人在上，成员在下，节点可点进个人工作台）---- */
+  .org { display: flex; flex-direction: column; align-items: center; padding: 6px 0 10px; }
+  .org > .org-node { margin-bottom: 30px; position: relative; min-width: 180px; }
+  .org > .org-node:after { content: ""; position: absolute; left: 50%; top: 100%;
+    height: 30px; border-left: 2px solid var(--border); }
+  .org-kids { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+  .org-kids .org-node { position: relative; min-width: 170px; }
+  .org-kids .org-node:before { content: ""; position: absolute; left: 50%; top: -16px;
+    height: 16px; border-left: 2px solid var(--border); }
+  .org-node { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 14px; text-align: center; }
+  .org-node.click { cursor: pointer; transition: border-color .12s, transform .08s; }
+  .org-node.click:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .org-node .emp-name { font-size: 14px; }
+  .org-crown { color: var(--accent); font-size: 11px; font-weight: 700; margin-bottom: 2px; }
+  .org-empty { border: 2px dashed var(--border); border-radius: 12px; padding: 10px 18px;
+    color: var(--text-dim); font-size: 13px; margin-bottom: 30px; position: relative; }
+  .org-empty:after { content: ""; position: absolute; left: 50%; top: 100%;
+    height: 30px; border-left: 2px solid var(--border); }
   .emp-name { font-weight: 700; font-size: 15px; }
   .dim { color: var(--text-dim); font-size: 12px; }
   .badge { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
@@ -172,27 +193,64 @@
       var M = document.getElementById("main");
       var members = DATA.members || [], acts = DATA.activity || [], projs = DATA.projects || [];
       var s = DATA.stats || {};
+      var sm = DATA.status_meta || {};
+      var tk = DATA.tickets || { total: 0, active: 0, done: 0, overdue: 0, paused: 0, failed: 0, cancelled: 0, byStatus: {} };
+      var leadSet = {};
+      (DATA.leads || []).forEach(function (l) { leadSet[l] = 1; });
+      var leadNodes = members.filter(function (m) { return leadSet[m.eid]; });
+      var kidNodes = members.filter(function (m) { return !leadSet[m.eid]; });
 
-      var t2 = '<section id="t2"><h2>📊 团队统计 · ' + esc(DATA.name || DATA.tid) + " (" + esc(DATA.tid) + ')</h2><div class="grid g-stat">' +
-        statHTML("成员", DATA.member_count != null ? DATA.member_count : members.length) +
-        statHTML("工作条目", s.total || 0) +
-        statHTML("在途", s.ongoing || 0, "var(--accent)") +
-        statHTML("已完成", s.done || 0, "var(--ok)") +
-        statHTML("完成率", pct(s.rate)) +
-        statHTML("近7天完成", s.done_7d || 0) +
-        statHTML("项目数", projs.length) + "</div></section>";
+      // t0 组织架构（负责人在上、成员在下；节点点击直达个人工作台）
+      function orgNode(m, isLead) {
+        return '<div class="org-node click" data-href="' + esc(m.mydesk) + '" title="进入 ' + esc(m.name) + ' 的个人工作台">' +
+          (isLead ? '<div class="org-crown">👑 负责人</div>' : "") +
+          '<div class="emp-name">' + esc(m.name) + '</div><div class="dim">' + esc(m.eid) + "</div>" +
+          '<div style="margin-top:4px"><span class="badge">' + esc(m.role) + '</span><span class="badge ' +
+          (m.status === "在职" ? "st-on" : "") + '">' + esc(m.status) + "</span></div></div>";
+      }
+      var orgHtml = "";
+      if (!members.length) {
+        orgHtml = '<div class="empty">本团队暂无成员（roster.md「团队」列登记 ' + esc(DATA.tid) + "）</div>";
+      } else {
+        orgHtml = '<div class="org">' +
+          (leadNodes.map(function (m) { return orgNode(m, true); }).join("") ||
+            '<div class="org-empty">⚠️ 未设负责人（roster「角色」列标 lead 后自动上树）</div>') +
+          (kidNodes.length ? '<div class="org-kids">' + kidNodes.map(function (m) { return orgNode(m, false); }).join("") + "</div>" : "") +
+          "</div>";
+      }
+      var t0 = '<section id="t0"><h2>🏗 组织架构<span class="cnt">负责人 + 成员 · 点击节点进入个人工作台</span></h2>' + orgHtml + "</section>";
 
-      var t1 = '<section id="t1"><h2>👥 团队成员<span class="cnt">点击进入个人工作台</span></h2><div class="grid g-emp">' +
-        (members.map(function (m) {
+      // t1 团队成员（负责人置顶 + 徽标）
+      var sortedMembers = leadNodes.concat(kidNodes);
+      var t1 = '<section id="t1"><h2>👥 团队成员<span class="cnt">负责人置顶 · 点击进入个人工作台</span></h2><div class="grid g-emp">' +
+        (sortedMembers.map(function (m) {
           var ms = m.stats || {}, tt = ms.total || 1;
           var seg = ms.total ? '<div class="bar"><i class="b1" style="width:' + (ms.planned / tt * 100) + '%"></i>' +
             '<i class="b2" style="width:' + (ms.in_progress / tt * 100) + '%"></i>' +
             '<i class="b3" style="width:' + (ms.done / tt * 100) + '%"></i></div>' : "";
-          return '<div class="card click" data-href="' + esc(m.mydesk) + '"><div class="emp-name">' + esc(m.name) +
+          return '<div class="card click" data-href="' + esc(m.mydesk) + '"><div class="emp-name">' +
+            (leadSet[m.eid] ? "👑 " : "") + esc(m.name) +
             ' <span class="dim">' + esc(m.eid) + "</span></div>" +
-            '<div><span class="badge">' + esc(m.role) + '</span><span class="badge ' + (m.status === "在职" ? "st-on" : "") + '">' + esc(m.status) + "</span></div>" +
+            '<div><span class="badge">' + esc(m.role) + "</span>" +
+            (leadSet[m.eid] ? '<span class="badge team">负责人</span>' : "") +
+            '<span class="badge ' + (m.status === "在职" ? "st-on" : "") + '">' + esc(m.status) + "</span></div>" +
             '<div class="dim" style="margin-top:6px">在途 ' + (ms.ongoing || 0) + " · 完成 " + (ms.done || 0) + " · 完成率 " + pct(ms.rate) + "</div>" + seg + "</div>";
-        }).join("") || '<div class="empty">本团队暂无成员（roster.md「团队」列登记 ' + esc(DATA.tid) + "）</div>") + "</div></section>";
+        }).join("") || '<div class="empty">本团队暂无成员</div>') + "</div></section>";
+
+      // t2 团队统计（2026-08-29 拆对象口径：工单 / 工作条目 分账成卡，悬停有口径说明）
+      var tkSub = ["backlog", "in_progress", "review"].map(function (k) { return (sm[k] || k) + " " + (tk.byStatus[k] || 0); }).join(" · ");
+      var t2 = '<section id="t2"><h2>📊 团队统计 · ' + esc(DATA.name || DATA.tid) + " (" + esc(DATA.tid) + ')</h2><div class="grid g-stat">' +
+        statHTML("成员", DATA.member_count != null ? DATA.member_count : members.length) +
+        statHTML("🎫 工单·在途", tk.active, "var(--accent)", tkSub,
+          "本队成员名下工单：状态=待领/进行中/待审（未进终态）") +
+        statHTML("🎫 工单·逾期", tk.overdue, tk.overdue ? "var(--bad)" : null, null,
+          "本队成员名下在途工单中已过截止日（due）的数量") +
+        statHTML("🎫 工单·已完成", tk.done, "var(--ok)", null, "本队成员名下状态=完成的工单数") +
+        statHTML("📝 条目·累计", s.total || 0, null, "在途 " + (s.ongoing || 0) + " · 完成率 " + pct(s.rate),
+          "本队成员 worklog 工作条目累计（计划中+进行中+已完成）；在途=计划中+进行中——注意与工单口径分开") +
+        statHTML("📝 条目·近7天完成", s.done_7d || 0, null, null, "本队成员近7天完成的 worklog 条目数") +
+        statHTML("项目数", projs.length, null, null, "project.md team 字段归属本团队的项目数") +
+        "</div></section>";
 
       var sm = DATA.status_meta || {};
       // kanban 深链基准：统一取 DATA.links.kanban（生成器按落位产出，页面不硬编码）
