@@ -65,7 +65,7 @@
 - **P28 · 产出审批门（Review Gate）**：Agent 的产出**未经人类点头，不进主数据、不进主分支、不标记完成**。静态门禁（pre-commit 的 `--check`）只能验引用有效性与结构完整性，**不能替代人工验收**——链接全绿不等于活儿干对了。
   - 依据：Multica 的 Review gates——"Work lands in review, not in main. You decide what ships."
   - 落地：产出先落待审区/评审态，人类确认后再合入；**不自审自批**（与总管规范"验收=用户或指定员工"一致）。
-- **P29 · 自动化的边界在「发现」，不在「代决策」**：周期性自动化（如 `opc_patrol.py` 心跳）**只负责发现与留痕，处置决策保留人类在环**。自动派单 / 自动处置是**预留扩展位**，`opc.toml [patrol].actor` 已留接口但**默认不启用**——启用需显式拍板，不做默认。
+- **P29 · 自动化的边界在「发现」，不在「代决策」**：周期性自动化（2026-08-29 决策 #18 起 = OPC 服务内置巡检，原 `opc_patrol.py` 心跳已退役）**只负责发现与留痕，处置决策保留人类在环**。自动派单 / 自动处置是**预留扩展位**，`opc.toml [patrol].actor` 已留接口但**默认不启用**——启用需显式拍板，不做默认。
   - 依据：Multica 的 Autopilots（cron 触发周期性工作）与它的教训——编排自动化一旦越界到"代决策"，失败模式会淹没看板（其 issue #815：用管人的抽象管 Agent，Agent 的失败模式与人根本不同）。
   - 判据：机器可以**提醒**"该开工了"，不可以**替人决定**"这就算做完了"。
 
@@ -111,7 +111,7 @@
 **一切机制代码与流程设计，必须保证 Windows、macOS、Linux 三系统可正常运行。** 不允许「先在 Windows 跑通、别的系统再说」。
 
 落地纪律：
-- **平台差异收口在机制层**：路径分隔符（os.path/os.sep，禁手拼 `/`、`\`）、换行符（.gitattributes 已定：.sh/.py 强制 LF、.bat/.ps1 强制 CRLF）、OS 链接（Windows junction / *nix symlink，收口 `opc_resolver._create_link`）、计划任务（schtasks / crontab，收口 `opc_patrol.register_heartbeat`）、控制台编码（reconfigure + latin-1 兜底）——差异只在机制层写 `sys.platform` 分支，consumer 永远不感知；
+- **平台差异收口在机制层**：路径分隔符（os.path/os.sep，禁手拼 `/`、`\`）、换行符（.gitattributes 已定：.sh/.py 强制 LF、.bat/.ps1 强制 CRLF）、OS 链接（Windows junction / *nix symlink，收口 `opc_resolver._create_link`）、计划任务与自启（schtasks / crontab / 启动文件夹，收口 `opc_service.register_startup`）、控制台编码（reconfigure + latin-1 兜底）——差异只在机制层写 `sys.platform` 分支，consumer 永远不感知；
 - **新增行为必须进 selftest**：selftest 是 CI 三平台矩阵（ubuntu/macos/windows × py3.11/3.13）的回归载体，凡是能用临时目录自测的行为（如多公司归司 case 11）都要进；
 - **门禁即跨平台验收**：`--doctor` 全绿 + 全模块 selftest + CI 矩阵全绿，才算改完。
 

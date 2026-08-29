@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-opc_patrol.py —— 公司心跳巡检器（机制层，OPC 根单例）
+opc_patrol.py —— 公司巡检器（机制层，OPC 根单例）
 
 > 2026-08-28 新增（架构评审「公司自转」缺口）：此前所有节奏检测（脱期/升级/阻塞解锁）
 > 都只在"有人触发生成/总管开会话"时才发生——用户三天不来，公司完全静止。
-> 本脚本让公司拥有独立于用户注意力的心跳：挂计划任务/cron **每 30 分钟一跑**（2026-08-29
-> 拍板提频；通知自带去重只报新发现，高频不轰炸），消费 skills/patrol/SKILL.md 定义的
-> 同一份巡检清单（机器与总管共享标准，不漂移）。
+> 2026-08-29 决策 #18：心跳计划任务退役，巡检由 **OPC 服务（opc_service.py）进程内调度**
+> （数据变动即巡检 + 周期兜底），通知实时直达；本模块保留纯巡检实现与 CLI 手动入口。
+> 消费 skills/patrol/SKILL.md 定义的同一份巡检清单（机器与总管共享标准，不漂移）。
 
 职责边界（与总管分工）：
-  - 本脚本只「发现」：1~6 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
+  - 本脚本只「发现」：1~12 号检查项的机器可判定部分，异常写入 workbench/patrol-log.md
     （追加式、幂等去重），并打印待办清单；不做任何处置决策。
-    例外（2026-08-29 拍板）：看板数据缺失/陈旧时自动重生成（auto_refresh）——浏览器「同步」
-    只能重读文件，数据刷新必须由心跳完成，属机械性自愈而非处置决策。
+    例外（2026-08-29 拍板）：看板数据缺失/陈旧时自动重生成（auto_refresh）——数据刷新
+    由 OPC 服务完成，属机械性自愈而非处置决策。
   - 总管「处置」：读 patrol-log / 看板告警，答复、转派、催办、补号。
   - A+ 报警（2026-08-28 拍板）：有「新发现」时弹系统通知（opc.toml [patrol].notify 可关；
     通知去重：open 态旧待办不重复弹）；B 阶段「自动处置」扩展位 [patrol].actor 预留，当前未启用。
+  - 11/12 号风险预警（决策 #18）：活跃工单已逾期/截止日临近/长期无进展——用户拍板的
+    两类主动打扰之一，windows 弹窗直达用户。
 
 用法（cwd 无关）：
     python opc_patrol.py --company C001              # 巡检 + 写 log
     python opc_patrol.py --company C001 --dry-run    # 只检查打印，不写
-    python opc_patrol.py --company C001 --quiet      # 仅异常时输出（适合 cron）
+    python opc_patrol.py --company C001 --quiet      # 仅异常时输出
     python opc_patrol.py --selftest
 
-心跳注册（推荐，公司根执行一次；--bootstrap 也会自动挂）：
-    schtasks /Create /TN "OPC-Patrol" /SC DAILY /ST 09:00 /TR ^
-      "python E:\\OPC\\opc_patrol.py --company C001 --quiet"
-    python opc_patrol.py --register-heartbeat --company C001 --every 30   # 每 30 分钟（默认）
-    # 每日定时（兼容旧行为）：--at 09:00。撤销：--unregister-heartbeat --company C001
+调度：由 OPC 服务进程内调用 run_once()（常规），本 CLI 仅手动应急用。
 """
 
 import os
@@ -189,7 +187,7 @@ def find(ctx):
 
     # 8) 知识库增量（B6 闭环，2026-08-29 拍板机器化）：methods/ 与各项目 knowledge/
     #    新条目 → 提示总管评审提炼（技能/制度/common 三选一）。基线存 patrol-state
-    #    的 _meta（非 finding），首跑建基线不告警；基线随心跳推进，open 待办由
+    #    的 _meta（非 finding），首跑建基线不告警；基线随巡检推进，open 待办由
     #    总管处置后置 handled 收敛。
     state8 = load_state(ctx)
     base_count = (state8.get("_meta") or {}).get("knowledge_baseline")
@@ -234,10 +232,40 @@ def find(ctx):
             g = datetime.datetime.strptime(gen_at, "%Y-%m-%d %H:%M:%S")
             age_h = (datetime.datetime.now() - g).total_seconds() / 3600
             if age_h > 24:
-                ctx.findings.append(_mk(10, f"看板数据已 {int(age_h)} 小时未刷新（>24h），跑一次 run_boards once 或检查 watcher",
+                ctx.findings.append(_mk(10, f"看板数据已 {int(age_h)} 小时未刷新（>24h），跑一次 run_boards once 或检查 OPC 服务",
                                         ref="tasks-data"))
         except ValueError:
             pass
+
+    # 11) 风险预警·工期：活跃单已逾期 / 截止日临近（决策 #18 用户拍板的两类主动打扰之一）
+    #     逾期语义与看板一致：仅对活跃未完成生效；done/paused/failed/cancelled 不背锅
+    due_soon = PATROL.get("due_soon_days", 3)
+    for t in tasks:
+        if t.get("status") not in TASK_ACTIVE or not t.get("due"):
+            continue
+        try:
+            d = datetime.date.fromisoformat(str(t["due"])[:10])
+        except ValueError:
+            continue
+        days = (d - ctx.today).days
+        if days < 0:
+            ctx.findings.append(_mk(11, f"工单 {t['id']}「{t['title']}」已逾期 {-days} 天（due={t['due']}，"
+                                        f"owner={t.get('owner') or '?'}）", ref=t["id"], owner=t.get("owner") or ""))
+        elif days <= due_soon:
+            ctx.findings.append(_mk(11, f"工单 {t['id']}「{t['title']}」截止日将至（还剩 {days} 天，due={t['due']}，"
+                                        f"owner={t.get('owner') or '?'}）", ref=t["id"], owner=t.get("owner") or ""))
+
+    # 12) 风险预警·停滞：in_progress 超 N 天无 updated（决策 #18）
+    stalled = PATROL.get("stalled_days", 3)
+    cutoff12 = (ctx.today - datetime.timedelta(days=stalled)).isoformat()
+    for t in tasks:
+        if t.get("status") != "in_progress":
+            continue
+        upd = str(t.get("updated") or "")[:10]
+        if upd and upd < cutoff12:
+            idle = (ctx.today - datetime.date.fromisoformat(upd)).days
+            ctx.findings.append(_mk(12, f"工单 {t['id']}「{t['title']}」进行中已 {idle} 天无更新（last={upd}，"
+                                        f"owner={t.get('owner') or '?'}）——催办或转 paused", ref=t["id"], owner=t.get("owner") or ""))
 
 
 def write_log(ctx, dry):
@@ -255,7 +283,7 @@ def write_log(ctx, dry):
         return 0
     os.makedirs(os.path.dirname(ctx.log), exist_ok=True)
     if not existing:
-        existing = "# 巡检日志（patrol-log）\n\n> opc_patrol.py 心跳自动追加，只增不删；处置由总管完成（在对应工单 messages.md 留痕）。\n"
+        existing = "# 巡检日志（patrol-log）\n\n> OPC 服务巡检自动追加（opc_patrol.py），只增不删；处置由总管完成（在对应工单 messages.md 留痕）。\n"
     with open(ctx.log, "a", encoding="utf-8", newline="") as fh:
         if not existing.endswith("\n"):
             fh.write("\n")
@@ -316,7 +344,7 @@ def update_state(ctx):
             cur["status"] = "reopened"
             cur["reopened_at"] = day
             changed = True
-    # #8 基线推进：本轮心跳已把当前知识库计数落账（open 待办仍在 state 里等处置）
+    # #8 基线推进：本轮巡检已把当前知识库计数落账（open 待办仍在 state 里等处置）
     if getattr(ctx, "kb_count", None) is not None:
         state.setdefault("_meta", {})["knowledge_baseline"] = ctx.kb_count
         changed = True
@@ -327,7 +355,7 @@ def update_state(ctx):
 
 def write_pending(ctx, state):
     """open 态待办快照 patrol-pending.md：总管启动第 5 步读它（比全量日志轻），
-    处置完在 state 置 handled，下次心跳本文件自动收敛。"""
+    处置完在 state 置 handled，下次巡检本文件自动收敛。"""
     opens = [(k, v) for k, v in state.items()
              if not k.startswith("_") and v.get("status") != "handled"]   # _meta=机器态，非待办
     order = {"critical": 0, "warn": 1, "info": 2}
@@ -336,7 +364,7 @@ def write_pending(ctx, state):
     lines = [
         "# 巡检待办（open 态快照，opc_patrol.py 生成）",
         "",
-        "> 处置完成后在 patrol-state.json 把对应条目 status 置 \"handled\"（附 handled_at/by），下次心跳本文件自动收敛；审计流水见 patrol-log.md（只增不删）。",
+        "> 处置完成后在 patrol-state.json 把对应条目 status 置 \"handled\"（附 handled_at/by），下次巡检本文件自动收敛；审计流水见 patrol-log.md（只增不删）。",
         "",
     ]
     if not opens:
@@ -407,125 +435,13 @@ def _notify_windows(title, text):
 
 def new_findings(ctx, pre_open):
     """通知去重（2026-08-29 拍板「提频先去重」）：只返回「新出现」的 finding——
-    fkey 不在既存 open 集合里的才算新。心跳高频化后，未处置的旧待办不再反复弹通知
+    fkey 不在既存 open 集合里的才算新。巡检高频化后，未处置的旧待办不再反复弹通知
     （它们始终可见于 patrol-pending.md），处置后再犯会因 reopened 重新进入新集合。"""
     return [f for f in sorted(ctx.findings, key=lambda x: x["no"]) if fkey(f) not in pre_open]
 
 
-# ---------------------------------------------------------------------------
-# 心跳注册（2026-08-29 拍板：自举化——register-patrol.{ps1,sh} 收敛为本模块的
-# 薄壳，定时逻辑单一来源；--bootstrap 会自动调用，不依赖用户记得挂）
-# ---------------------------------------------------------------------------
-
-def heartbeat_task_name(cid):
-    return f"OPC-Patrol-{cid}"
-
-
-def _heartbeat_cron_line(root, cid, at=None, every=None):
-    """crontab 行：at="09:00" → 每日定时；every=30 → 每 N 分钟（2026-08-29 拍板默认）。"""
-    py = "python3" if not sys.platform.startswith("win") else "python"
-    if at:
-        h, m = at.split(":")
-        sched = f"{int(m)} {int(h)} * * *"
-    else:
-        sched = f"*/{int(every)} * * * *"
-    return f"{sched} cd '{root}' && {py} opc_patrol.py --company {cid} --quiet"
-
-
-def _run_decoded(cmd, **kw):
-    """subprocess + 本地编码解码：schtasks/crontab 输出是系统 ANSI 代码页
-    （中文 Windows 为 GBK），text=True 的 UTF-8 强解会炸（CI/本机实测）。"""
-    r = subprocess.run(cmd, capture_output=True, check=False, **kw)
-    enc = "mbcs" if sys.platform.startswith("win") else "utf-8"
-    r.stdout = (r.stdout or b"").decode(enc, "replace")
-    r.stderr = (r.stderr or b"").decode(enc, "replace")
-    return r
-
-
-def register_heartbeat(root, cid, every=30, at=None):
-    """注册心跳（2026-08-29 拍板：默认每 30 分钟，配合通知去重——只报新发现不轰炸）：
-    Windows 用 schtasks（当前用户级，无需管理员）、macOS/Linux 追加 crontab（幂等）。
-    every=N 分钟为默认节奏；at="HH:MM" 则退化为每日定时（兼容旧行为）。
-    返回 (ok, msg)。平台差异收敛在此一处（自举化后本函数是唯一实现）。"""
-    name = heartbeat_task_name(cid)
-    if at:
-        if not re.match(r"^\d{1,2}:\d{2}$", at):
-            return False, f"时间格式应为 HH:MM，收到 {at!r}"
-        sched_desc, win_args, cron = f"每日 {at}", ["schtasks", "/Create", "/TN", name,
-                                                    "/SC", "DAILY", "/ST", at], _heartbeat_cron_line(root, cid, at=at)
-    else:
-        every = max(1, int(every))
-        sched_desc = f"每 {every} 分钟"
-        win_args = ["schtasks", "/Create", "/TN", name,
-                    "/SC", "MINUTE", "/MO", str(every)]
-        cron = _heartbeat_cron_line(root, cid, every=every)
-    if sys.platform.startswith("win"):
-        py = sys.executable or "python"
-        tr = f'"{py}" "{os.path.join(root, "opc_patrol.py")}" --company {cid} --quiet'
-        r = _run_decoded(win_args + ["/TR", tr, "/F"])
-        ok = r.returncode == 0
-        detail = (r.stdout or r.stderr or "").strip().splitlines()
-        return ok, f"{name}（{sched_desc}）" + (f"：{detail[-1]}" if detail and not ok else "")
-    # macOS / Linux：crontab 幂等追加
-    mark = f"# {name}"
-    cur = ""
-    try:
-        cur = _run_decoded(["crontab", "-l"]).stdout or ""
-    except OSError as e:
-        return False, f"crontab 不可用：{e}"
-    if mark in cur:
-        # 幂等升级：移除旧标记块（标记行 + 其后一行 cron），再写入当前节奏
-        out, skip = [], False
-        for ln in cur.splitlines():
-            if ln.strip() == mark:
-                skip = True
-                continue
-            if skip:
-                skip = False
-                continue
-            out.append(ln)
-        cur = "\n".join(out)
-    new = (cur.rstrip("\n") + "\n" if cur.strip() else "") + f"{mark}\n{cron}\n"
-    r = _run_decoded(["crontab", "-"], input=new.encode("utf-8"))
-    return (r.returncode == 0), (f"{name}（{sched_desc}）" if r.returncode == 0 else r.stderr)
-
-
-def heartbeat_registered(root, cid):
-    """心跳是否已挂（doctor 提示用；查询失败视为未挂，只降级为提示不阻断）。"""
-    if sys.platform.startswith("win"):
-        r = _run_decoded(["schtasks", "/Query", "/TN", heartbeat_task_name(cid)])
-        return r.returncode == 0
-    try:
-        cur = _run_decoded(["crontab", "-l"]).stdout or ""
-    except OSError:
-        return False
-    return f"# {heartbeat_task_name(cid)}" in cur
-
-
-def unregister_heartbeat(root, cid):
-    """撤销心跳：Windows 删计划任务；*nix 从 crontab 移除标记块。幂等。"""
-    name = heartbeat_task_name(cid)
-    if sys.platform.startswith("win"):
-        r = _run_decoded(["schtasks", "/Delete", "/TN", name, "/F"])
-        return (r.returncode == 0), f"{name}" + ("（已删除）" if r.returncode == 0 else "（不存在或删除失败）")
-    mark = f"# {heartbeat_task_name(cid)}"
-    try:
-        cur = _run_decoded(["crontab", "-l"]).stdout or ""
-    except OSError as e:
-        return False, f"crontab 不可用：{e}"
-    if mark not in cur:
-        return True, f"{name}（本就未注册）"
-    out, skip = [], False
-    for ln in cur.splitlines():
-        if ln.strip() == mark:
-            skip = True
-            continue
-        if skip:
-            skip = False
-            continue
-        out.append(ln)
-    r = _run_decoded(["crontab", "-"], input=("\n".join(out) + "\n").encode("utf-8"))
-    return (r.returncode == 0), f"{name}（已从 crontab 移除）"
+# 心跳注册已随决策 #18 退役：定时巡检/通知/自愈整体并入 OPC 服务（opc_service.py），
+# 机器级副作用收敛为启动文件夹一条自启项（OPC-Service.vbs）。
 
 
 def selftest():
@@ -592,7 +508,7 @@ def selftest():
     write_pending(ctx2, state2)
     pend = _read(ctx2.pending)
     check("pending 快照含 critical 置顶", "#5 [critical]" in pend)
-    # #8 知识库增量：首跑建基线 → 新增 → 告警 → 基线随心跳推进
+    # #8 知识库增量：首跑建基线 → 新增 → 告警 → 基线随巡检推进
     mdir = os.path.join(tmp, "公司知识库", "methods")
     os.makedirs(mdir, exist_ok=True)
     ctxk = Ctx(cfg, tmp)
@@ -604,7 +520,7 @@ def selftest():
     find(ctxk2)
     check("#8 新增条目告警", any(f["no"] == 8 for f in ctxk2.findings))
     st8 = update_state(ctxk2)
-    check("#8 基线随心跳推进", (st8.get("_meta") or {}).get("knowledge_baseline") == 1)
+    check("#8 基线随巡检推进", (st8.get("_meta") or {}).get("knowledge_baseline") == 1)
     ctxk3 = Ctx(cfg, tmp)
     find(ctxk3)
     check("#8 无新增不再告警", not any(f["no"] == 8 for f in ctxk3.findings))
@@ -624,13 +540,13 @@ def selftest():
 
 
 def auto_refresh(ctx, dry):
-    """心跳数据自愈（2026-08-29 拍板）：看板数据缺失或陈旧（> PATROL.regen_stale_minutes）
-    → 自动重生成。浏览器「同步」只能重读数据文件、跑不了生成器——数据刷新靠心跳，
+    """看板数据自愈（2026-08-29 拍板）：看板数据缺失或陈旧（> PATROL.regen_stale_minutes）
+    → 自动重生成。浏览器「同步」只能重读数据文件、跑不了生成器——数据刷新靠 OPC 服务，
     陈旧横幅才会在下一次同步后消失。dry-run / 刷新失败不阻断巡检（#10 会报告陈旧）。"""
     if dry:
         return
     # 链接自愈（决策 #17）：实体/公司目录被手动改名后，稳定锚与技能披露断链
-    # → 心跳幂等重建，无人值守 30 分钟内自愈（改不改目录名都不影响公司运转）。
+    # → OPC 服务幂等重建（巡检周期兜底），无人值守自愈（改不改目录名都不影响公司运转）。
     okl, errl = opc_resolver.ensure_links(opc_resolver._find_root())
     for m in okl:
         if "无需改动" not in m:
@@ -661,73 +577,68 @@ def auto_refresh(ctx, dry):
             print(f"  [警告] 看板自动刷新失败（{mod}）：{tail[-1] if tail else r.returncode}——检查 #10 陈旧告警")
 
 
-def main(argv):
-    if "--selftest" in argv:
-        return selftest()
-    root = opc_resolver._find_root()
-    # 心跳注册/撤销（--bootstrap 与 register-patrol 薄壳共用此入口）
-    if "--register-heartbeat" in argv or "--unregister-heartbeat" in argv:
-        company = None
-        if "--company" in argv:
-            company = argv[argv.index("--company") + 1]
-        if not company:
-            cids = opc_resolver.all_company_ids(root)
-            if len(cids) != 1:
-                print("需要 --company <cid>（多公司时无法自动确定）")
-                return 1
-            company = cids[0]
-        every, at = 30, None
-        if "--every" in argv:
-            every = argv[argv.index("--every") + 1]
-        if "--at" in argv:   # 兼容：给了 --at 则退化为每日定时
-            at = argv[argv.index("--at") + 1]
-        if "--register-heartbeat" in argv:
-            ok, msg = register_heartbeat(root, company, every=every, at=at)
-            print(("[ok] " if ok else "[ERR] ") + f"心跳注册：{msg}"
-                  + ("" if ok else f"；撤销：python opc_patrol.py --unregister-heartbeat --company {company}"))
-            return 0 if ok else 1
-        ok, msg = unregister_heartbeat(root, company)
-        print(("[ok] " if ok else "[ERR] ") + f"心跳撤销：{msg}")
-        return 0 if ok else 1
-    company = None
-    if "--company" in argv:
-        company = argv[argv.index("--company") + 1]
+def run_once(company=None, dry=False, quiet=True):
+    """单轮巡检（进程内复用入口，决策 #18）：数据自愈 → find → 写 log/state → 通知去重。
+    返回 (ctx, fresh)：fresh=本轮新发现（通知已发出）。CLI main 与 OPC 服务共用同一实现，
+    机器口径只有一份，不漂移。"""
     ctx = resolve_ctx(company)
-    dry = "--dry-run" in argv
-    quiet = "--quiet" in argv
     auto_refresh(ctx, dry)          # 数据自愈在前：find() 的工单类检查消费的是新鲜投影
     find(ctx)
+    pre_open = set()
+    if not dry and ctx.findings:
+        # 通知去重（2026-08-29 拍板「提频先去重」）：快照 update_state 之前的 open 集合
+        pre_open = {k for k, v in load_state(ctx).items()
+                    if not k.startswith("_") and v.get("status") != "handled"}
     if not ctx.findings:
         if not quiet:
             print(f"[patrol] {ctx.today} 巡检完成：无异常 ✓")
         # 无发现也要刷新待办快照：state 里残留的 open 项（等处置）保持可见，处置完即收敛
         write_pending(ctx, load_state(ctx))
-        return 0
+        return ctx, []
     written = write_log(ctx, dry)
-    print(f"[patrol] {ctx.today} 巡检发现 {len(ctx.findings)} 项待办：")
-    for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
-        print(f"  #{f['no']} [{f['severity']}] {f['msg']}")
-    if written:
-        print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
-    pre_open = set()
-    if not dry:
-        # 通知去重（2026-08-29 拍板「提频先去重」）：快照 update_state 之前的 open 集合
-        pre_open = {k for k, v in load_state(ctx).items()
-                    if not k.startswith("_") and v.get("status") != "handled"}
+    if not quiet:
+        print(f"[patrol] {ctx.today} 巡检发现 {len(ctx.findings)} 项待办：")
+        for f in sorted(ctx.findings, key=lambda x: (x["no"], x.get("ref") or "")):
+            print(f"  #{f['no']} [{f['severity']}] {f['msg']}")
+        if written:
+            print(f"  已追加 {written} 条到 {ctx.log}（干跑模式不写）" if dry else f"  已追加 {written} 条到 {ctx.log}")
+    fresh = []
     if not dry:
         state = update_state(ctx)
         write_pending(ctx, state)
-        opens = sum(1 for k2, v in state.items()
-                    if not k2.startswith("_") and v.get("status") != "handled")
-        print(f"  闭环态已更新：{ctx.state}（open {opens} 项）→ 待办快照 {ctx.pending}")
-    if ctx.findings and not dry and _patrol_cfg().get("notify", True):
-        fresh = new_findings(ctx, pre_open)
-        if fresh:
-            summary = "；".join(f["msg"] for f in fresh[:3])
-            if notify_user(ctx, summary):
-                print(f"  已发系统通知（新发现 {len(fresh)} 项；A+ 报警通道，可在 opc.toml [patrol] notify=false 关闭）")
-        else:
-            print("  通知去重：无新发现（open 待办见 patrol-pending.md），不再重复打扰")
+        if not quiet:
+            opens = sum(1 for k2, v in state.items()
+                        if not k2.startswith("_") and v.get("status") != "handled")
+            print(f"  闭环态已更新：{ctx.state}（open {opens} 项）→ 待办快照 {ctx.pending}")
+        if _patrol_cfg().get("notify", True):
+            fresh = new_findings(ctx, pre_open)
+            if fresh:
+                summary = "；".join(f["msg"] for f in fresh[:3])
+                if notify_user(ctx, summary) and not quiet:
+                    print(f"  已发系统通知（新发现 {len(fresh)} 项；A+ 报警通道，可在 opc.toml [patrol] notify=false 关闭）")
+            elif not quiet:
+                print("  通知去重：无新发现（open 待办见 patrol-pending.md），不再重复打扰")
+    return ctx, fresh
+
+
+USAGE = (
+    "用法：python opc_patrol.py --company <公司ID> [--dry-run] [--quiet]\n"
+    "      python opc_patrol.py --selftest            # 自测（不碰真实数据）\n"
+    "说明：日常巡检由 OPC 服务（opc_service.py）进程内自动调度，本入口仅用于手动跑一次/排查。"
+)
+
+
+def main(argv):
+    if "-h" in argv or "--help" in argv:
+        print(USAGE)
+        return 0
+    if "--selftest" in argv:
+        return selftest()
+    company = argv[argv.index("--company") + 1] if "--company" in argv else None
+    if not company:          # 友好提示而非抛栈（旧版有唯一公司自动推断，重构后显式要求）
+        print(USAGE)
+        return 1
+    ctx, _fresh = run_once(company, dry="--dry-run" in argv, quiet="--quiet" in argv)
     return 1 if ctx.findings else 0
 
 

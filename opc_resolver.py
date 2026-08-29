@@ -1313,14 +1313,17 @@ def doctor(root=None, auto_fix=True):
     else:
         warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
-    # 3b. 公司心跳（机器级状态：不自动注册——CI/临时环境不应写系统定时任务；缺失仅提示）
+    # 3b. OPC 服务探活（决策 #18：巡检/通知/看板实时化全部由常驻服务承载；
+    #     机器级状态不自动拉起——CI/临时环境没有服务属正常，缺失仅提示）
     try:
-        import opc_patrol
-        for cid in cids:
-            if opc_patrol.heartbeat_registered(root, cid):
-                warns.append(f"公司心跳已挂 ✓（{opc_patrol.heartbeat_task_name(cid)}，定期巡检+数据自愈+系统通知）")
-            else:
-                warns.append(f"公司心跳未挂（定期巡检与异常通知不会运行）→ `python opc_patrol.py --register-heartbeat --company {cid}` 或 --bootstrap")
+        import opc_service
+        port = opc_service._service_cfg()["port"]
+        alive = opc_service.service_alive(port)
+        if alive:
+            warns.append(f"OPC 服务在跑 ✓（http://127.0.0.1:{port}，看板实时化+巡检+通知）")
+        else:
+            warns.append(f"OPC 服务未运行（巡检/通知/看板「同步」直算不会工作）"
+                         f"→ 启动文件夹自启项，或 `python opc_service.py`；首次部署跑 --bootstrap")
     except Exception:
         pass
 
@@ -1348,8 +1351,9 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
       ② pre-commit 门禁钩子（install_hook）
       ③ 看板数据重建（opc_tickets / opc_dashboards，产物不入库 clone 后必缺）
       ④ 技能索引（opc_model --sync-index，INDEX.md 生成物）
-      ⑤ 公司心跳（每 30 分钟：Windows 计划任务 / macOS·Linux crontab，按公司隔离；
-         heartbeat=False 跳过——唯一的机器级副作用，故可关）
+      ⑤ OPC 服务自启项（决策 #18：启动文件夹 vbs，headless 常驻，承载巡检/通知/
+         看板实时化——唯一的机器级副作用，故可 heartbeat=False 关闭；
+         heartbeat/heartbeat_every 参数保留占位兼容旧调用，已无心跳语义）
     最后跑 doctor 终检（其自愈段兜底）。返回 (errors, warnings)。
     """
     root = root or _find_root()
@@ -1372,19 +1376,25 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
                        cwd=root, capture_output=True, text=True, check=False)
     print("[init] opc_model --sync-index ->", "ok" if r.returncode == 0 else "FAILED")
 
-    # ⑤ 心跳（唯一机器级副作用；默认注册，可 --no-heartbeat 关闭）
+    # ⑤ OPC 服务自启项 + 当场拉起（决策 #18：唯一机器级副作用；新 clone 零感知——
+    #    用户不需要知道这个进程存在，bootstrap 后看板/巡检/通知即全部生效。
+    #    heartbeat 参数名保留兼容旧口径；CI 环境只注册不拉起（ensure_started 护栏））
     if heartbeat and cids:
-        import opc_patrol   # 运行时惰性导入（patrol 依赖本模块，避免环）
-        for cid in cids:
-            ok, msg = opc_patrol.register_heartbeat(root, cid, every=heartbeat_every)
-            print(("[init] 心跳已挂：" if ok else "[init] 心跳注册失败：")
-                  + f"{msg}" + ("" if ok else "（不影响本地使用，可稍后手动挂）"))
+        import opc_service   # 运行时惰性导入（服务依赖本模块，避免环）
+        try:
+            p = opc_service.register_startup(opc_service._service_cfg()["port"])
+            print(f"[init] OPC 服务自启已挂：{p}")
+            started = opc_service.ensure_started()
+            print("[init] OPC 服务已当场拉起 ✓（巡检/通知/看板实时化即刻生效）" if started
+                  else "[init] OPC 服务已在跑或 CI 环境——跳过拉起")
+        except Exception as e:
+            print(f"[init] OPC 服务注册/拉起失败（不影响本地使用，可手动 `python opc_service.py --register`）：{e}")
     elif not cids:
-        print("[init] 无公司，跳过心跳与看板重建")
+        print("[init] 无公司，跳过服务自启与看板重建")
 
     errs, ws = doctor(root, auto_fix=True)
     print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
-          + ("" if heartbeat and cids else f"（未挂心跳：--heartbeat-every 分钟 / 默认 {heartbeat_every}）"))
+          + ("" if heartbeat and cids else "（未挂服务自启：--no-heartbeat）"))
     return errs, ws
 
 
@@ -1519,9 +1529,11 @@ if __name__ == "__main__":
     ap.add_argument("--doctor", action="store_true",
                     help="系统初始化自检（init gate，带自愈）：自动补齐锚/披露链接/钩子/缺失看板数据后检查五项，全绿才开工")
     ap.add_argument("--bootstrap", action="store_true",
-                    help="一键自举（新 clone/新电脑跑一次）：链接+钩子+看板数据+技能索引+公司心跳，最后 doctor 终检")
-    ap.add_argument("--no-heartbeat", action="store_true", help="--bootstrap 跳过心跳注册")
-    ap.add_argument("--heartbeat-every", default="30", help="心跳间隔（分钟，默认 30；配合通知去重只报新发现）")
+                    help="一键自举（新 clone/新电脑跑一次）：链接+钩子+看板数据+技能索引+OPC 服务自启并拉起，最后 doctor 终检")
+    ap.add_argument("--no-heartbeat", action="store_true",
+                    help="--bootstrap 跳过 OPC 服务自启注册（参数名保留兼容旧调用，语义=不挂服务自启）")
+    ap.add_argument("--heartbeat-every", default="30",
+                    help="（兼容占位，已无心跳语义）巡检/通知节奏由 opc.toml [service] 配置")
     ap.add_argument("--diff-template", action="store_true",
                     help="实例公司 ↔ company-template 双向 diff（忽略换行符与公司 ID 占位符；机器发现、人工决策）")
     ap.add_argument("--rename-entity", nargs=2, metavar=("E0001", "新说明"),

@@ -65,14 +65,14 @@ OPC/
    - 重建稳定锚 `companies/<cid>` 与各层技能披露链接（OS 级链接不入库，clone 后必缺）；
    - 安装 pre-commit 门禁钩子（提交前拦截失效引用）；
    - 重建看板数据与技能索引（产物不入库，clone 后必缺）；
-   - **注册公司心跳**（每 30 分钟自动巡检 + 数据自愈 + 异常系统通知；Windows 写计划任务、macOS/Linux 写 crontab，任务名 `OPC-Patrol-<公司ID>`，间隔可改：`--heartbeat-every 15`）
-     - 心跳是唯一的机器级副作用：`--no-heartbeat` 跳过、`--heartbeat-every 60` 改间隔、`python opc_patrol.py --unregister-heartbeat --company C001` 撤销。通知自带去重：只报新发现，已在待办里的不再弹。
+   - **注册 OPC 服务自启**（决策 #18：常驻后台中枢——看板实时化/巡检/风险预警通知全由一个 headless 进程承载，`http://127.0.0.1:8765`）
+     - 自启项写启动文件夹 `OPC-Service.vbs`（唯一的机器级副作用）：`--no-heartbeat` 跳过、删该文件即撤销。通知自带去重：只报新发现，已在待办里的不再弹。
 3. **验证**：`python opc_resolver.py --doctor` 输出 `[ok] 初始化自检通过` 即可正常使用（doctor 自带自愈，会先打印 `[fix]` 行告诉你自动补了什么，再检查五项：Python 版本 / 稳定锚 / 钩子 / 命名空间 / 技能披露链接）。
 
 ```bash
 # —— 新电脑全流程（三条）——
-python3 opc_resolver.py --bootstrap     # 一键自举（含心跳；Windows 把 python3 换成 python）
-python3 opc_resolver.py --doctor        # 终检，全绿才开工
+python3 opc_resolver.py --bootstrap     # 一键自举（含 OPC 服务自动注册+拉起；Windows 把 python3 换成 python）
+python3 opc_resolver.py --doctor        # 终检，全绿才开工（含「OPC 服务在跑」探活）
 run_boards.bat once                     # 可选：手动重建看板数据（bootstrap 已做过；macOS/Linux: ./run_boards.sh once）
 
 # —— 各模块内置自测（不碰真实数据，排查问题时用）——
@@ -86,7 +86,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 **跨平台说明**
 - 稳定锚：Windows 用 junction（`mklink /J`，普通用户可建）；macOS/Linux 用 symlink（`os.symlink`）。二者对浏览器/OS 透明，运行时层 HTML 双击即用。
 - `.ps1` 脚本必须以 UTF-8 **带 BOM** 落盘（Windows PowerShell 5.1 对无 BOM 的 UTF-8 中文按 GBK 误读会语法错）。
-- 心跳定时逻辑唯一来源在 `opc_patrol.py`（`register-patrol.ps1/.sh` 只是薄壳）；Windows 计划任务为当前用户级，无需管理员。
+- 巡检/通知/看板实时化的调度唯一来源在 `opc_service.py`（OPC 服务进程内线程，决策 #18）；开机自启走启动文件夹 `OPC-Service.vbs`，免管理员，删文件即卸载。
 - ✅ Windows 已实跑全流程；macOS/Linux 分支逻辑正确，且已纳入 GitHub Actions 三平台矩阵持续验证（每次 push 自动跑 bootstrap 等价流程）。
 
 ---
@@ -105,16 +105,21 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 - 技能触发词索引：`python opc_model.py --sync-index` 一键重生成各层 `skills/INDEX.md`（生成物，勿手改；`--list-skills` 实时查看）；
 - **新开会话**后技能被平台渐进式披露（会话启动时扫描，当前会话不刷新）。
 
-**3. 挂公司心跳（推荐，一次性）**——让公司不依赖你的注意力自己转：每天自动巡检（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/僵尸工位卡…），异常写入 `workbench/patrol-log.md` 并**弹系统通知**（A+ 报警通道，`opc.toml [patrol].notify` 可关），总管每会话按同一份清单处置：
-```bash
-# 公司根执行（自动反查公司 ID）：
-powershell -ExecutionPolicy Bypass -File register-patrol.ps1   # Windows 计划任务
-# 或 macOS/Linux crontab：
-0 9 * * * cd /path/to/OPC && python3 opc_patrol.py --company C001 --quiet
-```
+**3. OPC 服务（bootstrap 自动搞定，你不需要知道这个进程）**——`--bootstrap` 第 ⑤ 步会**自动注册开机自启并当场拉起**，新 clone 跑完第 2 步即全部生效（决策 #18）。它是 OPC 的常驻后台中枢，承载一切「必须有进程才能实现」的机制：
+
+| 能力 | 说明 |
+|---|---|
+| 看板实时化 | 看板从 `http://127.0.0.1:8765/{公司ID}/dashboard.html` 打开，「同步」按钮=即时重算数据，自动刷新秒级生效 |
+| 巡检实时化 | 数据变动即巡检 + 周期兜底（阻塞解锁/认领缺口/脱期事务/升级信箱/号池水位/**工单逾期与停滞预警**…），异常写入 `workbench/patrol-log.md` |
+| 主动通知 | 新发现实时弹系统通知（Windows/macOS/Linux 各自原生弹窗；`opc.toml [patrol].notify` 可关），每天 `09:00` 汇总重提未处理项 |
+| 只读 API | `/api/{公司ID}/tickets、/dashboard、/patrol` 供 agent 与外部服务查询；无任何写接口——文件仍是唯一真相 |
+
+- 进程=宿主、公司=租户：扫描 `opc.toml` 全部公司逐家装配，新公司自动纳管；`opc.toml [service]` 可配端口/巡检周期/每日摘要时间/通知通道。
+- 跨平台自启：Windows=启动文件夹 `OPC-Service.vbs`（headless 无窗口）；macOS/Linux=crontab `@reboot` 标记块。删自启项即卸载；`python opc_service.py` 可前台手动跑（`--open` 顺带开浏览器）。
 
 **4. 跑看板**
-- 在公司根执行 `run_boards.bat`（Windows）/ `./run_boards.sh`（macOS/Linux/Git-Bash）：薄壳自动反查本公司 ID 并调 OPC 根 `opc_tickets.py` / `opc_dashboards.py` 生成数据；`workbench/tasks/` 是唯一真相，看板是投影（数据文件不入库，删了重跑即重建）。
+- 日常**无需手动**：OPC 服务已在 `http://127.0.0.1:8765/{公司ID}/dashboard.html` 托管看板并实时刷新。
+- 离线应急可在公司根执行 `run_boards.bat`（Windows）/ `./run_boards.sh`（macOS/Linux/Git-Bash）：薄壳自动反查本公司 ID 并调 OPC 根 `opc_tickets.py` / `opc_dashboards.py` 一次性重算（已降级为手动应急工具，决策 #18）；`workbench/tasks/` 是唯一真相，看板是投影（数据文件不入库，删了重跑即重建）。
 
 > 详细跨平台接入与子 Agent 派活机制见 [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md)；原则与红线见 [`PRINCIPLES.md`](PRINCIPLES.md)。
 

@@ -719,7 +719,7 @@ def check_structure(ctx):
     # 已知一级条目：文件用模式匹配（跨平台入口脚本 .bat/.sh/.ps1/.py 等都认，P2a）
     known_extra_dirs = {".workbuddy", ".tools"}
     known_extra_file_patterns = [re.compile(p) for p in (
-        r"^run_boards\.(bat|sh|command)$", r"^register-task\.ps1$", r"^register-patrol\.(ps1|sh)$",
+        r"^run_boards\.(bat|sh|command)$", r"^register-task\.ps1$",
         r"^verify_boards\.(js|py)$", r"^(dashboard|目录结构说明书)\.(html|md)$", r"^dashboard-data\.js$",
     )]
     # 实体目录识别用注册表前缀（2026-08-29：加类型/改前缀 = 改 manifest，本函数零改动）

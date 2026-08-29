@@ -11,12 +11,12 @@
 5. 汇报汇总：任务完成后向用户汇报结果
 
 ## 启动流程（每次会话固定动作）
-0. **环境 init 自检（门禁，必须先过）**：在 OPC 根跑 `python opc_resolver.py --doctor`（或 `python3`）。**全绿（输出「初始化自检通过」）才允许进入下面业务步骤**；doctor 自带自愈（[fix] 行=自动补了锚/披露链接/钩子/看板数据），仍不绿跑 `python ../../../opc_resolver.py --bootstrap` 一键自举；此步相当于函数 `init()`：前置条件不满足不许开工。**doctor 若提示「公司心跳未挂」，紧接着跑 `python ../../../opc_patrol.py --register-heartbeat --company <本司ID> --every 30`（幂等）**——心跳是每日自动巡检+系统通知的载体，不挂则公司不自转。
+0. **环境 init 自检（门禁，必须先过）**：在 OPC 根跑 `python opc_resolver.py --doctor`（或 `python3`）。**全绿（输出「初始化自检通过」）才允许进入下面业务步骤**；doctor 自带自愈（[fix] 行=自动补了锚/披露链接/钩子/看板数据），仍不绿跑 `python ../../../opc_resolver.py --bootstrap` 一键自举；此步相当于函数 `init()`：前置条件不满足不许开工。**doctor 若提示「OPC 服务未运行」，紧接着跑 `python ../../../opc_resolver.py --bootstrap`（自动注册开机自启并当场拉起）或 `python ../../../opc_service.py` 前台启动**——OPC 服务（决策 #18）是巡检+通知+看板实时化的唯一载体，`http://127.0.0.1:8765/<本司ID>/dashboard.html`，不跑则公司不自转（旧的公司心跳/register-patrol 已随本服务退役）。
 1. 读取本文件（AGENTS.md）——我是总管
 2. 读取 roster.md —— 认识员工
 3. 读取 workbench/task-index.md —— 了解在办任务与号池水位
 4. **建工位卡**（workspace/sessions/，kind=调度，见 `opc://company:<本司ID>/skill/concurrent-work`）
-5. **轻巡检**：按 `opc://company:<本司ID>/skill/patrol` 的巡检清单执行（唯一权威清单：阻塞解锁/认领缺口/双账/脱期事务/升级信箱/号池水位/归档/知识库/僵尸工位卡——opc_patrol.py 心跳与总管共享同一份标准）。**先跑 `python ../../../opc_patrol.py --company <本司ID> --dry-run` 看机器已发现的待办，再读 `workbench/patrol-pending.md`（open 态快照，含 critical 置顶）逐项处置**（5~10 号项需人工判断）；处置完在 `workbench/patrol-state.json` 把对应条目 status 置 `handled`（附 handled_at/by），下次心跳自动收敛
+5. **轻巡检**：按 `opc://company:<本司ID>/skill/patrol` 的巡检清单执行（唯一权威清单：阻塞解锁/认领缺口/双账/脱期事务/**工单逾期与停滞预警**/升级信箱/号池水位/归档/知识库/僵尸工位卡——OPC 服务内置巡检与总管共享同一份标准，即 `opc_patrol.py`）。**先跑 `python ../../../opc_patrol.py --company <本司ID> --dry-run` 看机器已发现的待办，再读 `workbench/patrol-pending.md`（open 态快照，含 critical 置顶）逐项处置**（5~10 号项需人工判断）；处置完在 `workbench/patrol-state.json` 把对应条目 status 置 `handled`（附 handled_at/by），下次巡检自动收敛
 6. 向用户汇报公司状态，等待需求
 
 ## 行为规范
@@ -34,4 +34,4 @@
 - **人机协作三条（2026-08-29 新增，依据 PRINCIPLES P27~P29；来源：Multica 调研 `research/multica-调研报告.html`）**：
   - **P27 协调层中立**：OPC 只做命名 / 路由 / 发现 / 门禁，**不绑任何 Agent CLI 或模型**；派活按 `roster.md` 配置选人，**禁止在脚本或员工卡里写死 `claude` / `codex` / `codebuddy` 等具体 CLI 名并据此分支**——换 Agent 是改一行配置，不是迁移。
   - **P28 审批门**：员工产出**未经用户（或指定验收人）点头，不标记完成、不进主数据**；pre-commit 的 `--check` 只验引用有效性与结构完整性，**链接全绿 ≠ 活儿干对了**。验收不自审自批（呼应"只调度不代劳 / 验收=用户或指定员工"）。
-  - **P29 自动化边界**：`opc_patrol.py` 心跳只负责**发现与留痕**，**处置决策始终人类在环**；自动派单 / 自动处置是 `opc.toml [patrol].actor` 预留扩展位，**默认不启用、不得擅自开启**（Agent 失败模式与人不同，自动处置会淹看板）。机器可以提醒「该开工了」，不可以替人决定「这就算做完了」。
+  - **P29 自动化边界**：OPC 服务内置的巡检（2026-08-29 决策 #18 起接管原 `opc_patrol.py` 心跳）只负责**发现与留痕**，**处置决策始终人类在环**；自动派单 / 自动处置是 `opc.toml [patrol].actor` 预留扩展位，**默认不启用、不得擅自开启**（Agent 失败模式与人不同，自动处置会淹看板）。机器可以提醒「该开工了」，不可以替人决定「这就算做完了」。

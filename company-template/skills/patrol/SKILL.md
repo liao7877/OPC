@@ -1,14 +1,14 @@
 ---
 name: patrol
-description: 公司例行巡检（总管每会话执行 / opc_patrol.py 心跳自动执行）。触发词：巡检、巡查、公司体检、例行检查、心跳。定义"什么算异常"的唯一清单——人工巡检与机器心跳共享同一份定义，杜绝两套标准漂移。
-summary: 公司例行巡检（总管每会话执行 / opc_patrol.py 心跳自动执行）。
-triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳]
+description: 公司例行巡检（总管每会话执行 / OPC 服务内置巡检自动执行）。触发词：巡检、巡查、公司体检、例行检查、心跳、服务巡检。定义"什么算异常"的唯一清单——人工巡检与机器巡检共享同一份定义，杜绝两套标准漂移。
+summary: 公司例行巡检（总管每会话执行 / OPC 服务内置巡检自动执行）。
+triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳, 服务巡检]
 ---
 
 # 公司巡检（patrol）
 
-> **定位**：公司运转的例行体检清单。总管每次会话的"轻巡检"与本仓库 `opc_patrol.py`
-> 心跳（可挂计划任务/cron 定时跑）消费**同一份清单**——机器发现异常写入看板告警，
+> **定位**：公司运转的例行体检清单。总管每次会话的"轻巡检"与 OPC 服务内置巡检
+> （`opc_service.py` 进程内调用 `opc_patrol.py`）消费**同一份清单**——机器发现异常写入看板告警，
 > 总管（或用户）处理；谁先发现都能兜住。
 > **执行器分工**：opc_patrol.py 负责"发现"（纯读 + 追加告警数据），总管负责"处置"
 > （答复/转派/催办/补号）。机器不代做处置决策。
@@ -27,14 +27,20 @@ triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳]
 | 8 | 知识库增量 | 公司知识库 methods/ 有未评审新条目 | 公司知识库/methods/ | 评审提炼成技能/制度/背景资料 |
 | 9 | 僵尸工位卡 | sessions/ 下 `status: 工作中` 但 mtime 超过 3 天 | E*/workspace/sessions/*.md | 核对会话是否真已结束：是 → 改"已收口"并收口其 inbox 分片；否 → 联系对应会话 |
 | 10 | 生成器健康 | tasks-data.json 缺失/stale（生成时间 > 24h 且有 watcher 应在跑） | workbench/tasks-data.json | 跑 `run_boards once`；无 watcher 则补挂 |
+| 11 | 工单工期风险 | 活跃未完成单（`due` 已过 = 已逾期；剩余 ≤ 3 天 = 临期） | workbench/tasks/*/task.md | 催办或改期；已完成的直接关单（done/paused/failed/cancelled 不算逾期） |
+| 12 | 工单停滞 | `in_progress` 超过 3 天无 updated | workbench/tasks/*/task.md | 问清卡点：真阻塞 → 改 `blocked` 并写升级信箱；否则催办 |
 
-## 心跳模式（opc_patrol.py）
+> 11/12 号（2026-08-29 决策 #18 新增）：用户拍板「要主动打扰」的两类事件——工单逾期/临期与长期无进展。阈值在 `opc_schema.PATROL`（`due_soon_days` / `stalled_days`，默认各 3 天）。
+
+## 机器巡检（OPC 服务 · opc_patrol.py）
+
+日常**不需要手动跑**：OPC 服务（`opc_service.py`，进程内调度）数据一变即巡检、另有周期兜底，异常实时弹系统通知。下面是排查/手动补跑的入口：
 
 ```
-python opc_patrol.py --company <本司ID>            # 巡检 + 写日志/闭环态
+python opc_patrol.py --company <本司ID>            # 手动巡检一次 + 写日志/闭环态
 python opc_patrol.py --company <本司ID> --dry-run  # 只检查打印，不写任何文件
-python opc_patrol.py --company <本司ID> --quiet    # 仅异常时输出（适合 cron）
-python opc_patrol.py --selftest                    # 内置自测
+python opc_patrol.py --selftest                # 内置自测
+python opc_service.py                          # 前台起服务（bootstrap 已挂自启）
 ```
 
 > ⚠️ 2026-08-29 修正：旧版文档写的 `--once-only` 参数**不存在**，实际是 `--dry-run`。
@@ -48,17 +54,17 @@ python opc_patrol.py --selftest                    # 内置自测
 | `workbench/patrol-pending.md` | **待办快照**（生成物） | 仅 open 项，critical 置顶；总管启动第 5 步读它 |
 
 - 发现异常时另弹**系统通知**（A+ 报警通道，`opc.toml [patrol].notify=false` 可关；Windows/macOS/Linux 三端尽力而为，失败不影响巡检）。
-- 心跳**不写** `dashboard-data.js`——那是生成器的投影，单向管道（P4）下投影永不写回。
-- 用户不需要懂任何机制：**开着计划任务 = 公司每天自己体检一次**；没挂计划任务时，
+- 巡检**不写** `dashboard-data.js`——那是生成器的投影，单向管道（P4）下投影永不写回。
+- 用户不需要懂任何机制：**OPC 服务开着 = 公司自己体检**（数据一变就查）；服务没跑时，
   总管每会话的巡检（本清单）兜底。
 
 ## 自动化边界（PRINCIPLES P29）
 
-心跳只做「发现」，**不做「处置决策」**：
+巡检只做「发现」，**不做「处置决策」**：
 
 | 段 | 谁做 | 状态 |
 |---|---|---|
-| 发现 | `opc_patrol.py` 心跳（1~10 号检查项） | ✅ 已实现 |
+| 发现 | OPC 服务内置巡检（1~12 号检查项） | ✅ 已实现 |
 | 留痕 / 闭环 | patrol-log + patrol-state + patrol-pending | ✅ 已实现 |
 | 报警 | 系统通知（可关） | ✅ 已实现 |
 | 处置（答复/转派/催办/补号） | **总管（人类在环）** | ✅ 已实现 |

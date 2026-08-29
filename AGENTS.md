@@ -5,7 +5,7 @@
 
 ## 启动门禁（init · 任何 agent 开工前必过）
 - 在 OPC 根跑 `python opc_resolver.py --doctor`（Windows 用 `python`，macOS/Linux 用 `python3`）：**全绿（输出「初始化自检通过」）才允许开工**。doctor **自带自愈**：缺锚/缺技能披露链接/缺钩子/缺看板数据会在检查前自动补齐（打印 `[fix]` 行）——新 clone 后跑一次 doctor 即完成自举。
-- 仍不绿时跑 `python opc_resolver.py --bootstrap`（一键自举：链接+钩子+看板数据+技能索引+**公司心跳定时任务**），再跑 doctor 终检；人工补齐仅用于 bootstrap 也修不了的场景（如权限）。
+- 仍不绿时跑 `python opc_resolver.py --bootstrap`（一键自举：链接+钩子+看板数据+技能索引+**OPC 服务自启项**），再跑 doctor 终检；人工补齐仅用于 bootstrap 也修不了的场景（如权限）。
 - 这相当于函数 `init()`：命名空间符号化 + 稳定锚物理入口 + 提交门禁是系统正常跑的硬前置，未达标不许进入业务。
 - 改名公司目录后，重跑 `python opc_resolver.py --ensure-links`（或 scripts/link-company.{ps1,sh}）即可自动重指向，无需改任何其他文件。
 
@@ -25,4 +25,4 @@
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范 |
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
 | `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
-| `opc_board_server.py` | 本地看板服务（决策 #18）：`/api/sync` 让「同步」按钮即时重算数据 + 数据源 watch + 开机自启（`--register`）；看板请从 `http://127.0.0.1:8765/dashboard.html` 打开 |
+| `opc_service.py` | **OPC 服务**（决策 #18：组织级常驻后台中枢，升级自 opc_board_server.py）：进程=宿主、公司=租户（扫描 opc.toml 全公司自动装载）；承载看板实时化（`同步`按钮直算 + 秒级监听）、巡检（含工单逾期/停滞预警）、实时通知与每日摘要、只读 API（`/api/{CID}/tickets|dashboard|patrol`）；`--register` 挂开机自启；看板从 `http://127.0.0.1:8765/{CID}/dashboard.html` 打开 |
