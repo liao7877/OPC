@@ -258,7 +258,7 @@
         }).join("") || '<div class="empty">本团队暂无成员</div>') + "</div></section>";
 
       // t2 团队统计（2026-08-29 拆对象口径：工单 / 工作条目 分账成卡，悬停有口径说明）
-      var tkSub = ["backlog", "in_progress", "review"].map(function (k) { return (sm[k] || k) + " " + (tk.byStatus[k] || 0); }).join(" · ");
+      var tkSub = (((DATA.config || {}).active_status) || ["backlog", "in_progress", "review"]).map(function (k) { return (sm[k] || k) + " " + (tk.byStatus[k] || 0); }).join(" · ");
       var t2 = '<section id="t2"><h2>📊 团队统计 · ' + esc(DATA.name || DATA.tid) + " (" + esc(DATA.tid) + ')</h2><div class="grid g-stat">' +
         statHTML("成员", DATA.member_count != null ? DATA.member_count : members.length) +
         statHTML("🎫 工单·在途", tk.active, "var(--accent)", tkSub,
