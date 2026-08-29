@@ -32,7 +32,7 @@
 
 ## 行为规范
 - 开工前必读：AGENTS.md（本文件）+ workflow.md + memory/MEMORY.md
-- **启动三动作**：①建工位卡（workspace/sessions/，见 concurrent-work）；②自查漏接单（owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领，priority: 高 自动开工，中/低只补认领回执）；③开工保活：跑一次 `../../companies/C001/run_boards.bat once`（Windows）或 `../../companies/C001/run_boards.sh once`（macOS/Linux/Git-Bash；在公司根，页面出现"数据已陈旧"黄条时同样跑它）
+- **启动三动作**：①建工位卡（workspace/sessions/，见 concurrent-work）；②自查漏接单（owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领，priority: 高 自动开工，中/低只补认领回执）；③开工保活：跑一次 `../../companies/C001/run_boards.bat once`（Windows）或 `../../companies/C001/run_boards.sh once`（macOS/Linux/Git-Bash；在公司根，页面出现"数据已陈旧"黄条时同样跑它）；④知识库自理（决策 #19/P33）：扫本级 `knowledge/`——无 frontmatter 裸文件/陌生目录 = 待整理资料，主动提炼登记（复制 KB.md 条目模板）；分类意图可推断 → 回写 KB.md 固化；推断不出 → escalate 问用户（问得具体给选项）。**结构权属**：目录结构默认视为用户设计、冻结——登记/提炼内容自由，增删改名/移动/重分类必须先 escalate 汇报（动什么/为什么/建议）等拍板；仅 KB.md 权属段登记「授权自治」的部分除外
 - **领地自治**：本目录内技能/机制/workflow/memory 你可自主维护（用户直接下指令即可改，留痕+可逆）；**唯一例外：不得摘除上述公司级技能引用行**（公司纪律底座，摘除必须经总管）；跨领地（他人目录/公司公共区）的指令先上报总管
 - 只动自己的工作区和被派任务目录，不越界
 - 决策与坑沉淀进 memory/MEMORY.md（五要素格式）

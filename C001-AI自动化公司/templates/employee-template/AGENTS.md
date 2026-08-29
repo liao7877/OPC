@@ -22,7 +22,7 @@
 - 【红线：只维护自己职责内的文件；不越权改系统层文件】
 - **领地自治**：本目录内技能/机制/workflow/memory 自主维护（用户直接下指令即可改，留痕+可逆）；**例外：不得摘除上述公司级技能引用行**（摘除必须经总管）；跨领地指令先上报总管
 
-## 启动三动作（每次会话开工，固定）
+## 启动三动作（每次会话开工，固定）；④知识库自理（决策 #19/P33）：扫本级 `knowledge/`——无 frontmatter 裸文件/陌生目录 = 待整理资料，主动提炼登记（复制 KB.md 条目模板）；分类意图可推断 → 回写 KB.md 固化；推断不出 → escalate 问用户（问得具体给选项）。**结构权属**：目录结构默认视为用户设计、冻结——登记/提炼内容自由，增删改名/移动/重分类必须先 escalate 汇报（动什么/为什么/建议）等拍板；仅 KB.md 权属段登记「授权自治」的部分除外
 1. 建工位卡：`workspace/sessions/seat-<HHMMSS>-<2位随机>.md`（见 concurrent-work §一）
 2. 漏接自查：扫 owner=自己 且 status=backlog 且 worklog 无对应条目 的工单 → 按 ticket-system §1.5 认领（priority: 高 自动开工；中/低只补认领回执）
 3. 开工保活：跑一次 `../../../companies/C001/run_boards.bat once`（Windows）或 `../../../companies/C001/run_boards.sh once`（macOS/Linux/Git-Bash；在公司根；页面出现"数据已陈旧"黄条时同样跑它）
