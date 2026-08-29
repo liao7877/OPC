@@ -13,8 +13,7 @@ company.md                    # 公司档案本身：定位/编制/边界各公�
 目录结构说明书.md               # 结构契约说明（实例含实际目录举例）
 CHANGELOG.md                  # 模板独有：模板自身的演进记录，实例不跟随
 
-# —— 技能与流程文档（实例先行，模板滞后属已知债，回改收敛前登记）——
-skills/ticket-system/SKILL.md
+# —— 技能与流程文档（实例先行，模板滞后属已知债，回改收敛前登记；ticket-system 已打样归一移出）——
 skills/worklog-discipline/SKILL.md
 templates/employee-template/workflow.md
 

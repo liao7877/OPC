@@ -893,6 +893,8 @@ def check_links(cid=None, root=None):
     # ② 全文扫描所有 opc:// 引用，逐个解析
     refs = scan_refs(root)
     for uri in sorted(refs):
+        if uri.startswith("opc://company:C00x/"):
+            continue    # 模板建司占位符（create-company 问卷回填），不算失效（P31 打样约定）
         try:
             resolve(uri)
         except Exception as e:
@@ -1380,6 +1382,44 @@ def doctor(root=None, auto_fix=True):
             warns.append("实例 ↔ 模板 diff 无未登记差异 ✓")
     except Exception as e:
         warns.append(f"模板 diff 检查未跑成（{e}）——不影响门禁，可手动 `--diff-template` 排查")
+
+    # 7. 技能体量门禁（P31）：SKILL.md 正文是路由器不是百科，超限出 warning——
+    #    细节拆 Level 3 附属文件按需读（渐进式披露），机器发现、人工决策
+    heavy, seen = [], set()
+    bases = [os.path.join(root, "company-template")]
+    for cid in cids:
+        try:
+            bases.append(load_company(cid).home_abs)
+        except Exception:
+            pass
+    for base_dir in bases:
+        for dirpath, dirs, files in os.walk(base_dir):
+            dirs[:] = [d for d in dirs if d not in (".git", ".workbuddy", "node_modules",
+                                                    "memory", "workspace", "archive")]
+            if "SKILL.md" not in files:
+                continue
+            fp = os.path.join(dirpath, "SKILL.md")
+            rp = os.path.realpath(fp)          # 实例锚/披露链接会造成同文件多路到达，按 realpath 去重
+            if rp in seen:
+                continue
+            seen.add(rp)
+            body, in_fm, saw_fm = 0, False, False
+            for ln in _read_file(fp).splitlines():
+                if not in_fm:
+                    if ln.strip() == "---":    # frontmatter 开始
+                        in_fm, saw_fm = True, True
+                    else:
+                        body += 1              # 无 frontmatter 的文件：全文按正文计
+                    continue
+                if ln.strip() == "---":        # frontmatter 结束，其后为正文
+                    in_fm = False
+            if body > 120:
+                heavy.append(f"{os.path.relpath(fp, root)}（正文 {body} 行）")
+    if heavy:
+        warns.append(f"{len(heavy)} 份 SKILL.md 正文超 P31 上限（120 行）：{'、'.join(heavy[:3])}"
+                     f"{'…' if len(heavy) > 3 else ''}——细节拆 Level 3 附属文件，正文只留规则主干")
+    else:
+        warns.append("SKILL.md 正文体量全部达标 ✓")
 
     return errors, warns
 

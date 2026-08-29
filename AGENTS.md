@@ -21,7 +21,7 @@
 |---|---|
 | [`README.md`](README.md) | 系统初始化 / 使用说明（开工前先读「系统初始化」） |
 | [`opc-namespace-design.md`](opc-namespace-design.md) | 命名空间机制设计规范（动机 / URI / resolver / 跨平台 / 落地） |
-| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级设计原则 P1~P30 |
+| [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级设计原则 P1~P31 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范 |
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
 | `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
