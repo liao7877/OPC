@@ -12,6 +12,8 @@ affairs = "workbench/affairs"
 page_templates = "page-templates"
 templates = "templates"            # 公司模板目录（新建员工骨架来源；opc://company:<cid>/templates/... 经 key 透传解析）
 skills = "skills"                  # 技能根目录：skill/<name> -> {home}/skills/<name>
+knowledge = "公司知识库"           # 知识库根目录：worklog/文档可用 opc://company:<cid>/公司知识库/... 引用（2026-08-30 注册）
+"公司知识库" = "公司知识库"        # 同上的首段别名（URI 首段=目录名，key 模式按名匹配）
 # 注：实体目录前缀的唯一真相已移至 [entity_types]（2026-08-29）；原 teams/projects/employees 三键
 # 自落地以来从未被 resolver 消费（配置说谎），已移除——实体解析按 [entity_types] 前缀扫描公司根。
 
@@ -20,6 +22,16 @@ skills = "skills"                  # 技能根目录：skill/<name> -> {home}/sk
 # Z 方案：home 指向 OS 级稳定锚（companies/C001 = symlink/junction），
 # 真实目录改名后只需更新该链接，所有 consumer 零改动且跨平台。
 home = "companies/C001"
+
+# ---- OPC 服务（opc_service 消费；进程=宿主、公司=租户）----
+[service]
+port = 8765
+# away_mode 不在场模式：实时通知全部静默，仅每日 09:00 摘要重提全部未处置项（critical 置顶）；
+# 绝不代决策（P29）——「等用户拍板」的工单照旧挂起，只是打扰方式降级
+away_mode = false
+# 预留扩展口子（2026-08-30 拍板）：
+#   副署人（路线 3）= 将来 notify_channels 增加通道即可（各公司可不同，分公司路由）；
+#   预授权清单 [delegation] = 将来扩展位：把「不在场」变「授权范围」，每一条都是真授权，默认空。
 
 # ---- 巡检报警（opc_patrol 消费）----
 [patrol]

@@ -13,9 +13,11 @@ company.md                    # 公司档案本身：定位/编制/边界各公�
 目录结构说明书.md               # 结构契约说明（实例含实际目录举例）
 CHANGELOG.md                  # 模板独有：模板自身的演进记录，实例不跟随
 
-# —— 技能与流程文档（实例先行，模板滞后属已知债，回改收敛前登记；ticket-system 已打样归一移出）——
-skills/worklog-discipline/SKILL.md
+# —— 技能与流程文档（实例先行，模板滞后属已知债；ticket-system 等七项已由 --sync-skills 归一）——
 templates/employee-template/workflow.md
+
+# —— 公司知识库（实例专属事实记录，P31 例外条款细节优先）——
+公司知识库/
 
 # —— workbench 机制文档（实例侧多历史决策段）——
 workbench/KANBAN_ARCHITECTURE.md

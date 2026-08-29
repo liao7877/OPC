@@ -37,8 +37,8 @@ triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳, 服务巡检]
 日常**不需要手动跑**：OPC 服务（`opc_service.py`，进程内调度）数据一变即巡检、另有周期兜底，异常实时弹系统通知。下面是排查/手动补跑的入口：
 
 ```
-python opc_patrol.py --company <本司ID>            # 手动巡检一次 + 写日志/闭环态
-python opc_patrol.py --company <本司ID> --dry-run  # 只检查打印，不写任何文件
+python opc_patrol.py --company C00x            # 手动巡检一次 + 写日志/闭环态
+python opc_patrol.py --company C00x --dry-run  # 只检查打印，不写任何文件
 python opc_patrol.py --selftest                # 内置自测
 python opc_service.py                          # 前台起服务（bootstrap 已挂自启）
 ```
