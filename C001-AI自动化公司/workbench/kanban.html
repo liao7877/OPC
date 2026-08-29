@@ -214,6 +214,8 @@
   <script>
   (function () {
     var DATA = window.KANBAN_DATA;
+
+    function LSKEY(k) { return (DATA && DATA.cid ? DATA.cid + ":" : "") + k; }   // 多公司同源（127.0.0.1:8765）下 localStorage 键按公司隔离
     var STATUS_ORDER = (DATA && DATA.status_order) ||
       ["backlog", "in_progress", "review", "done", "failed", "paused", "cancelled"]; // 兜底仅容错，真相在 tasks-data.js status_order（opc_schema 单一真相）
     var STATUS_LABEL = (DATA && DATA.status_meta) || {
@@ -232,6 +234,11 @@
     var focusIdx = -1;
 
     // 代号→名称 解析（注册表由生成器从公司目录扫描得出；解析不到回退原代号）
+    function cardById(id) {   // id 来自工单目录名，可能含引号/反斜杠：拼接选择器会 SyntaxError，遍历比较最稳
+      var cards = document.querySelectorAll(".card[data-id]");
+      for (var i = 0; i < cards.length; i++) if (cards[i].getAttribute("data-id") === id) return cards[i];
+      return null;
+    }
     function empName(code) {
       if (!code) return "待派";
       var m = (DATA && DATA.employees) || {};
@@ -334,7 +341,7 @@
     // 筛选状态持久化（localStorage）+ URL 参数（分享视图）
     function saveState() {
       try {
-        localStorage.setItem("kanban-state", JSON.stringify({
+        localStorage.setItem(LSKEY("kanban-state"), JSON.stringify({
           groupBy: state.groupBy, priority: state.priority, type: state.type,
           search: state.search, tags: Array.from(state.tags)
         }));
@@ -342,7 +349,7 @@
     }
     function loadState() {
       try {
-        var s = JSON.parse(localStorage.getItem("kanban-state") || "{}");
+        var s = JSON.parse(localStorage.getItem(LSKEY("kanban-state")) || "{}");
         if (GROUP_BY_VALID.indexOf(s.groupBy) !== -1) state.groupBy = s.groupBy;
         if (PRI_VALID.indexOf(s.priority) !== -1) state.priority = s.priority;
         if (TYPE_VALID.indexOf(s.type) !== -1) state.type = s.type;
@@ -829,14 +836,14 @@
       document.documentElement.setAttribute("data-theme", theme);
       // 按钮显示"点击后的目标"而非当前主题，避免"点暗色却变亮色"的反直觉
       document.getElementById("themeBtn").textContent = theme === "dark" ? "☀️ 切亮色" : "🌙 切暗色";
-      try { localStorage.setItem("boards-theme", theme); } catch (e) {}
+      try { localStorage.setItem(LSKEY("boards-theme"), theme); } catch (e) {}
     }
 
     // 初始化（默认亮色，localStorage 记忆优先）
     var saved = null;
     try {
-      saved = localStorage.getItem("boards-theme") || localStorage.getItem("kanban-theme");
-      if (saved && !localStorage.getItem("boards-theme")) localStorage.setItem("boards-theme", saved);
+      saved = localStorage.getItem(LSKEY("boards-theme")) || localStorage.getItem("kanban-theme");
+      if (saved && !localStorage.getItem(LSKEY("boards-theme"))) localStorage.setItem(LSKEY("boards-theme"), saved);
       localStorage.removeItem("kanban-theme");
     } catch (e) {}
     // 主题键与三级看板统一为 boards-theme：六级页面一处切换全局一致
@@ -910,7 +917,7 @@
         e.preventDefault();
         var delta = e.key === "ArrowDown" ? 1 : -1;
         focusIdx = (focusIdx + delta + focusList.length) % focusList.length;
-        var el = document.querySelector('.card[data-id="' + focusList[focusIdx] + '"]');
+        var el = cardById(focusList[focusIdx]);
         if (el) {
           var old = document.querySelector(".card.focus");
           if (old) old.classList.remove("focus");
@@ -971,7 +978,7 @@
           openDrawer(id);
           // 详情面板打开后滚到该卡片所在列（视觉定位）
           setTimeout(function () {
-            var el = document.querySelector('.card[data-id="' + id + '"]');
+            var el = cardById(id);
             if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
           }, 80);
           return true;

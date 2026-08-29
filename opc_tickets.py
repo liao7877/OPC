@@ -53,12 +53,13 @@ class Ctx:
     """一次生成的路径上下文（不可变，杜绝模块级可变全局）。
     company_dir=公司根；wb_dir=workbench；tasks_dir=工单目录；out_json/out_js=产物。"""
 
-    def __init__(self, company_dir, wb_dir, tasks_dir, out_json, out_js):
+    def __init__(self, company_dir, wb_dir, tasks_dir, out_json, out_js, cid=""):
         self.company_dir = company_dir
         self.wb_dir = wb_dir
         self.tasks_dir = tasks_dir
         self.out_json = out_json
         self.out_js = out_js
+        self.cid = cid   # 前端 localStorage 键按公司隔离用（自测临时目录无 cid 时为空）
 
 
 def resolve_ctx(company=None, company_dir=None):
@@ -68,7 +69,7 @@ def resolve_ctx(company=None, company_dir=None):
     wb = cfg._abs("workbench")
     return Ctx(cfg.home_abs, wb, os.path.join(wb, "tasks"),
                cfg._abs("tasks_data"),
-               os.path.join(wb, "tasks-data.js"))
+               os.path.join(wb, "tasks-data.js"), cid=cfg.cid)
 
 
 # ---- 基础工具 ----
@@ -463,6 +464,7 @@ def generate(ctx):
 
     payload = {
         "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cid": getattr(ctx, "cid", ""),   # 前端 localStorage 键按公司隔离（多公司同端口同源）
         "source": "workbench/tasks/",
         "status_meta": {k: v for k, v in VALID_STATUS.items()},
         "status_order": list(TASK_STATUS_ORDER),   # 列序唯一真相（前端兜底仅容错）

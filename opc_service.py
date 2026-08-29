@@ -94,6 +94,9 @@ class Tenant:
     def regenerate(self, why=""):
         """重算该公司双投影（单飞锁）；返回 (ok, errors)。"""
         with self.gen_lock:
+            # 进锁先置 + 完成后再置（2026-08-29 三轮体检）：生成全程对 watch 不可见——
+            # 只在完成时置的话，生成期间 watch 采样到中间态 mtime 会排队再跑一遍全量重算
+            self.last_gen_epoch = time.time()
             errs = []
             for name, fn, ctx in (("tickets", opc_tickets.generate, self.tctx),
                                   ("dashboards", opc_dashboards.generate_all, self.dctx)):
@@ -122,6 +125,9 @@ class Tenant:
             try:
                 cur = self._sources_mtime()
                 if cur == last:
+                    continue
+                if self.gen_lock.locked():
+                    last = cur    # 有生成正在进行（/sync/兜底重算）：产物即将刷新，重定基线不叠加
                     continue
                 last = cur
                 # mtime 变化若只是上轮生成自己写的数据文件（如 /sync 刚跑过）→ 只重定基线
@@ -165,8 +171,14 @@ def _notify(tenant, title, text):
 
 
 def _digest_time():
-    h, m = str(_service_cfg().get("digest_time", "09:00")).split(":")
-    return int(h), int(m)
+    raw = _service_cfg().get("digest_time", "09:00")
+    try:
+        h, m = str(raw).split(":")
+        return int(h), int(m)
+    except ValueError:
+        # 非法配置不再静默吞掉（曾致每日摘要永不触发且无任何提示）：回落默认并留痕
+        print(f"[service] digest_time 配置非法（{raw!r}），回落 09:00")
+        return 9, 0
 
 
 def _digest_loop(tenants):
@@ -202,6 +214,9 @@ def _safe_join(base, rest):
     单一分隔符过滤），再以 realpath 前缀校验兜底——落点必须仍在租户 base 内，
     越界（绝对盘符、符号链等）一律落回租户根。"""
     parts = [s for s in re.split(r"[\\/]+", rest) if s and s not in (".", "..")]
+    blocked = os.path.join(base, "__opc_traversal_blocked__")   # 不存在的路径 → 必然 404，不给列目录
+    if not parts:
+        return blocked    # 全是穿越段（如 /..\..）：拦下，绝不落回租户根做目录列表
     p = os.path.normpath(os.path.join(base, *parts))
     try:
         rb, rp = os.path.realpath(base), os.path.realpath(p)
@@ -209,21 +224,21 @@ def _safe_join(base, rest):
             return p
     except (OSError, ValueError):
         pass
-    return base
+    return blocked
 
 
 def _same_origin(headers):
-    """同站校验（写动作 POST /sync 专用）：浏览器跨站上下文必带 Origin 或
-    Sec-Fetch-Site: cross-site；本机工具直连（两头皆空）放行。"""
+    """同源校验（写动作 POST /sync 专用）：浏览器跨站上下文必带 Origin 或
+    Sec-Fetch-Site: cross-site/same-site（same-site 不分端口，本机另一端口上的
+    页面也算跨源——一并拒绝）；本机无头工具直连（两头皆空）放行。"""
     origin = headers.get("Origin")
     if origin:
         return urllib.parse.urlparse(origin).netloc == (headers.get("Host") or "")
-    return headers.get("Sec-Fetch-Site") in (None, "same-origin", "same-site", "none")
+    return headers.get("Sec-Fetch-Site") in (None, "same-origin", "none")
 
 
 def make_handler(tenants, default_cid):
     from http.server import SimpleHTTPRequestHandler
-    cfg = _service_cfg()
 
     class H(SimpleHTTPRequestHandler):
         def log_message(self, *a):
@@ -273,7 +288,7 @@ def make_handler(tenants, default_cid):
             if p == "/api/ping":
                 return self._json({"ok": True, "service": "opc-service",
                                    "companies": sorted(tenants), "default": default_cid,
-                                   "config": {k: v for k, v in cfg.items()}})
+                                   "config": _service_cfg()})   # 实时读：改 opc.toml 后 ping 不误报旧值
             # API 分发：裸路径 /api/C001/...（agent/外部服务用）→ 按 CID 定租户；
             # 公司前缀 /C001/api/...（前端「同步」用）→ 按前缀定租户；
             # 裸 /api/sync 等无 CID 的旧地址落默认公司（兼容）
@@ -380,11 +395,13 @@ def selftest():
         check("[service] _safe_join：正常路径落在租户内", ok_join)
         for evil in ("/..\\..\\..\\Windows\\win.ini",
                      "/..\\..\\secret", "/C:/Windows/win.ini", "/a/../../b"):
+            res = _safe_join(base, evil)
             check(f"[service] _safe_join：穿越 {evil!r} 被拦回落回租户根",
-                  _safe_join(base, evil) == base or
-                  os.path.realpath(_safe_join(base, evil)).startswith(base + os.sep))
+                  res != base and os.path.realpath(res).startswith(base + os.sep))
     check("[service] 同站校验：跨站 Origin 拒绝",
           not _same_origin({"Origin": "http://evil.example", "Host": "127.0.0.1:8765"}))
+    check("[service] 同源校验：same-site 也拒（same-site 不分端口，防本机跨端口触发重算）",
+          not _same_origin({"Sec-Fetch-Site": "same-site"}))
     check("[service] 同站校验：同站 Origin / 无头本机工具放行",
           _same_origin({"Origin": "http://127.0.0.1:8765", "Host": "127.0.0.1:8765"})
           and _same_origin({}))

@@ -428,7 +428,8 @@ def _notify_windows(title, text):
         "$n.BalloonTipText = '%s'\r\n"
         "$n.ShowBalloonTip(10000)\r\n"
         "Start-Sleep -Seconds 11\r\n"
-        "$n.Dispose()\r\n" % (title, text)
+        "$n.Dispose()\r\n"
+        "Remove-Item -LiteralPath $PSCommandPath -ErrorAction SilentlyContinue\r\n" % (title, text)
     )
     # 唯一文件名：服务内多公司并发通知互不覆盖（固定名会串厂）
     ps = os.path.join(tempfile.gettempdir(), f"opc-patrol-notify-{os.getpid()}-{time.time_ns()}.ps1")
@@ -588,8 +589,15 @@ def auto_refresh(ctx, dry):
 def run_once(company=None, dry=False, quiet=True):
     """单轮巡检（进程内复用入口，决策 #18）：数据自愈 → find → 写 log/state → 通知去重。
     返回 (ctx, fresh)：fresh=本轮新发现（通知已发出）。CLI main 与 OPC 服务共用同一实现，
-    机器口径只有一份，不漂移。"""
+    机器口径只有一份，不漂移。
+    并发口径（2026-08-29 三轮体检）：全程持每公司 state 锁——服务内 watch//sync/周期
+    兜底三触发源串行化，state 读改写与 pre_open→通知窗口不再互踩（丢 handled/重复弹通知）。"""
     ctx = resolve_ctx(company)
+    with opc_model.file_lock(ctx.state, timeout=60.0):
+        return _run_once_locked(ctx, dry, quiet)
+
+
+def _run_once_locked(ctx, dry, quiet):
     auto_refresh(ctx, dry)          # 数据自愈在前：find() 的工单类检查消费的是新鲜投影
     find(ctx)
     pre_open = set()
