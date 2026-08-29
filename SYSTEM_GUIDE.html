@@ -164,7 +164,7 @@ OPC/
       <li>升级超时升层 = 断路器</li>
       <li>台账先占号后建单 = 写前日志（WAL）</li>
     </ul>
-    <p class="muted">每条映射的设计动机详见仓库 PRINCIPLES 与机制文档（设计借鉴手册沉淀中）。</p>
+    <p class="muted">每条映射的设计动机详解见下方「六、设计哲学」。</p>
   </div>
 </div>
 
@@ -175,7 +175,57 @@ OPC/
   <div class="card"><h3>交叉核验</h3><p>worklog 双账与工单状态逐条核对；失效引用、死链、陈旧数据全部主动暴露。</p></div>
 </div>
 
-<h2>六、快速开始</h2>
+<h2>六、设计哲学：站在计算机科学的肩膀上</h2>
+<p class="muted">这套系统的很多设计不是拍脑袋，是借鉴了计算机科学六十年的沉淀——只不过 AI 组织的「硬件」是人、文件和会话。每条都从真实痛点出发。</p>
+
+<div class="card"><span class="tag">组成原理 · 多级缓存</span><h3>技能三层渐进披露 —— 为什么 agent 不会被知识撑死？</h3>
+  <p><b>痛点：</b>一个售前技能动辄 260 行，全塞进每次会话，十几个技能下来上下文窗口（agent 的「寄存器」）就满了——贵、慢、还稀释注意力。</p>
+  <p><b>机制：</b>像 CPU 一样分层，越热的层越小越快：</p>
+  <div class="flow">
+    <div class="step"><b>L1 · 常驻</b>技能名 + 触发词<br>每会话必载（~1 行/技能）</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>L2 · 按需</b>SKILL.md 正文<br>命中触发词才加载（≤120 行，doctor 门禁）</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>L3 · 冷存</b>模板/告警对照/书单<br>正文链接，用到才读</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>磁盘 · 归档</b>workbench/archive<br>历史过程文档，绝不占缓存</div>
+  </div>
+  <p class="muted">打样实证：ticket-system 258→80 行、presales 260→64 行，规则一条没丢，细节全部下放到 L3。</p>
+</div>
+
+<div class="card"><span class="tag">Kubernetes · 控制循环</span><h3>巡检 = 组织的 reconcile —— 为什么不用人盯人？</h3>
+  <p><b>痛点：</b>AI 员工会漏接单、忘推进、改了 A 忘了 B。靠老板每小时盯一眼？盯不住，也不该盯。</p>
+  <p><b>机制：</b>不指挥每个动作，只声明「组织应该长什么样」（期望态），剩下的交给循环：</p>
+  <div class="flow">
+    <div class="step"><b>① 期望态声明</b>每单有主 / 无阻塞漏清 / 双账一致 / 号池有水</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>② 周期观测</b>巡检 13 项扫文件真相<br>数据一变即触发 + 周期兜底</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>③ diff 偏差</b>发现即入待办<br>severity 分级（仅 critical 打扰人）</div>
+    <div class="arrow">↺</div>
+    <div class="step"><b>④ 修正/告警</b>处置置 handled<br>再犯自动 reopened</div>
+  </div>
+  <p class="muted">这就是 Kubernetes 控制器模式：不命令过程，只收敛状态。</p>
+</div>
+
+<div class="card"><span class="tag">内容治理 P31 · 三问法</span><h3>内容归位决策树 —— 一份知识到底放哪？</h3>
+  <p><b>痛点：</b>同一条规范被复制进三个员工的技能，半年后三处三个版本——没人知道哪份是真的。</p>
+  <p><b>机制：</b>写任何内容前过四问，落位唯一：</p>
+  <div class="flow">
+    <div class="step"><b>① 跨公司成立？</b>是 → 根层一份<br>（如 create-company）</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>② 多角色纪律？</b>是 → 公司层正文<br>他层一行引用（链接+为什么读）</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>③ 单角色手艺？</b>是 → 该员工 skills/<br>一技能一触发场景</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>④ 跟实体走？</b>是 → 实体目录<br>（项目/工单/人，事实细节优先）</div>
+  </div>
+  <p class="muted">配套判据：最小公共上浮（上浮有成本，无复用不上浮）；参数值回机制层（正文出现「14 天算停滞」= 双真相警觉）；规范类内容「精准高效、本质而非肤浅」，事实记录类例外。判例：公司级四技能全是纪律，总管五技能全是手艺。</p>
+</div>
+
+<p class="muted">更多映射（一句话版见「四、机制亮点」设计借鉴卡）：<code>opc://</code> 符号引用 + 稳定锚 = 虚拟内存寻址（resolver 是 MMU，公司改名 = 页表重映射，全组织引用零改动）；决策 #18 收敛单常驻服务 = 微内核化；升级超时自动升层 = 断路器；台账先占号后建单 = 写前日志（WAL）；僵尸工位卡收割 = waitpid。</p>
+
+<h2>七、快速开始</h2>
 <pre>
 <span class="c"># clone 后一次性自举（一条命令，详见 README「系统初始化」）</span>
 python opc_resolver.py --bootstrap      <span class="c"># 链接+钩子+看板数据+技能索引+OPC 服务自启并拉起，自动完成</span>
