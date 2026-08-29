@@ -112,7 +112,7 @@ OPC/
     </ul></div>
   <div class="card"><span class="tag">质量门禁</span><h3>init() 化的开工门禁</h3>
     <ul class="clean">
-      <li><code>--doctor</code> 五项自检：Python / 稳定锚 / 钩子 / 命名空间 / 技能披露链接</li>
+      <li><code>--doctor</code> 七项自检：Python / 稳定锚 / 钩子 / 服务探活 / 命名空间 / 技能披露 / 模板 diff 与技能体量</li>
       <li>Agent 开工前必过，不绿不许进业务</li>
       <li>GitHub Actions 三平台 × 双 Python 版本矩阵持续验证</li>
     </ul></div>
@@ -134,6 +134,18 @@ OPC/
       <li>公司级 / 团队级 / 私有三层，SKILL.md frontmatter 是元数据唯一真相</li>
       <li>触发词（triggers）结构化，<code>--sync-index</code> 生成各层 INDEX，「登记」动作消失</li>
       <li>渐进式披露：命中触发词才读全文，省 token</li>
+    </ul></div>
+  <div class="card"><span class="tag">内容治理 P31</span><h3>三问法归位 + 渐进式披露</h3>
+    <ul class="clean">
+      <li>内容归位三问：跨公司→根层一份；公司政策→公司层正文、他层只留一行引用（opc:// 链接 + 为什么读）；单角色→员工技能</li>
+      <li>写规范类内容「精准高效、本质而非肤浅」——每句话要么改变行为要么帮助定位；<b>例外</b>：记忆/日志等事实记录类细节优先不精简</li>
+      <li>SKILL.md 正文是「路由器」不是百科（≤120 行，doctor 门禁检测）：模板/告警对照/示例拆 Level 3 附属文件按需读，打样 ticket-system 258→80 行、presales 260→64 行</li>
+    </ul></div>
+  <div class="card"><span class="tag">安全边界</span><h3>最小写边界 + 并发收口</h3>
+    <ul class="clean">
+      <li>只读 API + 唯一写动作 POST /sync（同源校验，same-site 也拒）；静态服务双重防目录穿越（双分隔符切段 + realpath 兜底）</li>
+      <li>巡检三触发源全程持每公司锁；<code>atomic_write</code> 唯一 tmp 名防双写者互踩；watch 生成期间对监听不可见，不重复重算</li>
+      <li>服务异常不静默：后台循环错误记入 last_error，/api/ping 可查</li>
     </ul></div>
   <div class="card"><span class="tag">扩展性</span><h3>实体注册表 + 开司脚手架</h3>
     <ul class="clean">
