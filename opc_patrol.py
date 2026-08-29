@@ -137,6 +137,14 @@ def find(ctx):
     tmap = {t["id"]: t for t in tasks}
     # 知识回流第 0 步的判定数据（最省口径：复用本次已加载工单，不重复扫描）
     ctx.has_failed = any(t.get("status") == "failed" for t in tasks)
+    # 知识飞轮判定（决策 #19 落地）：关单未复盘 + lesson 待归位（methods 目录不可读按空处理，提示降级）
+    try:
+        methods_dir = os.path.join(ctx.cfg._abs("knowledge"), "methods")
+    except Exception:
+        methods_dir = None
+    recent_cut = (ctx.today - datetime.timedelta(
+        days=int(_knowledge_cfg().get("lesson_recent_days", 14)))).strftime("%Y-%m-%d")
+    ctx.kb_backflow = kb_backflow_scan(tasks, methods_dir, recent_cut)
     dd = _load_json(ctx.dash_data)
     if dd is None:
         # P11：投影损坏/未生成必须告警，绝不静默跳过检查项 2/3/4（认领/双账/脱期）
@@ -511,12 +519,50 @@ _KB_BACKFLOW_HINT = ("[提示] 检测到升级/失败工单——建议总管把
                      "knowledge/methods/（P31 事实记录，细节优先），避免同类坑二次踩")
 
 
+def kb_backflow_scan(tasks, methods_dir, recent_cut):
+    """知识飞轮判定数据（纯函数，决策 #19 落地）：
+    closed_no_lesson = 近期关单但 messages.md 无 [lesson: 标记（failed 不限时长，done 看 completed_at）
+    lessons_pending  = 已写 [lesson: 但任务编号未出现在 knowledge/methods/（未归位）
+    tasks 为 tasks-data.json 的 tasks 列表；methods_dir 不可读按空处理（全部视为未归位）。"""
+    closed_no_lesson, lessons_pending = [], []
+    methods_text = ""
+    if methods_dir and os.path.isdir(methods_dir):
+        for root, _dirs, fs in os.walk(methods_dir):
+            for fn in fs:
+                if fn.endswith(".md"):
+                    try:
+                        methods_text += open(os.path.join(root, fn), encoding="utf-8",
+                                             errors="ignore").read()
+                    except OSError:
+                        pass
+    for t in tasks:
+        tid, st = t.get("id"), t.get("status")
+        msgs = t.get("messages") or ""
+        if "[lesson:" not in msgs:
+            if st == "failed" or (st == "done" and (t.get("completed_at") or "") >= recent_cut):
+                closed_no_lesson.append(tid)
+        elif tid and tid not in methods_text:
+            lessons_pending.append(tid)
+    return {"closed_no_lesson": closed_no_lesson, "lessons_pending": lessons_pending}
+
+
 def kb_backflow_hint(ctx):
-    """知识回流第 0 步（2026-08-29）：本轮发现升级（#5）或存在 failed 工单时，
-    打一行沉淀提示——P29 自动化边界在「发现」，本函数只提示、不写 state、不弹通知、
-    不做任何处置；教训回不回家的「路」由总管走。每轮最多提示一次。"""
+    """知识回流提示（2026-08-29 第 0 步 + 2026-08-30 飞轮三路）：升级/failed 沉淀、
+    关单未复盘、lesson 待归位——P29 自动化边界在「发现」，本函数只提示、不写 state、
+    不弹通知、不做任何处置；教训回不回家的「路」由总管走。每路每轮至多一次。"""
     if any(f["no"] == 5 for f in ctx.findings) or getattr(ctx, "has_failed", False):
         print(_KB_BACKFLOW_HINT)
+    bf = getattr(ctx, "kb_backflow", None) or {}
+    no_lesson = bf.get("closed_no_lesson") or []
+    if no_lesson:
+        print(f"[提示] 关单未复盘 {len(no_lesson)} 张（messages.md 无 [lesson: 标记）："
+              f"{'、'.join(no_lesson[:3])}" + (f" 等共 {len(no_lesson)} 张" if len(no_lesson) > 3 else "")
+              + "——owner 补一行 [lesson: 一句话教训] (日期) 即完成复盘")
+    pending = bf.get("lessons_pending") or []
+    if pending:
+        print(f"[提示] {len(pending)} 条 [lesson] 待归位 knowledge/methods/："
+              f"{'、'.join(pending[:3])}" + (f" 等共 {len(pending)} 条" if len(pending) > 3 else "")
+              + "——沉淀后本提示自动消失")
 
 
 # 心跳注册已随决策 #18 退役：定时巡检/通知/自愈整体并入 OPC 服务（opc_service.py），
@@ -647,6 +693,32 @@ def selftest():
     with redirect_stdout(buf3):
         kb_backflow_hint(ctxf)
     check("知识回流提示:failed 工单触发", "knowledge/methods" in buf3.getvalue())
+    # 知识飞轮扫描（决策 #19 落地）：关单未复盘 / lesson 待归位 / 归位后自动消失
+    tasks = [
+        {"id": "TSKA", "status": "done", "completed_at": "2026-08-29", "messages": "普通备注"},
+        {"id": "TSKB", "status": "done", "completed_at": "2026-08-29", "messages": "复盘 [lesson: 先对比再写] (2026-08-29)"},
+        {"id": "TSKC", "status": "done", "completed_at": "2026-01-01", "messages": "历史关单不追"},
+        {"id": "TSKD", "status": "failed", "messages": ""},
+        {"id": "TSKE", "status": "in_progress", "messages": "[lesson: 未关单也有标记] (2026-08-29)"},
+    ]
+    with tempfile.TemporaryDirectory() as md_tmp:
+        mdir = os.path.join(md_tmp, "methods")
+        os.makedirs(mdir)
+        bf = kb_backflow_scan(tasks, mdir, "2026-08-15")
+        check("飞轮扫描:近关单/failed 无 lesson 进待复盘", bf["closed_no_lesson"] == ["TSKA", "TSKD"])
+        check("飞轮扫描:历史关单不追", "TSKC" not in bf["closed_no_lesson"])
+        check("飞轮扫描:有 lesson 未归位进待归位", set(bf["lessons_pending"]) == {"TSKB", "TSKE"})
+        with open(os.path.join(mdir, "x.md"), "w", encoding="utf-8") as fh:
+            fh.write("来源 TSKB 的教训已沉淀")
+        bf2 = kb_backflow_scan(tasks, mdir, "2026-08-15")
+        check("飞轮扫描:lesson 归位后自动消失", bf2["lessons_pending"] == ["TSKE"])
+        ctxb = Ctx(cfg, tmp)
+        ctxb.kb_backflow = {"closed_no_lesson": ["TSKA"], "lessons_pending": ["TSKB"]}
+        buf4 = io.StringIO()
+        with redirect_stdout(buf4):
+            kb_backflow_hint(ctxb)
+        check("飞轮提示:两路齐出", "关单未复盘 1 张" in buf4.getvalue() and "待归位" in buf4.getvalue())
+
     # 勿扰屏蔽（notify_allowed 纯函数）：critical 恒放行；warn/info 时段内静默
     cfgq = {"quiet_hours": "22:00-08:00"}   # 跨零点
     check("勿扰:critical 恒放行", notify_allowed("critical", datetime.time(23, 0), cfgq))

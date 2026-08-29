@@ -45,6 +45,7 @@ quiet_hours = ""     # 勿扰时段（可选）："HH:MM-HH:MM"，空=不启用�
 review_warn_days = 7       # 巡检 #13：review_by 到期前 N 天开始提醒复审
 cold_hits_days = 90        # 巡检 #15：连续 N 天零命中 → 提醒人工归档（永不自动删）
 dupe_similarity = 0.75     # 巡检 #14：疑似重复阈值（标题+tag 重合度），只告警不合并
+lesson_recent_days = 14    # 知识飞轮：关单 N 天内无 [lesson: 标记 → 提醒复盘（更早的历史关单不追）
 
 # ---- 实体类型注册表（2026-08-29 拍板：前缀唯一真相，resolver/生成器/巡检/结构自检统一消费）----
 # 加新实体类型（如 customer = "X"）= 加一行；改前缀同理。公司实体目录命名约定 {前缀}{数字}-<名称>（目录自解释；改名走 opc_resolver --rename-entity，引用层按 ID 前缀扫描免疫改名）。
