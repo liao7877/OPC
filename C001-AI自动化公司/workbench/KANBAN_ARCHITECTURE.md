@@ -26,7 +26,7 @@
 tasks/（真相，Agent 在此维护文件）
    │  修改
    ▼
-generate_tasks.py（解析 + 校验 + 告警，可 --watch 自动重跑）
+opc_tickets.py（解析 + 校验 + 告警，可 --watch 自动重跑）
    │  产出
    ▼
 tasks-data.json / tasks-data.js（投影数据，内联 messages/deliverables/logs/handoffs/inputs）
@@ -44,13 +44,13 @@ kanban.html（只读渲染，3 秒轮询自动同步，不写回任何文件）
 | 层 | 组成 | 对接对象 | 谁维护 |
 |---|---|---|---|
 | **A 数据层** | `workbench/tasks/` 下的工单文件 | **Agent 的唯一对接面**：创建/修改/管理工单 = 改文件 | 员工 Agent（E0001/E0002/…）+ 总管派单 |
-| **B 生成层** | `generate_tasks.py` | 读 A 层文件，产出投影数据；负责校验与告警 | 廖哥 + 后端 Agent |
+| **B 生成层** | `opc_tickets.py` | 读 A 层文件，产出投影数据；负责校验与告警 | 廖哥 + 后端 Agent |
 | **C 展示层** | `kanban.html`（看板） | 只读 B 层数据渲染，**不感知 Agent、不对接 Agent** | 廖哥 + 前端 Agent |
 
 **边界铁律：**
 1. **Agent 对接 A 层即可**：员工 Agent 只需要会"按规范创建/修改 `task.md` 等文件"，**不需要知道看板怎么用、不需要理解前端实现**。
 2. **看板不对接 Agent**：C 层只是投影，Agent 改文件后看板自动变化，两者无任何直接交互。
-3. **改看板 ≠ 改工单规范**：要改看板 UI/逻辑（配色、布局、加功能），由廖哥在 `workbench/` 目录与前端/后端 Agent 协作修改 `kanban.html` / `generate_tasks.py`，**与数据层 Agent 无关**。
+3. **改看板 ≠ 改工单规范**：要改看板 UI/逻辑（配色、布局、加功能），由廖哥在 `workbench/` 目录与前端/后端 Agent 协作修改 `kanban.html` / `opc_tickets.py`，**与数据层 Agent 无关**。
 4. **新增机制按管道演进**：先在 A 层加字段/目录约定 → B 层解析 → C 层展示。任何功能都从数据层长出来，不从看板硬编码出来。
 
 ## 4. 数据模型（权威 Schema）
@@ -126,7 +126,7 @@ workbench/tasks/TSKxxx-标题/        # 一个工单 = 一个目录；TSK 编号
 | 文件 | 职责 |
 |---|---|
 | `kanban.html` | 看板（C 层，只读渲染，双击即开） |
-| `generate_tasks.py` | 生成器（B 层，解析+校验+告警；`--watch` 自动重跑；`--new` 一键建单模板；`--selftest` 内置自检） |
+| `opc_tickets.py` | 生成器（B 层，解析+校验+告警；`--watch` 应急自动重跑（日常刷新由 OPC 服务负责，勿与服务并发）；`--new` 一键建单模板；`--selftest` 内置自检） |
 | `tasks-data.json` / `tasks-data.js` | 投影数据（js 为 file:// 兼容入口） |
 | `tasks/` | **唯一真相**（A 层，Agent 对接面） |
 | `tasks/README.md` | **工单使用手册（Agent 培训规范）** |

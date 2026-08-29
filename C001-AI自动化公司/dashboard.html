@@ -137,6 +137,8 @@
   <script>
   (function () {
     var DATA = window.DASHBOARD_DATA;
+
+    function LSKEY(k) { return (DATA && DATA.cid ? DATA.cid + ":" : "") + k; }   // 多公司同源（127.0.0.1:8765）下 localStorage 键按公司隔离
     function esc(s) {
       if (s === null || s === undefined) return "";
       return String(s).replace(/[&<>"]/g, function (c) {
@@ -157,10 +159,10 @@
     function applyTheme(t) {
       document.documentElement.setAttribute("data-theme", t);
       document.getElementById("themeBtn").textContent = t === "dark" ? "☀️ 切亮色" : "🌙 切暗色";
-      try { localStorage.setItem("boards-theme", t); } catch (e) {}
+      try { localStorage.setItem(LSKEY("boards-theme"), t); } catch (e) {}
     }
     var savedTheme = null;
-    try { savedTheme = localStorage.getItem("boards-theme"); } catch (e) {}
+    try { savedTheme = localStorage.getItem(LSKEY("boards-theme")); } catch (e) {}
     applyTheme(savedTheme || "dark");
     document.getElementById("themeBtn").addEventListener("click", function () {
       applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
@@ -171,7 +173,7 @@
     // file:// 直开模式：没有进程兜底，保留提示，避免静默看到旧数据（PRINCIPLES P11：不静默降级）
     var SERVED = (location.protocol === "http:" || location.protocol === "https:");
     var staleMin = 1560;   // 默认 26 小时（仅 file:// 模式生效）
-    try { staleMin = parseInt(localStorage.getItem("boards-stale-min-v2"), 10) || 1560; } catch (e) {}
+    try { staleMin = parseInt(localStorage.getItem(LSKEY("boards-stale-min-v2")), 10) || 1560; } catch (e) {}
     var staleInput = document.getElementById("staleMin");
     if (SERVED) {   // 隐藏「陈旧阈值(分)」标签与输入框
       document.querySelectorAll(".stale-label, .stale-input").forEach(function (el) { el.style.display = "none"; });
@@ -180,7 +182,7 @@
     staleInput.addEventListener("change", function () {
       staleMin = Math.max(1, parseInt(staleInput.value, 10) || 10);
       staleInput.value = staleMin;
-      try { localStorage.setItem("boards-stale-min-v2", String(staleMin)); } catch (e) {}
+      try { localStorage.setItem(LSKEY("boards-stale-min-v2"), String(staleMin)); } catch (e) {}
       updateStale();
     });
     function updateStale() {

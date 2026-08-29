@@ -173,9 +173,11 @@ def read_text_warn(path):
 
 
 def atomic_write(path, text):
-    """P12 原子写：临时文件 + os.replace。newline="" 禁止换行符翻译
-    （保证模板分发副本与源逐字节一致）。"""
-    tmp = path + ".tmp"
+    """P12 原子写：唯一名临时文件 + os.replace。newline="" 禁止换行符翻译
+    （保证模板分发副本与源逐字节一致）。
+    tmp 掺 pid+纳秒（2026-08-29 三轮体检）：固定 .tmp 名下两个写者并发写同一目标时
+    互踩 tmp，「原子写」退化为污染源——唯一名后各写各的 tmp，os.replace 仍原子。"""
+    tmp = f"{path}.{os.getpid()}.{time.time_ns()}.tmp"
     with open(tmp, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
     os.replace(tmp, path)
@@ -407,7 +409,7 @@ def sync_index(root, cid=None):
                     s["summary"] or s["desc"][:40], path))
             lines.append("")
             idx = Path(layer) / "skills" / "INDEX.md"
-            tmp = str(idx) + ".tmp"
+            tmp = f"{idx}.{os.getpid()}.{time.time_ns()}.tmp"   # 同上：多写者不互踩
             with open(tmp, "w", encoding="utf-8", newline="") as fh:
                 fh.write("\n".join(lines))
             os.replace(tmp, idx)
@@ -467,6 +469,10 @@ def selftest():
         f = Path(tmp) / "aw.txt"
         atomic_write(str(f), "原子写内容")
         check("atomic_write 写后可读回", f.read_text(encoding="utf-8") == "原子写内容")
+        leftovers = [p.name for p in Path(tmp).iterdir() if p.name != "aw.txt"]
+        check("atomic_write 无 tmp 残留（唯一名 tmp 用完即换名）", not leftovers)
+        atomic_write(str(f), "第二遍")
+        check("atomic_write 幂等重写", f.read_text(encoding="utf-8") == "第二遍")
     # 并发锁：互斥 / 超时 / 过期抢占
     with tempfile.TemporaryDirectory() as tmp:
         f = Path(tmp) / "wl.md"
