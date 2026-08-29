@@ -97,6 +97,18 @@
   .no-data { margin: 60px auto; text-align: center; color: var(--text-dim); }
   .no-data code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; color: var(--accent); }
   .ver { font-size: 11px; color: var(--text-dim); }
+  /* ===== 克制动效（2026-08-29）：只做过渡与微反馈，不改布局/配色/控件 ===== */
+  @keyframes opc-fade-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .opc-enter { animation: opc-fade-up .28s ease both; }
+  .card, .stat-card { transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+  .card.click:hover, .card:hover, .btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .btn:active, .card.click:active { transform: translateY(0); }
+  body { transition: background-color .2s ease, color .2s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    .opc-enter { animation: none; }
+    .card, .stat-card, .btn, body { transition: none; }
+    .card.click:hover, .card:hover, .btn:hover { transform: none; }
+  }
 </style>
 </head>
 <body>
@@ -148,9 +160,16 @@
       applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
     });
 
-    var staleMin = 1560;   // 默认 26 小时（服务实时化后可在此调小，如 10 分钟）
+    // ---- 陈旧阈值 ----
+    // 服务托管模式（从 http://127.0.0.1:8765 打开）：OPC 服务实时重生成数据，陈旧阈值无意义 → 隐藏输入框与横幅
+    // file:// 直开模式：没有进程兜底，保留提示，避免静默看到旧数据（PRINCIPLES P11：不静默降级）
+    var SERVED = (location.protocol === "http:" || location.protocol === "https:");
+    var staleMin = 1560;   // 默认 26 小时（仅 file:// 模式生效）
     try { staleMin = parseInt(localStorage.getItem("boards-stale-min-v2"), 10) || 1560; } catch (e) {}
     var staleInput = document.getElementById("staleMin");
+    if (SERVED) {   // 隐藏「陈旧阈值(分)」标签与输入框
+      document.querySelectorAll(".stale-label, .stale-input").forEach(function (el) { el.style.display = "none"; });
+    }
     staleInput.value = staleMin;
     staleInput.addEventListener("change", function () {
       staleMin = Math.max(1, parseInt(staleInput.value, 10) || 10);
@@ -160,6 +179,7 @@
     });
     function updateStale() {
       var bar = document.getElementById("staleBar");
+      if (SERVED) { bar.style.display = "none"; return; }   // 服务实时化：不判陈旧
       if (!DATA || !DATA.generated_at) { bar.style.display = "none"; return; }
       var g = parseDate(DATA.generated_at);
       if (!g) { bar.style.display = "none"; return; }
@@ -321,5 +341,31 @@
     setInterval(reloadData, 3000);
   })();
   </script>
+
+<script>
+  /* 入场动效 + 数字滚动（2026-08-29 克制版）：初次渲染执行一次；尊重系统「减弱动效」 */
+  (function () {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    function run() {
+      var cards = document.querySelectorAll("#main .card, .board .card, .column .card, .grid .card");
+      Array.prototype.forEach.call(cards, function (el, i) {
+        el.classList.add("opc-enter");
+        el.style.animationDelay = Math.min(i * 25, 400) + "ms";
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".stat-card .num"), function (el) {
+        var to = parseInt(el.textContent, 10);
+        if (!to) return;
+        var t0 = performance.now();
+        (function step(now) {
+          var p = Math.min(1, (now - t0) / 400);
+          el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3)));
+          if (p < 1) requestAnimationFrame(step);
+        })(t0);
+      });
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { setTimeout(run, 0); });
+    else setTimeout(run, 0);
+  })();
+</script>
 </body>
 </html>
