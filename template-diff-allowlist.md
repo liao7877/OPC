@@ -16,8 +16,11 @@ CHANGELOG.md                  # 模板独有：模板自身的演进记录，实
 # —— 技能与流程文档（实例先行，模板滞后属已知债；ticket-system 等七项已由 --sync-skills 归一）——
 templates/employee-template/workflow.md
 
-# —— 公司知识库（实例专属事实记录，P31 例外条款细节优先）——
-公司知识库/
+# —— 三级知识库（决策 #19；实例专属事实记录，P31 例外条款细节优先）——
+knowledge/                    # 含实例专属条目（如 common/阿尔都塞-征候阅读法.md）与模板侧「建司说明」行的差异
+
+# —— 新员工骨架（模板侧含【替换】占位符，实例侧已落地）——
+templates/employee-template/AGENTS.md
 
 # —— workbench 机制文档（实例侧多历史决策段）——
 workbench/KANBAN_ARCHITECTURE.md

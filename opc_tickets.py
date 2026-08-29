@@ -766,7 +766,7 @@ def check_structure(ctx):
     注：生成器已上提 OPC 根（opc_tickets/opc_dashboards），公司根出现 generate_*.py
     即为历史遗留副本，会被作为未登记条目报出（机制代码不落公司目录）。"""
     company = ctx.company_dir
-    required_dirs = ["skills", "workbench", "templates", "page-templates", "公司规章制度", "公司知识库"]
+    required_dirs = ["skills", "workbench", "templates", "page-templates", "公司规章制度", "knowledge"]
     required_files = ["company.md", "workflow.md", "目录结构说明书.md"]
     platform_files = ("AGENTS.md", "CLAUDE.md")   # 平台入口任一即可（P27 Runtime 中立）
     # 已知一级条目：文件用模式匹配（跨平台入口脚本 .bat/.sh/.ps1/.py 等都认，P2a）
@@ -794,8 +794,8 @@ def check_structure(ctx):
         problems.append(f"缺少总管目录（{_ep}0000）")
     known_subdirs = {"workbench": {"tasks", "affairs", "archive"}}  # affairs=常设事务区；archive=历史过程文档存档
     for name in sorted(os.listdir(company)):
-        if name.startswith("."):
-            continue
+        if name.startswith(".") or name.endswith(".tmp"):
+            continue    # .tmp = atomic_write 瞬态产物（崩溃残留），diff-template 同口径不报
         full = os.path.join(company, name)
         if entity_re.match(name) or name in required_dirs or name in required_files \
                 or name in platform_files or name in known_extra_dirs:

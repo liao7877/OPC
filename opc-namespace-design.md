@@ -75,8 +75,21 @@ opc://<scope>/<type>/<id>/<sub>
 | `roster` | 总管花名册（相对公司根） | `opc://company:C001/roster` |
 | `affairs` | 常设事务目录 | `opc://company:C001/affairs` |
 | `page_templates` | 看板模板目录 | `opc://company:C001/page_templates` |
+| `knowledge` | 知识库根目录（三级同构，见 §3.2） | `opc://company:C001/knowledge/<主题>/<条目>.md` |
 
 **技能命名约定**：`opc://company:C001/skill/<名称>`（约定式：`{home}/{skills}/<名称>`）。
+
+### 3.2 知识库三级 URI（决策 #19，2026-08-30）
+
+```
+opc://company:C001/knowledge/<路径>                  # 公司级（走 manifest key 透传）
+opc://company:C001/team/T001/knowledge/<路径>         # 团队级（实体目录 + sub 逐级校验）
+opc://company:C001/employee/E0002/knowledge/<路径>    # 员工级（同上）
+```
+
+- **零 resolver 改动**：公司级走 manifest key 透传路径（key 值随物理目录改名，URI 不变）；团队/员工级走 `resolve_entity` 的实体扫描 + sub 逐级校验（既有能力）。
+- **物理目录统一为 `knowledge/`**（中文目录名会污染机制层脚本与工具链），逻辑名由 manifest key 承载 —— 改名只改 `opc.toml` 一行，引用层无感。
+- **查询顺序**：agent 由近及远（员工 → 团队 → 公司），命中即停；每级先看 `INDEX.md` 索引行，未命中不读全文（MECHANISM_PLAN §十七）。
 
 ### 3.1 路径解析约定（agent 实操：opc:// 如何变成能打开的文件）
 文档里的 `opc://company:C001/...` 是**逻辑符号，不是文件路径**。agent 要读 / 写对应文件时，必须先把符号落到真实路径，两种等价方式任选：

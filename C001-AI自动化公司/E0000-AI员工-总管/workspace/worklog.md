@@ -66,7 +66,7 @@ date: 2026-08-30
 title: B站视频《阿尔都塞——征候阅读法》内容提取并归档公司知识库
 status: 已完成
 type: 直聊
-deliverable: opc://company:C001/公司知识库/common/阿尔都塞-征候阅读法.md
+deliverable: opc://company:C001/knowledge/common/阿尔都塞-征候阅读法.md
 updated: 2026-08-30
 note: 无官方字幕 → 走 wbi 签名取音频流 + faster-whisper(medium) 转写 + 人工术语校正；产出含四步法、术语校正表、与学术标准表述对照、Agent 场景迁移表。落 common/（外部背景资料，非员工经验，故不进 methods/）
 ---

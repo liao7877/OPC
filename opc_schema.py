@@ -69,7 +69,7 @@ PATROL = {
 # ---- 巡检检查项元数据（findings 结构化，2026-08-28 Q1 拍板 A 方案）----
 # B 阶段（agent 自动处置）的地基：每项检查的 kind/severity/suggested_action 唯一真相在此。
 # severity：info=处置后留痕即可 | warn=催办 | critical=必须打扰用户。
-# 13 项里只有 #5（升级信箱）是 critical——用户只被它打扰，其余由总管/未来 agent actor 处置。
+# 16 项里只有 #5（升级信箱）是 critical——用户只被它打扰，其余由总管/未来 agent actor 处置。
 PATROL_SEVERITIES = ("info", "warn", "critical")
 PATROL_CHECKS = {
     1:  {"kind": "unblock",        "severity": "info",     "action": "notify_owner"},
@@ -87,6 +87,16 @@ PATROL_CHECKS = {
     12: {"kind": "stalled",        "severity": "warn",     "action": "notify_owner"},        # in_progress 超 stalled_days 无更新
     # 依赖环（2026-08-29）：blocked_by/parent 成环 → 工单永久无法开工且无外力可解
     13: {"kind": "dep_cycle",      "severity": "warn",     "action": "notify_owner"},
+    # 知识库腐烂防护（2026-08-30 决策 #19，PRINCIPLES P33 ③）：
+    #   机器**只发现**，处置一律人工裁决；永不自动删除，只降级与归档（可逆）。
+    #   三条并入每日 09:00 摘要，不实时弹窗（critical 除外），阈值见 opc.toml [knowledge]。
+    14: {"kind": "kb_stale",       "severity": "warn",     "action": "review_knowledge"},   # review_by 到期 / 已超期
+    15: {"kind": "kb_dupe",        "severity": "warn",     "action": "merge_knowledge"},    # 同层疑似重复
+    16: {"kind": "kb_cold",        "severity": "info",     "action": "archive_knowledge"},  # 长期零命中 → 人工判断归档
+    # 注：KB.md 结构漂移**未进自动巡检**（2026-08-30 实测撤回）——自由文本正则提取
+    # 实测 28 条全误报（反例目录/兄弟目录被当成"提到但不存在的目录"），自动告警只会淹看板。
+    # 漂移防护走已有闭环：目录变动 → INDEX 重生成 → KB-CHANGELOG.md 留痕 → 分层通知人；
+    # 主动排查入口 `python opc_model.py --kb-drift`（机器给工具，人决定何时用，P29）。
 }
 
 

@@ -82,6 +82,6 @@ note: 备注一句话             ← 可选
 
 ## 七、知识沉淀出口（可选字段）
 
-某条经验对公司其他人也有用时，别只留在 worklog——提炼后交 `../../../companies/C00x/公司知识库/methods/`（候选方法论），由总管评审提炼成技能/制度/背景资料（见知识库 KB.md）。个人下次干活的私有经验才进 `memory/MEMORY.md`。
+某条经验对公司其他人也有用时，别只留在 worklog——提炼后交 `../../../companies/C00x/knowledge/methods/`（候选方法论），由总管评审提炼成技能/制度/背景资料（见知识库 KB.md）。个人下次干活的私有经验才进 `memory/MEMORY.md`。
 
 > 我的个人工作台：双击本目录 `mydesk.html` 即可看到自己的记录被如何呈现；公司层面出现在公司根 `dashboard.html`。

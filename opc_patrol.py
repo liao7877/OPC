@@ -58,6 +58,16 @@ def _patrol_cfg():
         return {}
 
 
+def _knowledge_cfg():
+    """读 opc.toml 的 [knowledge] 段（决策 #19 腐烂防护阈值）。缺段走内置默认，宁可少报不可刷屏。"""
+    try:
+        root = opc_resolver._find_root()
+        g = opc_resolver._load_toml(os.path.join(root, "opc.toml"))
+        return g.get("knowledge", {})
+    except Exception:
+        return {}
+
+
 class Ctx:
     def __init__(self, cfg, base):
         self.cfg = cfg
@@ -278,6 +288,26 @@ def find(ctx):
     for cyc in opc_tickets.find_cycles(dep_graph) + opc_tickets.find_cycles(parent_graph):
         ctx.findings.append(_mk(13, "工单依赖环（永久无法开工，找总管拆环）：" + " → ".join(cyc), ref="→".join(cyc)))
 
+    # 14/15/16) 知识库腐烂防护（决策 #19 / P33 ③）：**机器只发现，处置一律人工裁决**。
+    #     永不自动删除——只降级与归档且可逆。CPU 的 eviction 是硬件无损淘汰，知识不能照搬。
+    #     阈值来自 opc.toml [knowledge]；三条并入每日 09:00 摘要，不实时弹窗。
+    kb_cfg = {"review_warn_days": 7, "cold_hits_days": 90, "dupe_similarity": 0.75}
+    kb_cfg.update({k: v for k, v in _knowledge_cfg().items() if v is not None})
+    try:
+        for it in opc_model.kb_audit(ctx.cfg.root, ctx.cid, kb_cfg):
+            no = {"stale": 14, "dupe": 15, "cold": 16}.get(it["kind"])
+            if no:
+                ctx.findings.append(_mk(no, it["msg"], ref=f"{it['layer']}:{it['title']}"))
+    except Exception as e:      # 体检失败不拖垮整轮巡检，但必须可见（防静默失能）
+        ctx.findings.append(_mk(14, f"知识库体检异常（机制层故障，需人工排查）：{e!r}", ref="kb-audit"))
+
+    # 注：KB.md 结构漂移**不进自动巡检**（2026-08-30 实测撤销）。KB.md 是自由文本，
+    # 含反例（`草稿/` `已归档/` 是"不许这么建"的反面示例）与兄弟目录（`memory/`），
+    # 正则提取实测 28 条全误报、0 真阳——自动告警只会淹看板（P29）。
+    # 正确解法是已有的闭环：目录变动 → INDEX 重生成 → 差异写 KB-CHANGELOG.md →
+    # 分层通知管理员 → 人自己判断要不要更新 KB.md。想主动排查时用：
+    # python opc_model.py --kb-drift
+
 
 def write_log(ctx, dry):
     """发现写入 workbench/patrol-log.md（幂等：同日同条目不重复追加）。
@@ -310,9 +340,9 @@ def write_log(ctx, dry):
 
 
 def _count_knowledge(ctx):
-    """知识库条目计数：公司知识库/methods/ + 各项目 P*/knowledge/ 下的 .md 文件数。"""
+    """知识库条目计数：knowledge/methods/ + 各项目 P*/knowledge/ 下的 .md 文件数。"""
     n = 0
-    methods = os.path.join(ctx.base, "公司知识库", "methods")
+    methods = os.path.join(ctx.base, "knowledge", "methods")
     if os.path.isdir(methods):
         for root, _dirs, files in os.walk(methods):
             n += sum(1 for f in files if f.endswith(".md"))
@@ -478,7 +508,7 @@ def new_findings(ctx, pre_open):
 
 
 _KB_BACKFLOW_HINT = ("[提示] 检测到升级/失败工单——建议总管把教训一句话沉淀进 "
-                     "公司知识库/methods/（P31 事实记录，细节优先），避免同类坑二次踩")
+                     "knowledge/methods/（P31 事实记录，细节优先），避免同类坑二次踩")
 
 
 def kb_backflow_hint(ctx):
@@ -579,7 +609,7 @@ def selftest():
     pend = _read(ctx2.pending)
     check("pending 快照含 critical 置顶", "#5 [critical]" in pend)
     # #8 知识库增量：首跑建基线 → 新增 → 告警 → 基线随巡检推进
-    mdir = os.path.join(tmp, "公司知识库", "methods")
+    mdir = os.path.join(tmp, "knowledge", "methods")
     os.makedirs(mdir, exist_ok=True)
     ctxk = Ctx(cfg, tmp)
     find(ctxk)
@@ -606,7 +636,7 @@ def selftest():
     buf = io.StringIO()
     with redirect_stdout(buf):
         kb_backflow_hint(ctx)               # ctx 含 #5（TSKC 有升级）
-    check("知识回流提示:含 #5 出现", "公司知识库/methods" in buf.getvalue())
+    check("知识回流提示:含 #5 出现", "knowledge/methods" in buf.getvalue())
     buf2 = io.StringIO()
     with redirect_stdout(buf2):
         kb_backflow_hint(Ctx(cfg, tmp))     # 无 #5 无 failed，且 find 未跑（无 has_failed）
@@ -616,7 +646,7 @@ def selftest():
     buf3 = io.StringIO()
     with redirect_stdout(buf3):
         kb_backflow_hint(ctxf)
-    check("知识回流提示:failed 工单触发", "公司知识库/methods" in buf3.getvalue())
+    check("知识回流提示:failed 工单触发", "knowledge/methods" in buf3.getvalue())
     # 勿扰屏蔽（notify_allowed 纯函数）：critical 恒放行；warn/info 时段内静默
     cfgq = {"quiet_hours": "22:00-08:00"}   # 跨零点
     check("勿扰:critical 恒放行", notify_allowed("critical", datetime.time(23, 0), cfgq))

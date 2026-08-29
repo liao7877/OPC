@@ -417,6 +417,480 @@ def sync_index(root, cid=None):
     return targets
 
 
+# ---------------------------------------------------------------------------
+# 知识库索引（决策 #19 三级知识库，MECHANISM_PLAN §十七 / PRINCIPLES P33）
+# ---------------------------------------------------------------------------
+
+KB_DIR = "knowledge"
+KB_SKIP_FILES = {"KB.md", "glossary.md", "INDEX.md", "KB-CHANGELOG.md"}
+KB_URI_RE = re.compile(r"opc://company:([^/\s\"'`，。）)>]+)/([^\s\"'`，。）)>]+)")
+
+
+def _glossary_map(kb_dir):
+    """读 glossary.md 同义词表 -> {同义词: 标准词}。tag 归一用（防同义分裂致检索漏）。"""
+    m = {}
+    g = Path(kb_dir) / "glossary.md"
+    if not g.is_file():
+        return m
+    for line in _read(g).splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 3 or not cells[0] or set(cells[0]) <= set("-: ") or cells[0] == "标准词":
+            continue
+        for syn in re.split(r"[、,，/]", cells[1]):
+            syn = syn.strip()
+            if syn and syn not in ("—", "-"):
+                m[syn] = cells[0]
+    return m
+
+
+def _kb_layers(company_dir):
+    """公司内全部知识库层 -> [(层目录, kind, 显示名)]，kind ∈ {company, team, employee, project}。
+
+    kind 决定 URI 形态：company 走 manifest key 透传，其余走实体目录 + sub 路径。
+    项目级（P*/knowledge/）同样生成索引——它跟项目生命周期（P31 第四问实体跟随），
+    但不参与「员工→团队→公司」的上浮主路径。
+    """
+    out = []
+    cd = Path(company_dir)
+    if (cd / KB_DIR).is_dir():
+        out.append((str(cd), "company", "公司级"))
+    import opc_resolver
+    pats = [(k, v) for k, v in opc_resolver.entity_types().items()]
+    for d in sorted(cd.iterdir()):
+        if d.name.startswith(".") or not d.is_dir() or not (d / KB_DIR).is_dir():
+            continue
+        for kind, pfx in pats:
+            if re.match(rf"^{pfx}\d+(?:-|$)", d.name):
+                out.append((str(d), kind, d.name))
+                break
+    tpl = cd / "templates"
+    if tpl.is_dir():                       # 建司骨架（尚未分配实体 ID）
+        for sub in sorted(tpl.iterdir()):
+            if sub.is_dir() and (sub / KB_DIR).is_dir():
+                out.append((str(sub), "employee", sub.name))
+    return out
+
+
+def _kb_entry_uri(cid, kind, layer_label, rel):
+    """条目 URI（与 resolver 解析口径一致）：公司级走 key，实体级走 <type>/<id>/knowledge/<rel>。"""
+    base = f"opc://company:{cid}"
+    if kind == "company":
+        return f"{base}/knowledge/{rel}"
+    if kind in ("team", "employee", "project"):
+        m = re.match(r"^([A-Za-z]\d+)", Path(layer_label).name)
+        eid = m.group(1) if m else Path(layer_label).name
+        return f"{base}/{kind}/{eid}/knowledge/{rel}"
+    return f"{base}/knowledge/{rel}"
+
+
+def _kb_hit_counts(scan_roots):
+    """全仓 opc:// 引用计数 -> {uri: 次数}。
+
+    hits 由**引用扫描**得出，不需要运行时状态文件：幂等、可重建、不写回用户文件
+    （P1 文件系统即真相 + P4 单向管道）。被引用 ≈ 被读过，是零成本的热度信号。
+    """
+    from collections import Counter
+    c = Counter()
+    for base in scan_roots:
+        if not os.path.isdir(base):
+            continue
+        for p in Path(base).rglob("*.md"):
+            if any(part.startswith(".") for part in p.parts):
+                continue
+            try:
+                txt = _read(p)
+            except OSError:
+                continue
+            for cid, rest in KB_URI_RE.findall(txt):
+                c["opc://company:%s/%s" % (cid, rest.rstrip(".,;)）"))] += 1
+    return c
+
+
+def _kb_entries(kb_dir, gloss):
+    """扫描一层 knowledge/ 的条目。无 frontmatter 的文件跳过（P11 跳过不降级，不静默）。"""
+    out, skipped = [], []
+    root = Path(kb_dir)
+    for p in sorted(root.rglob("*.md")):
+        if p.name in KB_SKIP_FILES or any(part.startswith(".") for part in p.parts):
+            continue
+        txt = _read(p)
+        fm, body, has_fm = parse_frontmatter(txt)
+        if not has_fm:
+            skipped.append(str(p.relative_to(root)).replace("\\", "/"))
+            continue
+        tags = fm.get("tags") or []
+        if isinstance(tags, str):
+            tags = [t.strip() for t in re.split(r"[、,，]", tags) if t.strip()]
+        norm, loose = [], []
+        for t in tags:
+            t = str(t).strip()
+            if not t:
+                continue
+            std = gloss.get(t, t)
+            if std != t:
+                loose.append(t)
+            if std not in norm:
+                norm.append(std)
+        out.append({
+            "rel": str(p.relative_to(root)).replace("\\", "/"),
+            "title": str(fm.get("title") or p.stem),
+            "type": str(fm.get("type") or "—"),
+            "status": str(fm.get("status") or "草稿"),
+            "tags": norm, "loose_tags": loose,
+            "review_by": str(fm.get("review_by") or "—"),
+            "author": str(fm.get("author") or "—"),
+            "maintainer": str(fm.get("maintainer") or "—"),
+            "summary": str(fm.get("summary") or ""),
+            "tokens": max(1, len(txt) // 3),
+        })
+    return out, skipped
+
+
+def _kb_index_snapshot(idx_path):
+    """读已有 INDEX.md 的条目快照 -> {相对路径: 标题}，用于变更对比（生成物自己不进对比）。"""
+    out = {}
+    if not Path(idx_path).is_file():
+        return out
+    for ln in _read(idx_path).splitlines():
+        if not ln.startswith("| **"):
+            continue
+        cells = [c.strip() for c in ln.strip("|").split("|")]
+        if len(cells) >= 8:
+            out[cells[7].strip("`")] = cells[0].strip("* ")
+    return out
+
+
+def _kb_write_changelog(kb, label, before, after):
+    """索引差异写入 KB-CHANGELOG.md（决策 #19 §17.8）：**留痕给人看，agent 只看索引**。
+
+    agent 不需要「感知变更」——它每次读到的 INDEX.md 都是最新的；CHANGELOG 服务的是
+    人（用户/管理员）：改了目录结构后，人写的 KB.md 组织原则可能已过期，得有人同步。
+    只增不删（同 worklog 纪律），并发安全走 locked_append。
+    """
+    added = sorted(r for r in after if r not in before)
+    removed = sorted(r for r in before if r not in after)
+    renamed = sorted((r, after[r], before[r]) for r in after
+                     if r not in before and after[r] in before.values())
+    for r, _t, old_t in renamed:
+        if r in added:
+            added.remove(r)
+        for k, v in list(before.items()):
+            if v == old_t and k not in after and k in removed:
+                removed.remove(k)
+                break
+    if not (added or removed or renamed):
+        return ""
+    import datetime as _dt
+    lines = ["", "## %s · %s" % (_dt.datetime.now().strftime("%Y-%m-%d %H:%M"), label)]
+    for r in added:
+        lines.append(f"- 新增：{after[r]}（`{r}`）")
+    for r in removed:
+        lines.append(f"- 移除：{before[r]}（`{r}`）")
+    for r, t, old_t in renamed:
+        lines.append(f"- 改标题：{old_t} → {t}（`{r}`）")
+    body = "\n".join(lines) + "\n"
+    log = Path(kb) / "KB-CHANGELOG.md"
+    if not log.is_file():
+        body = ("# 知识库变更留痕（KB-CHANGELOG）\n\n"
+                "> 由 `opc_model --sync-index` 自动追加（只增不删）。索引本身才是 agent 的入口，\n"
+                "> 本文件服务的是**人**：你手动改了目录结构后，KB.md 里那段人写的组织原则可能已过期。\n") + body
+        atomic_write(str(log), body)
+    else:
+        locked_append(str(log), body)
+    return body
+
+
+def sync_kb_index(root, cid=None):
+    """把各层知识库条目写成 knowledge/INDEX.md（生成物：头部声明「勿手改」）。
+
+    索引行 = L0 常驻层（约 30 字符/条）：agent 先看本表，命中才读条目 `summary`，
+    确认有用才读全文（P33 ① 三级加载）。返回写入的 INDEX 路径列表。
+    """
+    root = Path(root)
+    comp_dirs = [Path(c) for c in discover_companies(str(root))]
+    tpl = root / "company-template"
+    if tpl.is_dir() and (tpl / "company.md").is_file():
+        comp_dirs.append(tpl)
+    hits = _kb_hit_counts([str(root)])
+    targets = []
+    import opc_resolver
+    for comp in comp_dirs:
+        comp = Path(comp)
+        cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
+        if not cid_here or not re.match(r"^C\d+$", cid_here):
+            cid_here = None                 # 模板占位符：不用 opc://，全走相对路径
+        if cid and cid_here != cid:
+            continue
+        for layer, kind, label in _kb_layers(comp):
+            kb = Path(layer) / KB_DIR
+            entries, skipped = _kb_entries(kb, _glossary_map(kb))
+            lines = [
+                "<!-- 本文件由 `python opc_model.py --sync-index` 生成，勿手改。",
+                "     知识条目的唯一真相在各条目的 frontmatter（title/type/tags/summary/status）。",
+                f"     重新生成：python opc_model.py --sync-index{(' --company ' + cid_here) if cid_here else ''} -->",
+                "",
+                f"# 知识库索引（{label} · {len(entries)} 条）",
+                "",
+                "> 加载纪律：先看本表（索引行）→ 命中才读该条目 `summary` → 确认有用才读全文（P33 ①）。",
+                "",
+                "| 标题 | 类型 | 标签 | 状态 | 复核 | 命中 | 全文 | 路径 |",
+                "|---|---|---|---|---|---|---|---|",
+            ]
+            for e in entries:
+                uri = (_kb_entry_uri(cid_here, kind, label, e["rel"])
+                       if cid_here else e["rel"])
+                tag_s = "、".join(e["tags"]) or "—"
+                if e["loose_tags"]:
+                    tag_s += "（归一自：%s）" % "、".join(e["loose_tags"])
+                lines.append("| **%s** | %s | %s | %s | %s | %s | ~%s | `%s` |" % (
+                    e["title"], e["type"], tag_s, e["status"], e["review_by"],
+                    hits.get(uri, 0), e["tokens"], e["rel"]))
+            if not entries:
+                lines.append("| _（暂无条目）_ | | | | | | | |")
+            if skipped:
+                lines += ["", "> 已跳过 %d 个无 frontmatter 的文件（非知识条目）：%s%s" % (
+                    len(skipped), "、".join(skipped[:6]), "…" if len(skipped) > 6 else "")]
+            lines.append("")
+            idx = kb / "INDEX.md"
+            before = _kb_index_snapshot(idx)      # 生成前快照 → 写完后比对差异留痕
+            tmp = f"{idx}.{os.getpid()}.{time.time_ns()}.tmp"      # 原子写，多写者不互踩
+            with open(tmp, "w", encoding="utf-8", newline="") as fh:
+                fh.write("\n".join(lines))
+            os.replace(tmp, idx)
+            targets.append(str(idx))
+            _kb_write_changelog(kb, label, before,
+                                {e["rel"]: e["title"] for e in entries})
+    return targets
+
+
+def _kb_entry_age(path):
+    """条目年龄（天）：无 frontmatter 日期时退到文件 mtime。"""
+    import datetime as _dt
+    try:
+        mt = _dt.datetime.fromtimestamp(os.path.getmtime(path))
+        return (_dt.date.today() - mt.date()).days
+    except OSError:
+        return None
+
+
+def kb_audit(root, cid=None, cfg=None):
+    """知识库腐烂体检（决策 #19 §17.7）：**只发现，不处置**（P29 / P33 ③）。
+
+    三类：过期（`review_by` 到期）/ 重复（同层标题近义）/ 失焦（长期零命中）。
+    返回 [dict(kind, level, layer, title, msg)]，供 opc_patrol 转巡检项 #13/#14/#15。
+    """
+    import datetime as _dt
+    from difflib import SequenceMatcher
+    cfg = cfg or {}
+    warn_days = int(cfg.get("review_warn_days", 7))
+    cold_days = int(cfg.get("cold_hits_days", 90))
+    dupe_sim = float(cfg.get("dupe_similarity", 0.75))
+    today = _dt.date.today()
+    root = Path(root)
+    hits = _kb_hit_counts([str(root)])
+    out = []
+    import opc_resolver
+    for comp in [Path(c) for c in discover_companies(str(root))]:
+        cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
+        if not cid_here or not re.match(r"^C\d+$", cid_here):
+            cid_here = None
+        if cid and cid_here != cid:
+            continue
+        for layer, kind, label in _kb_layers(comp):
+            kb = Path(layer) / KB_DIR
+            entries, _ = _kb_entries(kb, _glossary_map(kb))
+            for e in entries:
+                uri = (_kb_entry_uri(cid_here, kind, label, e["rel"])
+                       if cid_here else e["rel"])
+                h = hits.get(uri, 0)
+                dead = e["status"] in ("已归档", "已废弃", "已上浮")
+                if not dead and re.match(r"^\d{4}-\d{2}-\d{2}$", e["review_by"]):
+                    try:
+                        left = (_dt.date.fromisoformat(e["review_by"]) - today).days
+                    except ValueError:
+                        left = None
+                    if left is not None and left <= warn_days:
+                        out.append({
+                            "kind": "stale", "level": "critical" if left < 0 else "warn",
+                            "layer": label, "title": e["title"],
+                            "msg": ("知识条目「%s」（%s）%s（review_by=%s）"
+                                    % (e["title"], label,
+                                       f"已超期 {-left} 天" if left < 0 else f"还有 {left} 天到期",
+                                       e["review_by"]))})
+                if not dead and h == 0:
+                    age = _kb_entry_age(kb / e["rel"])
+                    if age is not None and age >= cold_days:
+                        out.append({
+                            "kind": "cold", "level": "info", "layer": label,
+                            "title": e["title"],
+                            "msg": f"知识条目「{e['title']}」（{label}）{age} 天零命中，"
+                                   f"是否归档由人工判断（永不自动删）"})
+            for i in range(len(entries)):
+                for j in range(i + 1, len(entries)):
+                    a, b = entries[i], entries[j]
+                    if a["status"] in ("已上浮",) or b["status"] in ("已上浮",):
+                        continue
+                    r = SequenceMatcher(None, a["title"], b["title"]).ratio()
+                    if r >= dupe_sim:
+                        out.append({
+                            "kind": "dupe", "level": "warn", "layer": label,
+                            "title": a["title"],
+                            "msg": f"疑似重复：「{a['title']}」与「{b['title']}」（{label}，"
+                                   f"相似度 {r:.0%}）→ 人工合并，不自动删"})
+    return out
+
+
+def kb_structure_drift(root, cid=None):
+    """KB.md 描述 vs 实际结构（决策 #19 §17.8）：不一致 → 告警，**人工改 KB.md**。
+
+    KB.md 是三级知识库里**唯一人写**的部分，也是唯一会漂移的部分——用户手动整理了
+    目录却没同步 KB.md，agent 就会照着过期说明找东西。机器只发现，人工改（P29）。
+    只校验 KB.md 里以反引号标注的**单层主题目录**（`common/` 这类），占位符
+    （E00xx / T00x / P00xx / C00x / <本司ID>）与本层目录名一律跳过，防误报。
+    """
+    root = Path(root)
+    out = []
+    import opc_resolver
+    for comp in [Path(c) for c in discover_companies(str(root))]:
+        cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
+        if not cid_here or not re.match(r"^C\d+$", cid_here):
+            cid_here = None
+        if cid and cid_here != cid:
+            continue
+        for layer, kind, label in _kb_layers(comp):
+            kb = Path(layer) / KB_DIR
+            kbmd = kb / "KB.md"
+            if not kbmd.is_file():
+                continue
+            for m in re.finditer(r"`([A-Za-z\u4e00-\u9fa5][^`\s/]*)/`", _read(kbmd)):
+                d = m.group(1)
+                if d in (KB_DIR, "knowledge") or re.search(r"0+x|<", d):
+                    continue                      # 占位符 / 本层目录名，不是主题目录
+                if (kb / d).is_dir():
+                    continue
+                out.append({
+                    "kind": "drift", "level": "info", "layer": label, "title": "KB.md",
+                    "msg": f"{label} KB.md 提到的目录 `{d}/` 在磁盘上不存在——你手动整理过目录？"
+                           f"请同步更新 KB.md 里的组织原则（机器只发现，人工改）"})
+    return out
+
+
+def _kb_resolve_target(comp, to):
+    """上浮目标层目录：company / team:<id> / employee:<id> -> (目录, kind, label)。"""
+    if to == "company":
+        return Path(comp), "company", "公司级"
+    if ":" not in to:
+        raise ValueError("目标格式：company 或 team:<id> 或 employee:<id>")
+    kind, eid = to.split(":", 1)
+    if kind not in ("team", "employee", "project"):
+        raise ValueError("目标类型仅支持 team / employee / project")
+    import opc_resolver
+    pfx = opc_resolver.entity_types().get(kind, "")
+    if not re.match(rf"^{pfx}\d+$", eid):
+        raise ValueError(f"{kind} 编号前缀不符（应为 {pfx}+数字）")
+    hits = [d.name for d in sorted(Path(comp).iterdir())
+            if d.is_dir() and (d.name.startswith(eid + "-") or d.name == eid)]
+    if not hits:
+        raise FileNotFoundError(f"未找到 {kind}:{eid}")
+    return Path(comp) / hits[0], kind, hits[0].name
+
+
+def promote_entry(root, src, to, actor=""):
+    """上浮（归属轴）：物理搬家 + 原处留真实存根 + 审批前查重（决策 #19 §17.4）。
+
+    存根必须是真实 .md 文件而非索引里的一行——否则原路径的 opc:// 引用全部断链。
+    查重命中疑似重复时**拒绝执行**，要求人工先合并（P28 审批门 / P33 ② 不复制）。
+    返回 (ok, msg)。
+    """
+    import datetime as _dt
+    import shutil
+    from difflib import SequenceMatcher
+    root, src = Path(root), Path(src)
+    if not src.is_file():
+        return False, f"源条目不存在：{src}"
+    txt = _read(src)
+    fm, _body, has_fm = parse_frontmatter(txt)
+    if not has_fm:
+        return False, "源条目无 frontmatter，不视为知识条目（先补字段再上浮）"
+    src_kb = next((p for p in src.parents if p.name == KB_DIR), None)
+    if src_kb is None:
+        return False, f"源条目不在任何 {KB_DIR}/ 目录下"
+    comp = next((Path(c) for c in discover_companies(str(root))
+                 if os.path.abspath(str(src)).startswith(os.path.abspath(str(c)))), None)
+    if comp is None:
+        return False, "未定位到源条目所属公司"
+    try:
+        tdir, tkind, tlabel = _kb_resolve_target(comp, to)
+    except (ValueError, FileNotFoundError) as e:
+        return False, str(e)
+    tkb = tdir / KB_DIR
+    if not tkb.is_dir():
+        return False, f"目标层尚无 {KB_DIR}/ 目录：{tkb}"
+    import opc_resolver
+    cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
+    if not cid_here or not re.match(r"^C\d+$", cid_here):
+        cid_here = None
+    cfg = {}
+    try:
+        import tomllib
+        with open(Path(root) / "opc.toml", "rb") as fh:
+            cfg = tomllib.load(fh).get("knowledge") or {}
+    except Exception:
+        cfg = {}                      # 配置缺失走内置默认阈值（宁可少报，不可刷屏）
+    dupe_sim = float(cfg.get("dupe_similarity", 0.75))
+    title = str(fm.get("title") or src.stem)
+    for e in _kb_entries(tkb, _glossary_map(tkb))[0]:
+        r = SequenceMatcher(None, title, e["title"]).ratio()
+        if r >= dupe_sim:
+            return False, (f"疑似重复，已拒绝上浮：目标层已有「{e['title']}」（相似度 {r:.0%}）。"
+                           "请先人工合并再上浮（P28 审批门 / P33 ② 不复制）")
+    sub = src.parent.relative_to(src_kb)
+    dest_dir = (tkb / sub) if str(sub) != "." else tkb
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / src.name
+    if dest.exists():
+        dest = dest_dir / f"{src.stem}-v2{src.suffix}"
+    # frontmatter 改写：maintainer 换成接手管理员，留 promoted 痕迹（作者不丢）
+    lines = txt.split("\n")
+    if lines and lines[0].strip() == "---":
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+        if end:
+            seg = lines[1:end]
+            for key, val in (("maintainer", actor or "—"),
+                             ("status", str(fm.get("status") or "正式"))):
+                for i, ln in enumerate(seg):
+                    if re.match(rf"^{key}:", ln):
+                        seg[i] = f"{key}: {val}"
+                        break
+                else:
+                    seg.append(f"{key}: {val}")
+            seg.append(f"promoted: {_dt.date.today().isoformat()} → {tlabel}")
+            lines[1:end] = seg
+    atomic_write(str(dest), "\n".join(lines))
+    new_rel = str(dest.relative_to(tkb)).replace("\\", "/")
+    new_uri = (_kb_entry_uri(cid_here, tkind, tlabel, new_rel)
+               if cid_here else new_rel)
+    # 原处留真实存根（承接历史 opc:// 引用，check_links 仍绿）
+    stub = ("---\n"
+            f"title: {title}（已上浮）\n"
+            "status: 已上浮\n"
+            f"maintainer: {actor or '—'}\n"
+            f"supersedes: {new_uri}\n"
+            "---\n\n"
+            f"# {title}\n\n"
+            f"> 本文已上浮至 `{new_uri}`（决策 #19：上浮 = 归属转移，物理只存一份）。\n"
+            "> 本文件是**存根**，保留以承接历史 `opc://` 引用；内容请读新地址。\n")
+    os.remove(str(src))
+    atomic_write(str(src), stub)
+    sync_kb_index(str(root), cid_here)
+    return True, (f"已上浮「{title}」→ {tlabel}：`{new_rel}`；"
+                  f"原处留存根 `{src.name}` 承接旧引用（作者 {fm.get('author') or '—'} / "
+                  f"维护人 {actor or '—'}）")
+
+
 def discover_companies(opc_root):
     """列出 OPC 根下全部公司目录（含 companies/ 稳定锚，按真实路径去重）。"""
     opc_root = Path(opc_root)
@@ -510,6 +984,71 @@ def selftest():
         got = {s["name"]: s for s in list_skills(tmp)}
         check("list_skills 结构化 triggers", got["demo"]["triggers"] == ["建单", "流转"] and got["demo"]["summary"] == "演示用。")
         check("list_skills description 兜底", got["legacy"]["triggers"] == ["查询", "导出"])
+    # 知识库索引（决策 #19）：三级同构 + tag 归一 + 引用计数 hits + 跳过无 frontmatter
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        comp = root / "CX-测试公司"
+        comp.mkdir()
+        (comp / "company.md").write_text("公司 ID：C999" + NL, encoding="utf-8")
+        kb = comp / KB_DIR
+        kb.mkdir()
+        (kb / "glossary.md").write_text(
+            "| 标准词 | 同义 | 禁用 |" + NL + "|---|---|---|" + NL + "| 工单 | 任务、ticket | 待办 |" + NL,
+            encoding="utf-8")
+        (kb / "报价三板斧.md").write_text(
+            "---" + NL + "title: 报价三板斧" + NL + "type: method" + NL + "status: 正式" + NL
+            + "tags: [任务, 报价]" + NL + "summary: 三步报价法。" + NL + "---" + NL + "正文" * 400,
+            encoding="utf-8")
+        (kb / "README.md").write_text("无 frontmatter，应被跳过" + NL, encoding="utf-8")
+        emp = comp / "E0001-测试员工"
+        (emp / "knowledge").mkdir(parents=True)
+        (emp / "knowledge" / "个人技巧.md").write_text(
+            "---" + NL + "title: 个人技巧" + NL + "type: method" + NL + "tags: [报价]" + NL + "---" + NL,
+            encoding="utf-8")
+        (comp / "某文档.md").write_text(
+            "参见 opc://company:C999/knowledge/报价三板斧.md" + NL, encoding="utf-8")
+        wrote = sync_kb_index(str(root))
+        check("sync_kb_index 公司级 + 员工级各一份", len(wrote) == 2)
+        idx = (kb / "INDEX.md").read_text(encoding="utf-8")
+        check("索引收录条目", "报价三板斧" in idx)
+        check("tag 归一（任务 → 工单，留痕原词）", "工单" in idx and "归一自：任务" in idx)
+        check("hits = 引用计数（无需状态文件）", "| 1 | ~" in idx)
+        check("无 frontmatter 文件跳过且不静默", "已跳过 1 个" in idx and "README.md" in idx)
+        check("员工级索引独立生成（三级同构）",
+              "个人技巧" in (emp / "knowledge" / "INDEX.md").read_text(encoding="utf-8"))
+        # 上浮（归属轴）：物理搬家 + 原处留真实存根 + 查重拒绝
+        okp, msgp = promote_entry(str(root), str(emp / "knowledge" / "个人技巧.md"),
+                                  "company", "E0000")
+        check("上浮：物理搬家到目标层", okp and (kb / "个人技巧.md").is_file())
+        stub = (emp / "knowledge" / "个人技巧.md").read_text(encoding="utf-8")
+        check("上浮：原处留真实存根（承接历史 opc:// 引用）",
+              "已上浮" in stub and "opc://company:C999/knowledge/个人技巧.md" in stub)
+        moved = (kb / "个人技巧.md").read_text(encoding="utf-8")
+        check("上浮：maintainer 换接手管理员，author 不丢",
+              "maintainer: E0000" in moved and "promoted:" in moved)
+        dup = emp / "knowledge" / "另一条.md"
+        dup.write_text("---" + NL + "title: 个人技巧" + NL + "---" + NL, encoding="utf-8")
+        okd, _ = promote_entry(str(root), str(dup), "company", "E0000")
+        check("上浮：查重命中则拒绝，源文件不动（P28 审批门）",
+              (not okd) and dup.is_file())
+        # 腐烂体检（只发现不处置）
+        (kb / "过期条目.md").write_text(
+            "---" + NL + "title: 过期条目" + NL + "type: reference" + NL
+            + "review_by: 2020-01-01" + NL + "---" + NL, encoding="utf-8")
+        (emp / "knowledge" / "冷门条目.md").write_text(
+            "---" + NL + "title: 冷门条目" + NL + "type: method" + NL + "---" + NL,
+            encoding="utf-8")
+        (emp / "knowledge" / "冷门条目B.md").write_text(
+            "---" + NL + "title: 冷门条目B" + NL + "type: method" + NL + "---" + NL,
+            encoding="utf-8")
+        items = kb_audit(str(root), None,
+                         {"review_warn_days": 7, "cold_hits_days": 0, "dupe_similarity": 0.75})
+        check("腐烂体检：过期条目检出（stale/critical）",
+              any(i["kind"] == "stale" and i["level"] == "critical" for i in items))
+        check("腐烂体检：零命中条目检出（cold）",
+              any(i["kind"] == "cold" and "冷门条目" in i["title"] for i in items))
+        check("腐烂体检：疑似重复检出（dupe）",
+              any(i["kind"] == "dupe" for i in items))
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -518,7 +1057,14 @@ def main():
     ap = argparse.ArgumentParser(description="OPC 实体共享读取器（列出发现的公司与实体 / 技能索引生成）")
     ap.add_argument("--list", action="store_true", help="列出 OPC 根下各公司与实体数量")
     ap.add_argument("--list-skills", action="store_true", help="列出全部技能层 skills/*/SKILL.md 元数据（name/triggers/summary）")
-    ap.add_argument("--sync-index", action="store_true", help="把各层技能清单写成 skills/INDEX.md（生成物，勿手改）")
+    ap.add_argument("--sync-index", action="store_true", help="把各层技能清单 + 知识库条目写成 INDEX.md（生成物，勿手改）")
+    ap.add_argument("--promote", metavar="源条目", default=None,
+                    help="上浮知识条目（物理搬家 + 原处留真实存根 + 审批前查重）")
+    ap.add_argument("--to", default="company", help="上浮目标：company / team:<id> / employee:<id>（默认 company）")
+    ap.add_argument("--actor", default="", help="操作者（登记为条目 maintainer）")
+    ap.add_argument("--kb-audit", action="store_true", help="知识库腐烂体检（过期/重复/失焦，只发现不处置）")
+    ap.add_argument("--kb-drift", action="store_true",
+                    help="KB.md 结构漂移排查（**人工按需**，不进自动巡检：自由文本误报率高）")
     ap.add_argument("--append", nargs=2, metavar=("目标文件", "内容文件"),
                     action="store", help="锁内追加：把内容文件追加到目标（多会话安全；内容文件为 - 时读 stdin）")
     ap.add_argument("--company", default=None, help="限定公司 ID（--sync-index 用）")
@@ -541,10 +1087,43 @@ def main():
         locked_append(target, content)
         print(f"[ok] 已锁内追加 {len(content)} 字符 -> {target}")
         return 0
+    if a.promote:
+        ok, msg = promote_entry(root, a.promote, a.to, a.actor)
+        print(("[ok] " if ok else "[拒绝] ") + msg)
+        return 0 if ok else 1
+    if a.kb_audit:
+        import tomllib
+        cfg = {}
+        try:
+            with open(Path(root) / "opc.toml", "rb") as fh:
+                cfg = tomllib.load(fh).get("knowledge") or {}
+        except Exception:
+            cfg = {}
+        items = kb_audit(root, a.company, cfg)
+        if not items:
+            print("[ok] 知识库体检无发现")
+            return 0
+        for it in items:
+            print(f"[{it['level']}] {it['kind']} · {it['layer']} · {it['msg']}")
+        return 0
+    if a.kb_drift:
+        items = kb_structure_drift(root, a.company)
+        if not items:
+            print("[ok] KB.md 与实际结构一致")
+            return 0
+        print(f"[i] {len(items)} 处待人工核对（KB.md 是自由文本，含反例与兄弟目录，"
+              f"需你自己判断哪些是真漂移）：")
+        for it in items:
+            print(f"  - {it['layer']}：{it['msg']}")
+        return 0
     if a.sync_index:
         wrote = sync_index(root, a.company)
         print(f"[done] 已生成 {len(wrote)} 份 skills/INDEX.md：")
         for p in wrote:
+            print("  -", p)
+        kwrote = sync_kb_index(root, a.company)
+        print(f"[done] 已生成 {len(kwrote)} 份 knowledge/INDEX.md：")
+        for p in kwrote:
             print("  -", p)
         return 0
     if a.list_skills:

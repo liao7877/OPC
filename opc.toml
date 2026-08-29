@@ -12,8 +12,7 @@ affairs = "workbench/affairs"
 page_templates = "page-templates"
 templates = "templates"            # 公司模板目录（新建员工骨架来源；opc://company:<cid>/templates/... 经 key 透传解析）
 skills = "skills"                  # 技能根目录：skill/<name> -> {home}/skills/<name>
-knowledge = "公司知识库"           # 知识库根目录：worklog/文档可用 opc://company:<cid>/公司知识库/... 引用（2026-08-30 注册）
-"公司知识库" = "公司知识库"        # 同上的首段别名（URI 首段=目录名，key 模式按名匹配）
+knowledge = "knowledge"            # 知识库根目录（三级同构，决策 #19；物理目录改名只改此处，URI 与引用层无感）
 # 注：实体目录前缀的唯一真相已移至 [entity_types]（2026-08-29）；原 teams/projects/employees 三键
 # 自落地以来从未被 resolver 消费（配置说谎），已移除——实体解析按 [entity_types] 前缀扫描公司根。
 
@@ -39,6 +38,13 @@ notify = true        # A+ 档：发现异常弹系统通知（Win Toast / macOS 
 quiet_hours = ""     # 勿扰时段（可选）："HH:MM-HH:MM"，空=不启用；跨零点如 "22:00-08:00" 合法。
                      # 时段内 warn/info 通知静默（并入每日 09:00 摘要重提），critical 永远放行
 # actor = "log"      # B 阶段扩展位（自动处置）：log=现状 | agent=定时拉起总管会话（未启用）
+
+# ---- 知识库（决策 #19：三级同构 + 腐烂防护；opc_model --sync-index 与 opc_patrol 消费）----
+# 阈值一律保守：宁可少报，不可刷屏（三条巡检并入每日 09:00 摘要，不实时弹窗）
+[knowledge]
+review_warn_days = 7       # 巡检 #13：review_by 到期前 N 天开始提醒复审
+cold_hits_days = 90        # 巡检 #15：连续 N 天零命中 → 提醒人工归档（永不自动删）
+dupe_similarity = 0.75     # 巡检 #14：疑似重复阈值（标题+tag 重合度），只告警不合并
 
 # ---- 实体类型注册表（2026-08-29 拍板：前缀唯一真相，resolver/生成器/巡检/结构自检统一消费）----
 # 加新实体类型（如 customer = "X"）= 加一行；改前缀同理。公司实体目录命名约定 {前缀}{数字}-<名称>（目录自解释；改名走 opc_resolver --rename-entity，引用层按 ID 前缀扫描免疫改名）。
