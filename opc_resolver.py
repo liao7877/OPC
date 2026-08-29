@@ -1147,7 +1147,8 @@ def diff_template(root=None, cid=None):
     _EXCL_DIRS = (".git", ".workbuddy", "memory", "workspace", "node_modules")
     _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index\.\w+|roster\.md|patrol-log\.md|"
                             r"patrol-state\.json|patrol-pending\.md|INDEX\.md)$")
-    _ENTITY = re.compile(r"^(E\d{3,}|T\d{3,}|P\d{3,})(?:-.+)?$")
+    _pfx = "|".join(re.escape(p) for p in set(entity_types().values()))
+    _ENTITY = re.compile(rf"^((?:{_pfx})\d{{3,}})(?:-.+)?$")   # 前缀唯一真相在 [entity_types]（P25）；(?:) 防 \d 只绑定最后一个备选
 
     def _walk(base):
         """收集 {rel_path: abs_path}；workbench 只比 README/KANBAN_ARCHITECTURE 等机制文档，
@@ -1344,7 +1345,7 @@ def doctor(root=None, auto_fix=True):
     try:
         import opc_service
         port = opc_service._service_cfg()["port"]
-        alive = opc_service.service_alive(port)
+        alive = opc_service.service_alive()   # 不传 port：感知启动时的端口顺延
         if alive:
             warns.append(f"OPC 服务在跑 ✓（http://127.0.0.1:{port}，看板实时化+巡检+通知）")
         else:

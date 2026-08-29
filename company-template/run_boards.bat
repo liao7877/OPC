@@ -1,7 +1,7 @@
 @echo off
 rem OPC boards entry point -- Windows
 rem 决策 #18：日常数据刷新由 OPC 服务（opc_service.py）常驻负责；
-rem 本脚本降级为手动应急的一次性生成工具（"once" 模式）或临时监听（默认）
+rem 本脚本降级为手动应急的一次性生成工具（默认 once；watch 为显式应急监听，勿与服务并发）
 rem Mechanism code lives at OPC root (opc_tickets.py / opc_dashboards.py).
 rem This is a thin company-side wrapper: resolve company id, call root modules.
 rem Usage:

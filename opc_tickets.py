@@ -743,8 +743,10 @@ def check_structure(ctx):
             problems.append(f"缺少必需文件：{f}")
     if not any(os.path.isfile(os.path.join(company, f)) for f in platform_files):
         problems.append(f"缺少平台入口文件：{'/'.join(platform_files)} 任一即可（P27）")
-    if not any((n == "E0000" or n.startswith("E0000-")) and os.path.isdir(os.path.join(company, n)) for n in os.listdir(company) if os.path.isdir(os.path.join(company, n))):
-        problems.append("缺少总管目录（E0000）")
+    _ep = opc_resolver.entity_types().get("employee", "E")   # 前缀唯一真相（P25）
+    if not any(n.split("-", 1)[0] == f"{_ep}0000" and os.path.isdir(os.path.join(company, n))
+               for n in os.listdir(company) if os.path.isdir(os.path.join(company, n))):
+        problems.append(f"缺少总管目录（{_ep}0000）")
     known_subdirs = {"workbench": {"tasks", "affairs", "archive"}}  # affairs=常设事务区；archive=历史过程文档存档
     for name in sorted(os.listdir(company)):
         if name.startswith("."):
