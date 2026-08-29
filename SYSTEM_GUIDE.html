@@ -101,6 +101,7 @@
     <a href="#s10"><b>10</b>巡检 = 控制循环</a>
     <a href="#s11"><b>11</b>容错哲学：绝不静默</a>
     <a href="#s12"><b>12</b>安全边界：最小写权限</a>
+    <a href="#s12b"><b>12+</b>对外发布：单仓双远程剥离法</a>
     <a href="#s13"><b>13</b>设计借鉴总表</a>
     <a href="#s14"><b>14</b>三级知识库：查得到</a>
     <a href="#s15"><b>15</b>知识飞轮：可复盘的组织学习</a>
@@ -332,6 +333,23 @@
       <li><b>写路径纪律</b>：机制代码不写业务数据（文件是真相），只写自己的运行状态（巡检日志/状态/待办）</li>
     </ul></div>
   <div class="land"><b>落点</b>攻防两端都验证过：跨站 POST 实测 403、目录穿越实测 404、GET 退役实测 405——安全不是配置项声明，是 selftest 里的断言。</div>
+</section>
+
+<section class="slide" id="s12b">
+  <div class="no">12+</div>
+  <span class="kicker">隐私 · 公开发布</span>
+  <h2>对外发布：单仓双远程剥离法</h2>
+  <p class="oneline">想让别人 fork 学机制，又不能把私有资料一起公开——答案是同一个仓库、两个远程、一份剥离清单。</p>
+  <div class="pain"><b>痛点</b>两难：要么为了公开而把私有文件删掉（本地丢掉版本管理与备份），要么直接把含私有的 <code>main</code> 推上公开仓库（隐私外泄，且历史里删不干净——force-push 之前推过的都还在）。两种都源于「一个仓库只能二选一」的错觉。</div>
+  <div class="mech"><b>机制</b>单仓双远程剥离法：
+    <ul class="clean">
+      <li><b>origin = 公开远程</b>：只收「按清单剥离后」的干净 <code>main</code>，供他人 fork；pre-push 守卫禁止从工作仓库直推</li>
+      <li><b>backup = 私有远程</b>：直推含私有的 <code>main</code> 全量 = 完整版本管理 + 异地备份，允许且应当做</li>
+      <li><b>一份清单</b>：仓库根 <code>.opc-private-paths.txt</code>（相对路径 + <code>*</code> 通配）声明「公开分支剥离什么」；发布脚本按它跑 <code>git filter-repo --invert-paths</code></li>
+      <li><b>发布走脚本</b>：<code>scripts/opc-publish.*</code> 在临时克隆里剥离后 force-push——临时克隆不带钩子，故可直推公开远程</li>
+      <li><b>判据</b>：拿不准就加清单——多剥无害（公开分支少个文件），漏剥是事故</li>
+    </ul></div>
+  <div class="land"><b>落点</b>机制内建为公司级技能 <code>privacy-publish</code>，并在四处 <code>AGENTS.md</code>（组织根 / 公司 / 总管 / 新建模板）同步赋能：agent 命中「推送 / 发布 / 剥离隐私 / 私有清单」即自动加载完整流程，人不必记住任何命令。</div>
 </section>
 
 <section class="slide" id="s13">
