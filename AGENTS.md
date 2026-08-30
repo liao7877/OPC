@@ -17,6 +17,8 @@
 - **跨平台三系统（P30，廖哥明令）**：一切修改与机制设计必须 Windows/macOS/Linux 三系统可运行；平台差异收口在机制层 `sys.platform` 分支，新增行为必须进 selftest 过 CI 三平台矩阵。
 - **内容治理（P31，廖哥明令）**：总管/员工/会话新建或改动规范、原则、技能类文件，一律遵守三问法归位（普遍→根层 / 公司政策→公司层正文+他层引用 / 单角色→员工技能）与「精准高效、本质而非肤浅」表达总纲——每句话要么改变行为要么帮助定位；**例外**：记忆/日志/worklog/messages 等事实记录类内容以保证信息细节不丢失为先，不受精简约束。
 - **对外讲解同步（P32，廖哥明令）**：机制更新/改动/新增与好设计，同一提交内同步 SYSTEM_GUIDE.html 机制亮点章节——外人看得懂亮点，好想法留档不遗忘。
+- **实践反馈留档（廖哥明令 2026-08-31）**：凡用户实践反馈、问题上报及对应处置结论，处置前/后记入 [`PRACTICE-LOG.md`](PRACTICE-LOG.md)（反馈原意/排查结论/落地/经验四段式，只增不删）——这些是复盘与对外展示的素材，不许散失在会话里。
+- **代码路径依赖（廖哥明令 2026-08-31）**：脚本/代码禁止硬编码组织路径，统一运行时走 resolver（`--resolve` 或 import `opc_resolver`），改名即免疫；文档引用遵守 P26 散文口径。
 
 ## 对外发布与隐私剥离（单仓双远程 · 任何推送动作前必读）
 - **红线 ⛔ 禁止 `git push origin`**：`origin`（github.com/liao7877/OPC）是**公开**远程，而工作仓库 `main` **含私有内容**。pre-push 守卫已启用（`opc.publicRemote=origin`），直推会被拦下。
@@ -32,6 +34,7 @@
 | [`opc-namespace-design.md`](opc-namespace-design.md) | 命名空间机制设计规范（动机 / URI / resolver / 跨平台 / 落地） |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | 组织级设计原则 P1~P31 |
 | [`AGENT_ECOSYSTEM.md`](AGENT_ECOSYSTEM.md) | 多 Agent 平台接入规范 |
+| [`PRACTICE-LOG.md`](PRACTICE-LOG.md) | **实践反馈日志**（用户反馈原意/排查/落地/经验四段式，只增不删；复盘与对外展示取材于此） |
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
 | `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
 | `opc_service.py` | **OPC 服务**（决策 #18：组织级常驻后台中枢，升级自 opc_board_server.py）：进程=宿主、公司=租户（扫描 opc.toml 全公司自动装载）；承载看板实时化（`同步`按钮直算 + 秒级监听）、巡检（含工单逾期/停滞预警）、实时通知与每日摘要、只读 API（`/api/{CID}/tickets|dashboard|patrol`，唯一写边界=POST `/sync` 同站校验）；`--register` 挂开机自启；看板从 `http://127.0.0.1:8765/{CID}/dashboard.html` 打开 |

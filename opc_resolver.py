@@ -23,6 +23,7 @@ URI 契约（与 opc-namespace-design.md §3 一致）：
   opc://org[/<name>]                   -> OPC 根文档（前缀归一发现）
   解析失败一律 raise（FileNotFoundError / ValueError），绝不静默返回假路径。
 """
+import json
 import os
 import re
 import shutil
@@ -548,7 +549,7 @@ def scan_stale_dir_refs(root=None):
     if not live:
         return []
     prefixes = "".join(sorted(set(entity_types(root).values()) | {"C"}))
-    pat = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
+    pat = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-(?![{prefixes}]\d{{3,}}){_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
     issues = []
     skip_dirs = {".git", "node_modules", ".workbuddy", "companies",
                  "company-template", "scripts", ".zcode"}
@@ -671,7 +672,7 @@ def rewrite_stale_entity_names(root=None, dry_run=False, forced_map=None):
             continue
         home_names.append((cid, base))
     prefixes = "".join(sorted(set(entity_types(root).values())))
-    stale_re = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
+    stale_re = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-(?![{prefixes}]\d{{3,}}){_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
     id_re = re.compile(r"^([A-Z])\d{3,}")
     exts = DOC_EXTS   # 与散文扫描同口径：代码文件的路径串是示例，不改写也不报
 
@@ -801,6 +802,45 @@ def _sync_roster_paths(root, cid=None, dry_run=False):
     return actions
 
 
+def _code_name_hits(root, names):
+    """全文件面（含代码）检索旧目录名字符串命中——**改名时机化清单**，不散扫不门禁。
+
+    设计口径（2026-08-31 用户反馈收敛）：代码里的路径依赖**无法也不该做静态门禁**
+    （示例字符串与真实依赖静态不可分，滥报烧 token；全面豁免又留改名盲区）。
+    可靠的检测点是「改名」这个时刻——此时要找什么字符串是精确已知的，任何命中
+    都值得人工复核，零误报。代码消除路径依赖的正道是运行时走 resolver
+    （`opc_resolver.py --resolve` / import opc_resolver），改名即免疫。
+    跳过 companies/（锚命名空间，同名会重复命中）与 .zcode/（会话临时态）。"""
+    code_exts = (".py", ".js", ".bat", ".ps1", ".sh", ".json", ".toml")
+    skip_dirs = {".git", "node_modules", ".workbuddy", ".zcode", "companies"}
+    hits = []
+    if not names:
+        return hits
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        for fn in files:
+            if not fn.lower().endswith(code_exts):
+                continue
+            fp = os.path.join(dirpath, fn)
+            try:
+                fh = open(fp, encoding="utf-8")
+            except OSError:
+                continue
+            rel = os.path.relpath(fp, root)
+            try:
+                for i, line in enumerate(fh, 1):
+                    for name in names:
+                        if name in line:
+                            hits.append((rel, i, name))
+            except UnicodeDecodeError:
+                continue
+            except OSError:
+                continue
+            finally:
+                fh.close()
+    return hits
+
+
 def heal_entity_refs(root=None, dry_run=False, cid=None, forced_map=None):
     """改名后一键自愈（手动改名或 --rename-entity 之后跑，幂等）：
     ① OS 级链接（稳定锚 + 技能披露）重建；② 散文旧名改写（多公司按上下文归司，
@@ -814,6 +854,14 @@ def heal_entity_refs(root=None, dry_run=False, cid=None, forced_map=None):
     done, skip2, issues = rewrite_stale_entity_names(root, dry_run=dry_run, forced_map=forced_map)
     actions += [f"散文: {o} -> {n} @ {rel}" for rel, o, n in done]
     skipped += [f"{o} @ {rel}（{why}）" for rel, o, why in skip2]
+    # 代码命中清单（改名时机化检测，2026-08-31）：文档面已改写，代码面的旧名
+    # 字符串不做静态门禁也不自动改写（示例/依赖不可静态区分），但必须点名——
+    # 漏掉就是「散文全改了、脚本悄悄还依赖旧路径」的盲区
+    old_names = {o for _, o, _ in done} | set(forced_map or {})
+    if old_names and not dry_run:
+        skipped += [f"{o} @ {rel}:{ln}（代码命中，未改写——若是真实路径依赖请人工修改，"
+                    f"正道：改走 opc_resolver --resolve 运行时解析，改名即免疫）"
+                    for rel, ln, o in _code_name_hits(root, old_names)]
     actions += _sync_roster_paths(root, cid=cid, dry_run=dry_run)
     if not dry_run and root and os.path.abspath(root) == os.path.abspath(_find_root() or ""):
         py = sys.executable or "python"
@@ -888,6 +936,106 @@ def rename_entity(root, eid, new_label, dry_run=False, cid=None):
     healed, skipped, issues = heal_entity_refs(root, cid=cid, forced_map={dir_name: new_name})
     actions += healed
     return actions, skipped, issues
+
+
+# ---------------------------------------------------------------------------
+# 会话门禁钩子（2026-08-31）：agent 开工前自动跑 doctor，不靠「记得跑」。
+# 用户拍板原则：凡需 agent 触发的机制本质仍依赖自觉——开工门禁的强制力只能来自
+# 平台会话钩子这个无需触发的执行面。平台支持矩阵见 AGENT_ECOSYSTEM.md；
+# 未核实 schema 的平台不盲写，兜底走 git 门禁 + 服务巡检 + AGENTS 铁律。
+# ---------------------------------------------------------------------------
+
+def _read_json_or(path, default):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return default
+
+
+def _write_json(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+
+
+def session_gate(root=None):
+    """会话启动门禁（供各平台 SessionStart 钩子调用，永远 exit 0）：
+    跑 doctor（含自愈），把一行状态经 additionalContext 注入会话——agent 开工
+    第一眼就看到门禁状态与未过项。语义是「知情」而非「阻断」：会话级硬阻断会
+    卡死用户，真正的拦截仍由 pre-commit/pre-push/服务巡检承担。"""
+    import contextlib
+    import io
+    root = root or _find_root()
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            errs, warns = doctor(root, auto_fix=True)
+    except Exception as e:
+        # 缺 manifest / 环境异常也要优雅降级：钩子永远 exit 0，靠注入文本知情
+        print(json.dumps({"additionalContext": f"[OPC 开工门禁] 自检异常：{e}——"
+                          f"确认当前目录是否为 OPC 根（含 opc.toml）"}, ensure_ascii=False))
+        return 0
+    if errs:
+        ctx = f"[OPC 开工门禁] {len(errs)} 项未过 ✗ 先修复再开工：{errs[0]}"
+    else:
+        svc = next((w for w in warns if "OPC 服务" in w), "")
+        ctx = f"[OPC 开工门禁] 全绿 ✓ 可开工（OPC 根：{root}）。{svc}"
+    print(json.dumps({"additionalContext": ctx}, ensure_ascii=False))
+    return 0
+
+
+def install_session_gates(root=None):
+    """把开工门禁装进各平台会话钩子（幂等：含 --session-gate 即跳过，只增量
+    合并不动其他配置；路径走平台模板变量 ${*_PROJECT_DIR}，跨机器/跨 clone 有效）。"""
+    root = root or _find_root()
+    report = []
+    # ZCode：工作区 .zcode/config.json，process 型免 shell（官方 schema 2026-08-31 核实）
+    zc_path = os.path.join(root, ".zcode", "config.json")
+    cfg = _read_json_or(zc_path, {})
+    hooks = cfg.setdefault("hooks", {})
+    hooks["enabled"] = True
+    entries = hooks.setdefault("events", {}).setdefault("SessionStart", [])
+    if any("--session-gate" in json.dumps(e) for e in entries):
+        report.append(("ZCode", "已存在，跳过"))
+    else:
+        entries.append({"hooks": [{"type": "process", "command": "python",
+                                   "args": ["${ZCODE_PROJECT_DIR}/opc_resolver.py", "--session-gate"],
+                                   "timeoutMs": 60000,
+                                   "statusMessage": "OPC 开工门禁自检"}]})
+        _write_json(zc_path, cfg)
+        report.append(("ZCode", "已装（SessionStart/process，.zcode/config.json）"))
+    # Claude Code：.claude/settings.json，command 型（官方稳定 schema）
+    cc_path = os.path.join(root, ".claude", "settings.json")
+    cfgc = _read_json_or(cc_path, {})
+    entries_c = cfgc.setdefault("hooks", {}).setdefault("SessionStart", [])
+    if any("--session-gate" in json.dumps(e) for e in entries_c):
+        report.append(("Claude Code", "已存在，跳过"))
+    else:
+        entries_c.append({"matcher": "", "hooks": [
+            {"type": "command",
+             "command": 'python "${CLAUDE_PROJECT_DIR}/opc_resolver.py" --session-gate'}]})
+        _write_json(cc_path, cfgc)
+        report.append(("Claude Code", "已装（SessionStart/command，.claude/settings.json）"))
+    report.append(("WorkBuddy/Codex", "会话钩子规范待核实（不盲写）→ 兜底：git 门禁+服务巡检+AGENTS 铁律"))
+    return report
+
+
+def session_gate_coverage(root=None):
+    """doctor 只读检查：会话门禁在哪些平台已装（按配置文件是否含 --session-gate）。"""
+    root = root or _find_root()
+    out = []
+    for name, p in {"ZCode": os.path.join(root, ".zcode", "config.json"),
+                    "Claude Code": os.path.join(root, ".claude", "settings.json")}.items():
+        body = ""
+        if os.path.isfile(p):
+            try:
+                body = open(p, encoding="utf-8").read()
+            except OSError:
+                pass
+        out.append((name, "--session-gate" in body))
+    return out
 
 
 def check_links(cid=None, root=None):
@@ -1535,6 +1683,18 @@ def doctor(root=None, auto_fix=True):
     else:
         warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
+    # 3a. 会话门禁钩子覆盖面（2026-08-31）：开工门禁的强制力来自平台会话钩子，
+    #     不靠 agent「记得跑 doctor」；未覆盖仅提示（安装是显式动作，不自动改平台配置）
+    try:
+        missing = [n for n, ok in session_gate_coverage(root) if not ok]
+        if missing:
+            warns.append(f"会话门禁钩子未覆盖：{'、'.join(missing)}"
+                         f" → 跑 `python opc_resolver.py --install-hooks`（会话启动自动跑 doctor）")
+        else:
+            warns.append("会话门禁钩子已覆盖 ✓（会话启动自动跑 doctor）")
+    except Exception:
+        pass
+
     # 3b. OPC 服务探活 + 根身份校验（决策 #18：巡检/通知/看板实时化全部由常驻服务承载；
     #     机器级状态不自动拉起——CI/临时环境没有服务属正常，缺失仅提示。
     #     2026-08-30 排查收口：多 clone/目录搬家后，端口上可能是伺服**别的根**的服务——
@@ -1685,6 +1845,14 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
     elif not cids:
         print("[init] 无公司，跳过服务自启与看板重建")
 
+    # 会话门禁钩子（2026-08-31）：开工门禁不靠 agent「记得跑 doctor」，
+    # 装进各平台 SessionStart（幂等，未核实 schema 的平台明确标注兜底）
+    try:
+        for plat, st in install_session_gates(root):
+            print(f"[init] 会话门禁钩子 {plat}: {st}")
+    except Exception as e:
+        print(f"[init] 会话门禁钩子安装失败（不影响其他机制，可手动 --install-hooks）：{e}")
+
     errs, ws = doctor(root, auto_fix=True)
     print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
           + ("" if heartbeat and cids else "（未挂服务自启：--no-heartbeat）"))
@@ -1801,6 +1969,11 @@ def selftest():
             fh.write("提到 E0001-不存在岗位 的现状\n")
         stale2 = scan_stale_dir_refs(tmp)
         check("md 正文假目录名仍报（防漏）", any("E0001-不存在岗位" in i for i in stale2))
+        # ID 范围写法不是目录名（实测误报：工位卡「批量入职 E0003-E0010」被当 E0003-E0010）
+        with open(os.path.join(tmp, "范围写法.md"), "w", encoding="utf-8") as fh:
+            fh.write("批量入职 E0003-E0010 共 8 名员工\n")
+        stale3 = scan_stale_dir_refs(tmp)
+        check("ID 范围写法（E0003-E0010）不报", not any("E0003-E0010" in i for i in stale3))
     # 10b) SKILL.md 相对链接校验：断链被抓、有效链接与外链/锚点不误报
     #      （夹具按真实口径放 company-template 层——scan_skill_links 只扫模板+公司层）
     with tempfile.TemporaryDirectory() as tmp:
@@ -1867,6 +2040,50 @@ def selftest():
         check("sync_tree 删除 dst 独有文件", not os.path.isfile(os.path.join(dst, "stale.md")))
         sync_tree(src, dst, transform=_to_template_text, dry_run=True, log=lambda m: None)
         check("sync_tree dry_run 不落盘", rd(os.path.join(dst, "a.md")) == "opc://company:C00x/x\n")
+    # 12) 会话门禁与改名时机化检测（2026-08-31，用户拍板两原则落地）
+    with tempfile.TemporaryDirectory() as tmp:
+        wr(os.path.join(tmp, "工具脚本.py"), 'ROOT = "C001-AI旧公司名"   # 示例或依赖，扫描器不判\n')
+        wr(os.path.join(tmp, "文档.md"), "正文 C001-AI旧公司名 的引用\n")
+        hits = _code_name_hits(tmp, {"C001-AI旧公司名"})
+        check("改名时机化：代码命中被点名", any("工具脚本.py" in h[0] for h in hits))
+        check("改名时机化：md 不在代码清单（已由散文面改写）",
+              not any(h[0].endswith(".md") for h in hits))
+        check("改名时机化：空名清单零扫描", _code_name_hits(tmp, set()) == [])
+    with tempfile.TemporaryDirectory() as tmp:
+        import io as _io
+        _stdout = sys.stdout
+        sys.stdout = _io.StringIO()
+        try:
+            rc = session_gate(tmp)
+            out = sys.stdout.getvalue()
+        finally:
+            sys.stdout = _stdout
+        check("session_gate：永远 exit 0（知情不阻断）", rc == 0)
+        try:
+            payload = json.loads(out)
+            check("session_gate：输出合法 additionalContext（严格 schema 不多键）",
+                  set(payload) == {"additionalContext"} and "开工门禁" in payload["additionalContext"])
+        except ValueError:
+            check("session_gate：输出合法 additionalContext（严格 schema 不多键）", False)
+        rep = dict(install_session_gates(tmp))
+        check("钩子安装：ZCode/Claude 两平台落地",
+              "已装" in rep.get("ZCode", "") and "已装" in rep.get("Claude Code", ""))
+        check("钩子安装：未核实平台明示兜底不盲写", "待核实" in rep.get("WorkBuddy/Codex", ""))
+        zc = json.load(open(os.path.join(tmp, ".zcode", "config.json"), encoding="utf-8"))
+        check("钩子安装：ZCode enabled+process 型+模板变量",
+              zc["hooks"]["enabled"] is True
+              and zc["hooks"]["events"]["SessionStart"][0]["hooks"][0]["type"] == "process"
+              and any("${ZCODE_PROJECT_DIR}" in a
+                      for a in zc["hooks"]["events"]["SessionStart"][0]["hooks"][0]["args"]))
+        rep2 = dict(install_session_gates(tmp))
+        check("钩子安装：幂等不重复注入",
+              "已存在" in rep2.get("ZCode", "") and "已存在" in rep2.get("Claude Code", ""))
+        cc = json.load(open(os.path.join(tmp, ".claude", "settings.json"), encoding="utf-8"))
+        cc["model"] = "keep-me"
+        _write_json(os.path.join(tmp, ".claude", "settings.json"), cc)
+        install_session_gates(tmp)
+        cc2 = json.load(open(os.path.join(tmp, ".claude", "settings.json"), encoding="utf-8"))
+        check("钩子安装：不动平台配置其他键", cc2.get("model") == "keep-me")
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -1902,6 +2119,10 @@ if __name__ == "__main__":
                     help="改名后自愈（手动改目录名后跑）：重建链接 + 全文旧名按 ID 映射改写（历史留痕区只报不改）+ roster 同步 + 看板重生成")
     ap.add_argument("--dry-run", action="store_true",
                     help="配合 --rename-entity/--heal-entity-refs：只演示将做什么，不落盘")
+    ap.add_argument("--session-gate", action="store_true",
+                    help="会话启动门禁（供各平台 SessionStart 钩子调用）：跑 doctor 自愈并以 additionalContext 注入状态，永远 exit 0")
+    ap.add_argument("--install-hooks", action="store_true",
+                    help="把会话门禁装进各平台 SessionStart 钩子（幂等；支持矩阵见 AGENT_ECOSYSTEM.md）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
     a = ap.parse_args()
 
@@ -1959,6 +2180,12 @@ if __name__ == "__main__":
                 print("  -", i)
             sys.exit(1)
         print("[ok] 自愈完成：链接/散文旧名/roster/看板全部同步")
+    elif a.session_gate:
+        sys.exit(session_gate())
+    elif a.install_hooks:
+        for plat, st in install_session_gates():
+            print(f"[hooks] {plat}: {st}")
+        sys.exit(0)
     elif a.selftest:
         sys.exit(selftest())
     elif a.bootstrap:

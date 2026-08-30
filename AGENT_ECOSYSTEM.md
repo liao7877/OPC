@@ -10,14 +10,17 @@
 
 ## 一、各平台速查对照表
 
-| 维度 | WorkBuddy | Claude Code | Codex |
-|---|---|---|---|
-| 技能·用户级目录 | `~/.workbuddy/skills/` | `~/.claude/skills/` | 待核实 |
-| 技能·工作区级目录 | `{工作区}/.workbuddy/skills/` | `{项目}/.claude/skills/` | 待核实 |
-| 技能声明文件 | `SKILL.md`（frontmatter: name/description） | `SKILL.md`（同构） | 待核实 |
-| 角色/指令文件 | `AGENTS.md` | `CLAUDE.md` | `AGENTS.md`（`.codex/AGENTS.md`） |
-| 渐进式披露 | ✅ 自动（扫描 frontmatter→列表→命中加载全文） | ✅ 类似（description 触发） | 待核实 |
-| 任意目录技能接入 | junction 到工作区级目录 | junction 到 `{项目}/.claude/skills/` | 待核实 |
+| 维度 | WorkBuddy | Claude Code | Codex | ZCode |
+|---|---|---|---|---|
+| 技能·用户级目录 | `~/.workbuddy/skills/` | `~/.claude/skills/` | 待核实 | 待核实（本工作区技能走 `.agents/skills`） |
+| 技能·工作区级目录 | `{工作区}/.workbuddy/skills/` | `{项目}/.claude/skills/` | 待核实 | 待核实 |
+| 技能声明文件 | `SKILL.md`（frontmatter: name/description） | `SKILL.md`（同构） | 待核实 | `SKILL.md`（同构） |
+| 角色/指令文件 | `AGENTS.md` | `CLAUDE.md` | `AGENTS.md`（`.codex/AGENTS.md`） | `AGENTS.md` |
+| 渐进式披露 | ✅ 自动（扫描 frontmatter→列表→命中加载全文） | ✅ 类似（description 触发） | 待核实 | ✅ 类似（description 触发） |
+| 任意目录技能接入 | junction 到工作区级目录 | junction 到 `{项目}/.claude/skills/` | 待核实 | 待核实 |
+| **会话门禁钩子** | 待核实（无规范不盲写） | ✅ `SessionStart`/command（`.claude/settings.json`） | 待核实 | ✅ `SessionStart`/process（`.zcode/config.json`，schema 已核实） |
+
+> **会话门禁钩子（2026-08-31）**：开工门禁（doctor）的强制力来自平台 SessionStart 钩子——「要 agent 记得跑」的机制不算代码保证。统一入口 `python opc_resolver.py --install-hooks`（幂等增量合并，路径走 `${*_PROJECT_DIR}` 模板变量跨 clone 有效），钩子调 `--session-gate`：跑 doctor 自愈并以 `additionalContext` 注入一行状态、永远 exit 0（知情不阻断；硬拦截仍由 pre-commit/pre-push/服务巡检承担）。未核实 schema 的平台不盲写，兜底 = git 门禁 + 服务巡检 + AGENTS 铁律。每实测一个新平台，把上表「待核实」改掉并补一节。
 
 ---
 
