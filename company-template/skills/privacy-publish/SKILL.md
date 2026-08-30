@@ -26,7 +26,10 @@ triggers: [发布, 推送, push, 上传github, 公开仓库, fork, 剥离隐私,
 | 远程 | 性质 | 承载 | 谁推 |
 |---|---|---|---|
 | `origin` | **公开**（别人 fork） | 剥离后的干净 `main` | **只由 opc-publish 推** |
-| `backup`（待登记） | **私有** | 含私有的完整 `main` | 可直推 `git push backup main` |
+| `backup`（已配置） | **私有**（本机另一块盘的裸仓库，与工作仓不同卷） | 含私有的完整 `main` | 可直推 `git push backup main` |
+
+> `backup` 的具体路径只存在本机 `.git/config`（**不入库、不进公开仓**，避免把盘符布局写进公开内容）；
+> 需要时查地址：`git remote get-url backup`。换机器/换盘时重新 `git remote set-url backup <新路径>` 即可。
 
 ## 一、怎么推送
 

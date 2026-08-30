@@ -139,14 +139,11 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 本仓库采用「单仓双远程」模型：机制改进对外公开供 fork，私有内容只留在 `main` 与私有远程做版本管理与备份，绝不进公开分支。
 
 - **公开远程 `origin`**（github.com/liao7877/OPC，Public）：只接收「按 `.opc-private-paths.txt` 剥离私有后」的干净 `main`。**禁止从工作仓库直推**——pre-push 守卫已启用（`opc.publicRemote=origin`）。
-- **私有远程 `backup`**（登记后可用，建议 Private）：直推 `main` 全量（机制 + 私有）= 完整版本管理 + 异地备份。**允许且应当做**。
+- **私有远程 `backup`**（已配置：本机另一块盘的裸仓库，与工作仓不同卷）：直推 `main` 全量（机制 + 私有）= 完整版本管理 + 备份。**允许且应当做**。具体路径只存本机 `.git/config`（不入库、不进公开仓），查地址 `git remote get-url backup`。
 
 日常开发一切照旧：在 `main` 随便提交。备份与发布各一条命令：
 
 ```bash
-# 首次：登记私有远程（换成你自己的私有仓库地址）
-git remote add backup <私有仓库URL>
-
 # 备份：推私有远程（含私有，做版本管理）——允许直推
 git push backup main
 
