@@ -342,57 +342,35 @@ _REF_RE = re.compile(r'opc://[A-Za-z0-9_:<>\-/][^\s"`\'\)\]\}>，。；！？（
 
 
 def scan_refs(root):
-    """遍历 root，收集所有文件里的 opc:// 引用 -> {uri: [(file, line), ...]}。
+    """遍历 root，收集**组织文档面**（DOC_EXTS：md/html/txt）里的 opc:// 引用 ->
+    {uri: [(file, line), ...]}。
 
+    - 代码/脚本（.py/.js/.bat/.ps1/.json/.toml）不在默认扫描面：里面的路径串是
+      示例/实现细节，当真报断链只会烧 token（2026-08-31 新环境实测后收口；
+      原「根层 opc_*.py 豁免」即此口径的特例，现统一为通用规则）
+    - .md 的围栏代码块/行内 span 跳过（示例不是引用）
     - 排除中文标点结尾的误吸（正文裸写 URI 后接句号/逗号，不是引用的一部分）
     - 不可解码文件（GBK 等）以 latin-1 兜底读取而非静默跳过——门禁不假绿
-    - **机制层豁免**：OPC 根下 `opc_*.py` 里的 opc:// 是**协议实现**（正则 / f-string /
-      自测字符串），不是文档引用，不参与失效校验（2026-08-30 决策 #19；否则门禁满是误报）
     """
     refs = {}
     skip_dirs = {".git", "node_modules", ".workbuddy"}
-    exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
-    root_abs = os.path.abspath(root)
+    exts = DOC_EXTS
     for dirpath, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in skip_dirs]
         for fn in files:
             if not fn.lower().endswith(exts):
                 continue
             fp = os.path.join(dirpath, fn)
-            if (os.path.abspath(dirpath) == root_abs
-                    and fn.startswith("opc_") and fn.endswith(".py")):
-                continue
-            try:
-                fh = open(fp, encoding="utf-8")
-            except OSError:
-                continue
-            try:
-                for i, line in enumerate(fh, 1):
-                    for m in _REF_RE.finditer(line):
-                        uri = m.group(0)
-                        if "<" in uri or ">" in uri:   # 文档示例占位，跳过
-                            continue
-                        if "..." in uri:                # 省略号示例（opc://company:C001/...），跳过
-                            continue
-                        if "{" in uri or uri.endswith(":"):
-                            continue                    # f-string 模板/裸前缀（源码内），非真实引用
-                        refs.setdefault(uri, []).append((fp, i))
-            except UnicodeDecodeError:
-                # 非 UTF-8 文件：latin-1 兜底（字节级 ASCII 前缀的 opc:// 仍可识别）
-                try:
-                    with open(fp, encoding="latin-1") as fh2:
-                        for i, line in enumerate(fh2, 1):
-                            for m in _REF_RE.finditer(line):
-                                uri = m.group(0)
-                                if "<" in uri or ">" in uri or "..." in uri:
-                                    continue
-                                refs.setdefault(uri, []).append((fp, i))
-                except OSError:
-                    pass
-            except OSError:
-                pass
-            finally:
-                fh.close()
+            for i, line in _iter_prose_lines(fp):
+                for m in _REF_RE.finditer(line):
+                    uri = m.group(0)
+                    if "<" in uri or ">" in uri:   # 文档示例占位，跳过
+                        continue
+                    if "..." in uri:                # 省略号示例（opc://company:C001/...），跳过
+                        continue
+                    if "{" in uri or uri.endswith(":"):
+                        continue                    # f-string 模板/裸前缀（源码内），非真实引用
+                    refs.setdefault(uri, []).append((fp, i))
     return refs
 
 
@@ -465,6 +443,29 @@ def all_company_ids(root=None):
 _DIRNAME_CHARS = r"[A-Za-z0-9_\u4e00-\u9fff\-]"
 # 匹配时前面不能紧贴 ASCII 字母数字/下划线（防 TSK00010 里的 K00010 误吸；中文紧邻允许）
 
+# 文档面行过滤：md 围栏代码块与行内 span 是示例文本，不是引用（误报=token 成本）
+_MD_FENCE_RE = re.compile(r"^\s{0,3}(?:```|~~~)")
+_INLINE_SPAN_RE = re.compile(r"`[^`]*`")
+
+# 门禁/heal 的默认文件面：组织文档。代码与脚本（.py/.js/.bat/.ps1/.json/.toml）
+# 退出散文门禁——里面的路径串是示例/实现细节，代码的正确性由自测与运行保证，
+# 由文档扫描器管辖只会制造误报（2026-08-31 新环境实测后收口）
+DOC_EXTS = (".md", ".html", ".txt")
+
+
+def _skip_selftest(lines):
+    """跳过 .py 的 selftest 函数体——夹具目录名是测试数据（与散文扫描同口径）。"""
+    in_test = False
+    for i, line in enumerate(lines, 1):
+        if re.match(r"^\s*def selftest\(", line):
+            in_test = True
+            continue
+        if in_test and re.match(r"^(def |class |if __name__)", line):
+            in_test = False      # 出了 selftest 区，当行照常扫描
+        if in_test:
+            continue
+        yield i, line
+
 
 def _live_entity_dir_names(root):
     """现存公司/实体目录名集合（散文扫描的合法性判据）。
@@ -491,34 +492,43 @@ def _live_entity_dir_names(root):
 
 
 def _iter_prose_lines(fp):
-    """逐行产出 (line_no, line)；UTF-8 失败以 latin-1 兜底（门禁不假绿）。
-    .py 文件的 selftest 函数体跳过——自测夹具里形如「E0001 加占位后缀」的
-    假目录名是测试数据不是组织文档，不进散文门禁。"""
-    def _skip_selftest(lines):
-        in_test = False
-        for i, line in enumerate(lines, 1):
-            if re.match(r"^\s*def selftest\(", line):
-                in_test = True
-                continue
-            if in_test and re.match(r"^(def |class |if __name__)", line):
-                in_test = False      # 出了 selftest 区，当行照常扫描
-            if in_test:
-                continue
-            yield i, line
+    """逐行产出 (line_no, line)——**门禁扫描面 = 组织文档面**（2026-08-31 口径收口）。
 
+    新环境实测教训：agent 把带路径的**示例**写进脚本或文档代码块（纯文本参考、
+    不是真实引用），扫描器当真报断链，agent 被迫排查——误报是实打实的 token 成本。
+    本函数是散文类扫描/heal 的唯一行来源，口径：
+    - .md：围栏代码块（``` / ~~~）整块跳过；行内反引号 span 先剥除——示例不是引用
+    - .py：selftest 函数体跳过（夹具是假数据不是组织文档；门禁默认已不扫 .py，
+      此口径供 heal / 潜在深扫保持同构）
+    - UTF-8 失败以 latin-1 兜底（门禁不假绿）。
+    """
     try:
         fh = open(fp, encoding="utf-8")
     except OSError:
         return
     try:
+        is_md = fp.lower().endswith(".md")
+        in_fence = False
         if fp.lower().endswith(".py"):
             yield from _skip_selftest(fh)
-        else:
-            yield from enumerate(fh, 1)
+            return
+        for i, line in enumerate(fh, 1):
+            if is_md:
+                if _MD_FENCE_RE.match(line):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
+                line = _INLINE_SPAN_RE.sub("", line)
+            yield i, line
     except UnicodeDecodeError:
         try:
             with open(fp, encoding="latin-1") as fh2:
-                yield from _skip_selftest(fh2)
+                if fp.lower().endswith(".py"):
+                    yield from _skip_selftest(fh2)
+                    return
+                for i, line in enumerate(fh2, 1):
+                    yield i, line
         except OSError:
             return
     except OSError:
@@ -528,8 +538,9 @@ def _iter_prose_lines(fp):
 
 
 def scan_stale_dir_refs(root=None):
-    """全文扫描正文裸写的 {C|E|T|P}+数字-<名称> 目录名，不匹配任何现存目录即报失效。
-    跳过 companies/（锚命名空间）与 company-template/（示例占位）、scripts/、.zcode/。"""
+    """扫描**组织文档面**正文裸写的 {C|E|T|P}+数字-<名称> 目录名，不匹配任何现存目录即报失效。
+    跳过 companies/（锚命名空间）与 company-template/（示例占位）、scripts/、.zcode/；
+    代码文件不在扫描面（DOC_EXTS 口径——示例文本当真引用只会烧 token）。"""
     root = root or _find_root()
     if root is None or not os.path.isdir(root):
         return []
@@ -541,7 +552,7 @@ def scan_stale_dir_refs(root=None):
     issues = []
     skip_dirs = {".git", "node_modules", ".workbuddy", "companies",
                  "company-template", "scripts", ".zcode"}
-    exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
+    exts = DOC_EXTS
     seen = set()   # 同名多处失效只报首见（file,line），避免刷屏
     for dirpath, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in skip_dirs]
@@ -662,7 +673,7 @@ def rewrite_stale_entity_names(root=None, dry_run=False, forced_map=None):
     prefixes = "".join(sorted(set(entity_types(root).values())))
     stale_re = re.compile(rf"(?<![A-Za-z0-9_])[{prefixes}]\d{{3,}}-{_DIRNAME_CHARS}*[A-Za-z0-9_一-鿿]")
     id_re = re.compile(r"^([A-Z])\d{3,}")
-    exts = (".md", ".py", ".html", ".js", ".toml", ".json", ".txt", ".bat", ".ps1")
+    exts = DOC_EXTS   # 与散文扫描同口径：代码文件的路径串是示例，不改写也不报
 
     def resolve_target(old, ln, rel):
         """单个旧名 -> (新目录名或 None, 歧义说明或 None)。None = 保持原文。"""
@@ -1763,6 +1774,33 @@ def selftest():
         found2 = scan_refs(tmp)
         uris = [u for u in found2 if u.startswith("opc://company:C001/roster")]
         check("正文句号后缀不吸入", all(not u.endswith("。") for u in uris))
+        # 10c) 文档面口径（2026-08-31 收口）：示例不是引用——md 围栏/行内 span、
+        #      代码文件里的路径串都不进门禁；正文真引用仍必须报（防矫枉过正）
+        with open(os.path.join(tmp, "示例文档.md"), "w", encoding="utf-8") as fh:
+            fh.write("正文真引用 opc://company:C001/knowledge/不存在.md 见上\n"
+                     "```\n代码块里的示例 opc://company:C001/x/块内.md 不算\n"
+                     "E9999-假目录名 也是示例\n```\n"
+                     "行内 `E8888-反引号示例` 与真引用二 opc://company:C001/tasks_data 落同一行\n")
+        with open(os.path.join(tmp, "脚本示例.py"), "w", encoding="utf-8") as fh:
+            fh.write('# 示例：OPC_ROOT = "E0001-只是示例"\n'
+                     '# ref = "opc://company:C001/x/脚本内.md"\n')
+        found3 = scan_refs(tmp)
+        check("md 围栏内示例引用不报", not any("块内" in u for u in found3))
+        check("md 正文真引用仍报（防漏）",
+              any(u == "opc://company:C001/knowledge/不存在.md" for u in found3))
+        check("py 脚本内示例引用不报", not any("脚本内" in u for u in found3))
+        # manifest + 活目录：散文扫描需要「现存目录名」作合法性判据
+        with open(os.path.join(tmp, "opc.toml"), "w", encoding="utf-8") as fh:
+            fh.write('[company.C001]\nhome = "C001-甲公司"\n\n[entity_types]\n'
+                     'employee = "E"\nteam = "T"\nproject = "P"\n')
+        os.makedirs(os.path.join(tmp, "C001-甲公司", "E0001-真实岗位"))
+        stale = scan_stale_dir_refs(tmp)
+        check("md 围栏/行内示例目录名不报", not any("E9999" in i or "E8888" in i for i in stale))
+        # 假目录名真出现于正文（围栏外）才应报——上面夹具正文未写假目录名，补一条
+        with open(os.path.join(tmp, "正文假名.md"), "w", encoding="utf-8") as fh:
+            fh.write("提到 E0001-不存在岗位 的现状\n")
+        stale2 = scan_stale_dir_refs(tmp)
+        check("md 正文假目录名仍报（防漏）", any("E0001-不存在岗位" in i for i in stale2))
     # 10b) SKILL.md 相对链接校验：断链被抓、有效链接与外链/锚点不误报
     #      （夹具按真实口径放 company-template 层——scan_skill_links 只扫模板+公司层）
     with tempfile.TemporaryDirectory() as tmp:
