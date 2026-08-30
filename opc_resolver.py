@@ -962,9 +962,13 @@ def _write_json(path, obj):
 
 def session_gate(root=None):
     """会话启动门禁（供各平台 SessionStart 钩子调用，永远 exit 0）：
-    跑 doctor（含自愈），把一行状态经 additionalContext 注入会话——agent 开工
+    跑 doctor（含自愈），把一行状态打到 stdout 注入会话上下文——agent 开工
     第一眼就看到门禁状态与未过项。语义是「知情」而非「阻断」：会话级硬阻断会
-    卡死用户，真正的拦截仍由 pre-commit/pre-push/服务巡检承担。"""
+    卡死用户，真正的拦截仍由 pre-commit/pre-push/服务巡检承担。
+    输出刻意用**纯文本**而非 JSON（2026-08-31 自审修正）：两平台对钩子 JSON 都是
+    strict schema（多余键即整条丢弃并标记 failed），且各自的事件包装键不同
+    （Claude Code 要 hookSpecificOutput 包装）；而 SessionStart 的裸 stdout 文本
+    两边都安全——Claude 直接注入上下文，ZCode 最坏静默忽略，doctor 自愈照常发生。"""
     import contextlib
     import io
     root = root or _find_root()
@@ -973,16 +977,15 @@ def session_gate(root=None):
         with contextlib.redirect_stdout(buf):
             errs, warns = doctor(root, auto_fix=True)
     except Exception as e:
-        # 缺 manifest / 环境异常也要优雅降级：钩子永远 exit 0，靠注入文本知情
-        print(json.dumps({"additionalContext": f"[OPC 开工门禁] 自检异常：{e}——"
-                          f"确认当前目录是否为 OPC 根（含 opc.toml）"}, ensure_ascii=False))
+        # 缺 manifest / 环境异常也要优雅降级：钩子永远 exit 0
+        print(f"[OPC 开工门禁] 自检异常：{e}——确认当前目录是否为 OPC 根（含 opc.toml）")
         return 0
     if errs:
-        ctx = f"[OPC 开工门禁] {len(errs)} 项未过 ✗ 先修复再开工：{errs[0]}"
+        print(f"[OPC 开工门禁] {len(errs)} 项未过 ✗ 先修复再开工：{errs[0]}；"
+              f"全量：python opc_resolver.py --check")
     else:
         svc = next((w for w in warns if "OPC 服务" in w), "")
-        ctx = f"[OPC 开工门禁] 全绿 ✓ 可开工（OPC 根：{root}）。{svc}"
-    print(json.dumps({"additionalContext": ctx}, ensure_ascii=False))
+        print(f"[OPC 开工门禁] 全绿 ✓ 可开工（OPC 根：{root}）。{svc}")
     return 0
 
 
@@ -1144,7 +1147,13 @@ def scan_skill_links(root=None):
                     if lines[j].strip() == "---":
                         start = j + 1
                         break
+            in_fence = False    # 文档面口径（2026-08-31）：围栏内是示例不是链接
             for i in range(start, len(lines)):
+                if _MD_FENCE_RE.match(lines[i]):
+                    in_fence = not in_fence
+                    continue
+                if in_fence:
+                    continue
                 for m in _MD_LINK_RE.finditer(lines[i]):
                     target = m.group(1)
                     if target.startswith("#") or target.startswith(("/", "\\")):
@@ -1996,6 +2005,12 @@ def selftest():
         with open(sk, "w", encoding="utf-8") as fh:
             fh.write("---\nname: t\nlink: [断的](fm-不存在.md)\n---\n[有效](exists.md)\n")
         check("frontmatter 内链接不扫", scan_skill_links(tmp) == [])
+        # 围栏内的链接是示例不是路由（文档面口径同构，2026-08-31 自审补）
+        with open(sk, "w", encoding="utf-8") as fh:
+            fh.write("---\nname: t\n---\n"
+                     "用法示例：\n```\n[示例写法](围栏内-不存在.md)\n```\n"
+                     "[有效](exists.md)\n")
+        check("围栏内链接不扫", all("围栏内-不存在" not in i for i in scan_skill_links(tmp)))
     # 11) 多公司同 ID：旧名改写按上下文归司，绝不跨公司误改（决策 #17 多公司兼容）
     with tempfile.TemporaryDirectory() as tmp:
         def w(rel, text):
@@ -2059,12 +2074,8 @@ def selftest():
         finally:
             sys.stdout = _stdout
         check("session_gate：永远 exit 0（知情不阻断）", rc == 0)
-        try:
-            payload = json.loads(out)
-            check("session_gate：输出合法 additionalContext（严格 schema 不多键）",
-                  set(payload) == {"additionalContext"} and "开工门禁" in payload["additionalContext"])
-        except ValueError:
-            check("session_gate：输出合法 additionalContext（严格 schema 不多键）", False)
+        check("session_gate：纯文本状态行（strict schema 安全）",
+              out.startswith("[OPC 开工门禁]") and "{" not in out)
         rep = dict(install_session_gates(tmp))
         check("钩子安装：ZCode/Claude 两平台落地",
               "已装" in rep.get("ZCode", "") and "已装" in rep.get("Claude Code", ""))
@@ -2163,7 +2174,7 @@ if __name__ == "__main__":
         for m in acts:
             print("  -", m)
         for m in skipped:
-            print("  [历史区·未改]", m)
+            print("  [未改·原因见括注]", m)
         for i in issues:
             print("  [!]", i)
         print("[ok] 改名完成" + ("（含全文旧名改写与看板重生成）" if not issues else f"（遗留 {len(issues)} 项见上）"))
@@ -2173,7 +2184,7 @@ if __name__ == "__main__":
         for m in acts:
             print("  -", m)
         for m in skipped:
-            print("  [历史区·未改]", m)
+            print("  [未改·原因见括注]", m)
         if issues:
             print(f"[!] 门禁遗留 {len(issues)} 项：")
             for i in issues:

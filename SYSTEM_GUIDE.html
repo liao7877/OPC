@@ -188,7 +188,7 @@
       <li>命名空间全文扫描（所有 opc:// 引用可解析 + SKILL.md 相对链接断链校验）</li>
       <li>技能披露链接完整、实例↔模板 diff 无未登记差异、技能体量达标（P31）</li>
       <li>自愈先行：缺锚、缺链接、缺看板数据，检查前自动补齐（打印 [fix] 行）——新 clone 跑一次 doctor 即完成自举</li>
-      <li>**门禁自己长腿**（2026-08-31）：「要 agent 记得跑」的机制不算代码保证——<code>--install-hooks</code> 把 doctor 装进各平台 SessionStart 钩子（ZCode process 型 / Claude Code command 型，路径走项目变量跨 clone 有效），会话一开自动自检并以 additionalContext 注入状态；扫描面收口到组织文档面（代码里的路径示例不再误报烧 token），改名时全文件命中清单兜住代码路径依赖</li>
+      <li>**门禁自己长腿**（2026-08-31）：「要 agent 记得跑」的机制不算代码保证——<code>--install-hooks</code> 把 doctor 装进各平台 SessionStart 钩子（ZCode process 型 / Claude Code command 型，路径走项目变量跨 clone 有效），会话一开自动自检并把状态行注入会话上下文；扫描面收口到组织文档面（代码里的路径示例不再误报烧 token），改名时全文件命中清单兜住代码路径依赖</li>
     </ul>
     兜底是 <code>python opc_resolver.py --bootstrap</code> 一键自举（链接 + 钩子 + 数据 + 索引 + 服务自启）。背后还有 GitHub Actions 三平台 × 双 Python 版本矩阵 + 七个模块内置 selftest，每次提交全量验证。</div>
   <div class="land"><b>落点</b>「门禁即跨平台验收」：doctor 全绿 + selftest 全绿 + CI 矩阵全绿，才算改完。agent 的开工仪式和函数初始化一样可靠——这就是把 P30（三平台承诺）从口号变成每次提交的机器验证。</div>

@@ -40,7 +40,7 @@
 
 **反馈原意**：如果代码机制要靠 agent 去触发（比如 doctor 要 agent 记得跑），那它其实还是 L4 自觉，不算代码保证。
 
-**落地认识**：不依赖 agent 触发的执行面只有四个——常驻服务进程（全自动）、git 钩子（半自动，依赖提交动作）、OS 属性（只读/权限）、平台会话钩子（视平台）。doctor/bootstrap/`--append` 等「命令」全部重新定级为「被自动面调用的自愈核心」，不再当门禁话术。落地：`--install-hooks` 把 doctor 装进 ZCode/Claude Code 的 SessionStart（`--session-gate` 注入状态、永远 exit 0 知情不阻断），doctor 汇报钩子覆盖面，bootstrap 自动安装。
+**落地认识**：不依赖 agent 触发的执行面只有四个——常驻服务进程（全自动）、git 钩子（半自动，依赖提交动作）、OS 属性（只读/权限）、平台会话钩子（视平台）。doctor/bootstrap/`--append` 等「命令」全部重新定级为「被自动面调用的自愈核心」，不再当门禁话术。落地：`--install-hooks` 把 doctor 装进 ZCode/Claude Code 的 SessionStart（`--session-gate` 注入状态行、永远 exit 0 知情不阻断；输出为纯文本——两平台对钩子 JSON 均为 strict schema，裸文本是安全交集），doctor 汇报钩子覆盖面，bootstrap 自动安装。
 
 ## 2026-08-31 · 原则二：误报是实打实的 token 成本
 
@@ -80,3 +80,9 @@
 **过程**：`--install-hooks` 落地后第一次实跑 `--session-gate`，立刻报「散文裸路径失效：E0003-E0010」——实为工位卡里「批量入职 E0003-E0010 共 8 名员工」的范围写法被当成目录名。修法：连字符后紧跟另一个 ID 时是范围表达，正则加负向前瞻排除，自测钉死。
 
 **经验**：这正是原则二的现场复演——门禁的第一天价值不是抓到多少真问题，而是**它的误报会不会立刻消耗 agent**。误报修掉后门禁才配上线。
+
+## 2026-08-31 · 自审抓到自己的雷：跨平台选型要做「平台行为交集」
+
+**过程**：交付后按用户要求自审，抓到三处。① `--session-gate` 用 JSON `{"additionalContext":...}` 输出——Claude Code 的 SessionStart 要求 `hookSpecificOutput` 事件包装，ZCode 只认自己的键集，两平台对钩子 JSON 都是 strict schema（多余键=整条丢弃并标记 failed），我的形状在两边都可能被拒；修正为纯文本裸 stdout（Claude 对 SessionStart 裸文本直接注入上下文，ZCode 最坏静默忽略而 doctor 自愈照常发生），两平台安全交集。② `scan_skill_links` 漏同步围栏口径——技能文档代码块里的示例链接会误报断链，补围栏跳过+自测。③ CLI 把「代码命中」打成「历史区·未改」标签误导排查，改「未改·原因见括注」。
+
+**经验**：跨平台机制选型要在「各平台行为的交集」上做，选某一家特有的形状=在别家埋雷；立了新口径（文档面/围栏跳过）要立刻倒查**所有**同类扫描器——scan_skill_links 就是漏网的同口径点。交付后主动自审一轮不是多余动作。
