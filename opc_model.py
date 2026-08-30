@@ -28,6 +28,7 @@ opc_model.py — OPC 实体共享读取器（唯一解析点）
 from __future__ import annotations
 import argparse
 import json
+import locale
 import os
 import re
 import sys
@@ -188,40 +189,99 @@ def atomic_write(path, text):
 LOCK_STALE_SECONDS = 30.0   # 锁文件超过该秒数视为持有者崩溃残留，允许抢占
 
 
+def _pid_alive(pid):
+    """锁持有者进程存活判定（file_lock 抢占用）。
+    Windows 刻意不用 os.kill(pid, 0)：≤3.12 对任意非 CTRL 信号直接 TerminateProcess
+    （探测=误杀）；3.13 改为探测，但对「已退出而句柄未关」的进程不抛异常（死误判活）。
+    一律走 OpenProcess(SYNCHRONIZE)+WaitForSingleObject：终止进程内核对象必然已
+    signaled，判定无歧义。POSIX 用信号 0 惯例。"""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        SYNCHRONIZE = 0x00100000
+        WAIT_OBJECT_0 = 0
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(SYNCHRONIZE, False, pid)
+        if not h:
+            return False            # 打不开 = 进程不存在（无权限场景由 30s 过期兜底）
+        try:
+            # WAIT_OBJECT_0=进程已终止（signaled）；WAIT_TIMEOUT=仍在运行 → 活
+            return k32.WaitForSingleObject(h, 0) != WAIT_OBJECT_0
+        finally:
+            k32.CloseHandle(h)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True                 # 进程存在但无权发信号 = 活着
+    except OSError:
+        return False
+
+
+def _break_lock(lock_path):
+    """抢占/清理锁文件：优先 rename 旁路——部分沙箱（safe-delete fail-closed）与
+    Windows 文件占用会让 os.unlink 失败，rename 不触发删除语义通常仍可用；
+    挪走后的孤儿文件再尽力删，删不掉也无害（名字已不带锁语义）。"""
+    trash = f"{lock_path}.stolen.{os.getpid()}.{time.time_ns()}"
+    try:
+        os.rename(lock_path, trash)
+    except OSError:
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            return False
+        return True
+    try:
+        os.unlink(trash)
+    except OSError:
+        pass
+    return True
+
+
 @contextmanager
 def file_lock(path, timeout=10.0, poll=0.05):
-    """跨平台建议锁（纯标准库）：O_EXCL 锁文件 + 忙等超时 + 过期锁抢占。
-
-    用法：`with file_lock(target_path):` 锁文件为 target+".lock"。
+    """跨平台建议锁（纯标准库）：O_EXCL 锁文件 + 忙等超时 + 三重自愈抢占。
+    用法：`with file_lock(target_path):` 锁文件为 target+".lock"，内容=持有者 PID。
     约束：只约束「同样走本锁」的写方（机制层全部走；agent 侧用 --append 命令）；
     锁内写必须经 atomic_write 落盘，临界区保持极短。
-    """
+    抢占口径（2026-08-30 双机排查收口）：① mtime 超 30s（崩溃/卡死残留）；
+    ② 锁内 PID 已失活（持有者早退了没清理）——②不依赖时间，孤儿锁立即可抢；
+    抢占与释放均走 _break_lock（rename 旁路），沙箱拦 unlink 的环境不再永久死锁。"""
     lock_path = str(path) + ".lock"
     deadline = time.monotonic() + timeout
-    fd = None
+    acquired = False
     while True:
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             break
         except FileExistsError:
+            holder_dead = False
             try:
-                if time.time() - os.path.getmtime(lock_path) > LOCK_STALE_SECONDS:
-                    os.unlink(lock_path)      # 持有者崩溃残留，抢占（临界区短，风险有界）
-                    continue
+                with open(lock_path, encoding="utf-8") as fh:
+                    raw = fh.read().strip()
+                holder_dead = bool(raw) and not _pid_alive(int(raw))
+            except (OSError, ValueError):
+                pass                # 读不到/内容不是 PID（写入窗口）→ 只按 mtime 规则
+            try:
+                stale = time.time() - os.path.getmtime(lock_path) > LOCK_STALE_SECONDS
             except OSError:
-                pass                           # 锁刚好被释放，重试
+                stale = False       # 锁刚好被释放/挪走，重试
+            if (stale or holder_dead) and _break_lock(lock_path):
+                continue
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"获取锁超时（{timeout}s）：{lock_path}（他人持有且未过期）")
             time.sleep(poll)
+    acquired = True
     try:
         os.write(fd, str(os.getpid()).encode())
         yield
     finally:
         os.close(fd)
-        try:
-            os.unlink(lock_path)
-        except OSError:
-            pass
+        if acquired:
+            _break_lock(lock_path)  # 释放也走旁路：unlink 被环境拦截时不留死锁
 
 
 def locked_append(path, text):
@@ -253,6 +313,33 @@ def parse_company_args(argv):
                 raise SystemExit(f"[ERR] 参数 {flag} 缺少取值（示例：{flag} C001）")
             vals[flag] = argv[i + 1]
     return vals.get("--company"), vals.get("--dir")
+
+
+def _unquote_path(s):
+    """剥掉包在路径外的一层成对引号：cmd 桥接（MSYS→cmd / 各类 agent shell）
+    会把引号原样带进 argv（实测 '"E:\\OPC\\中文\\x.txt"' 逐字符进 Python），
+    os.path.exists 必然 False——中文路径因惯例被引号包裹而高频中招。
+    含引号的合法文件名不受影响：只剥「首尾恰好成对」的一层。"""
+    s = s.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        return s[1:-1]
+    return s
+
+
+def _decode_input(data):
+    """字节流 → 文本：UTF-8 优先、UTF-16、本机编码兜底。Windows 管道下 sys.stdin
+    默认走 ANSI 代码页（cp936/cp1252），而 agent/heredoc 喂进来的几乎总是 UTF-8——
+    按 locale 解会把中文读成乱码甚至异常，故从 buffer 拿字节自己解码。"""
+    for enc in ("utf-8", "utf-16", locale.getpreferredencoding(False)):
+        try:
+            return data.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _read_stdin_text():
+    return _decode_input(sys.stdin.buffer.read())
 
 
 def build_indexes(company_root):
@@ -970,6 +1057,33 @@ def selftest():
         locked_append(f, "第二块\n")
         locked_append(f, "第三块\n")
         check("locked_append 追加有序", f.read_text(encoding="utf-8") == "第一块\n第二块\n第三块\n")
+    # 锁自愈（2026-08-30 双机排查：持有者早退留孤儿锁 / 环境拦 unlink → 永久死锁）
+    check("pid 存活判定：自己活着", _pid_alive(os.getpid()) is True)
+    check("pid 存活判定：非法/不可能 PID 为死",
+          _pid_alive(0) is False and _pid_alive(-5) is False and _pid_alive(2**31 - 1) is False)
+    with tempfile.TemporaryDirectory() as tmp:
+        lockfile = os.path.join(tmp, "res.lock")
+        with file_lock(lockfile):
+            check("file_lock：持锁期间锁文件在且含持有者 PID",
+                  os.path.isfile(lockfile + ".lock")
+                  and Path(lockfile + ".lock").read_text(encoding="utf-8") == str(os.getpid()))
+        check("file_lock：正常释放后锁文件不残留", not os.path.exists(lockfile + ".lock"))
+        # 模拟孤儿锁：持有者早退没清理（内容=已失活 PID）→ 应立即被抢占，不等 30s 过期
+        Path(lockfile + ".lock").write_text(str(2**31 - 1), encoding="utf-8")
+        t0 = time.monotonic()
+        try:
+            with file_lock(lockfile, timeout=3.0):
+                check("file_lock：死 PID 孤儿锁立即抢占（不等过期）",
+                      time.monotonic() - t0 < 2.0)
+        except TimeoutError:
+            check("file_lock：死 PID 孤儿锁立即抢占（不等过期）", False)
+        check("file_lock：抢占后锁文件不残留", not os.path.exists(lockfile + ".lock"))
+        # 无 PID 口径（旧版本锁文件/写入窗口）：mtime 过期仍可抢占
+        Path(lockfile + ".lock").write_text("", encoding="utf-8")
+        old = time.time() - LOCK_STALE_SECONDS - 5
+        os.utime(lockfile + ".lock", (old, old))
+        with file_lock(lockfile, timeout=3.0):
+            check("file_lock：过期锁（空内容回退 mtime 口径）可抢占", True)
     # 技能发现：triggers/summary 结构化字段 + description 兜底解析
     with tempfile.TemporaryDirectory() as tmp:
         sk = Path(tmp) / "skills" / "demo"
@@ -1049,6 +1163,19 @@ def selftest():
               any(i["kind"] == "cold" and "冷门条目" in i["title"] for i in items))
         check("腐烂体检：疑似重复检出（dupe）",
               any(i["kind"] == "dupe" for i in items))
+    # --append 路径参数健壮性（2026-08-30 排查：cmd 桥接把引号原样带进 argv →
+    # 中文路径 exists=False → 误报「内容为空」且用户以为没写进去）
+    check("路径引号规整：成对双引号剥除",
+          _unquote_path('"E:\\OPC\\中文 目录\\块.txt"') == "E:\\OPC\\中文 目录\\块.txt")
+    check("路径引号规整：成对单引号剥除 + 空白容忍",
+          _unquote_path("  'C:\\日志.md'  ") == "C:\\日志.md")
+    check("路径引号规整：不成对不剥（合法文件名可含单个引号）",
+          _unquote_path("it's.md") == "it's.md" and _unquote_path("普通.md") == "普通.md")
+    import io
+    check("stdin 解码：UTF-8 字节流直读不乱码", _decode_input(io.BytesIO("中文内容".encode("utf-8")).read()) == "中文内容")
+    enc = locale.getpreferredencoding(False)
+    check("stdin 解码：本机编码兜底可解",
+          _decode_input(io.BytesIO("中文内容".encode(enc)).read()) == "中文内容")
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -1079,11 +1206,29 @@ def main():
         print("[ERR] 找不到 opc.toml（OPC 组织根）")
         return 1
     if a.append:
-        target, src = a.append
-        content = sys.stdin.read() if src == "-" else _read(Path(src))
-        if not content:
-            print("[ERR] 内容为空（文件不存在或 stdin 无输入）")
-            return 1
+        target, src = (_unquote_path(a.append[0]), _unquote_path(a.append[1]))
+        if src == "-":
+            content = _read_stdin_text()
+            if not content.strip():
+                print("[ERR] stdin 无输入（用法：内容 | python opc_model.py --append 目标 - ；"
+                      "或把内容写进文件传路径）")
+                return 1
+        else:
+            p = Path(src)
+            if not p.exists():
+                print(f"[ERR] 内容文件不存在：{src}\n"
+                      f"      路径含中文/空格时请整段加引号；若经 cmd 中转调用，"
+                      f"检查引号是否被原样传进了参数（可先 ls/echo 验证）")
+                return 1
+            try:
+                content = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError as e:
+                print(f"[ERR] 内容文件不是有效 UTF-8：{src}（{e}）——"
+                      f"请以 UTF-8 保存后重试（机制层全链路统一 UTF-8）")
+                return 1
+            if not content.strip():
+                print(f"[ERR] 内容文件为空：{src}")
+                return 1
         locked_append(target, content)
         print(f"[ok] 已锁内追加 {len(content)} 字符 -> {target}")
         return 0

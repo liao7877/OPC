@@ -1524,17 +1524,37 @@ def doctor(root=None, auto_fix=True):
     else:
         warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
-    # 3b. OPC 服务探活（决策 #18：巡检/通知/看板实时化全部由常驻服务承载；
-    #     机器级状态不自动拉起——CI/临时环境没有服务属正常，缺失仅提示）
+    # 3b. OPC 服务探活 + 根身份校验（决策 #18：巡检/通知/看板实时化全部由常驻服务承载；
+    #     机器级状态不自动拉起——CI/临时环境没有服务属正常，缺失仅提示。
+    #     2026-08-30 排查收口：多 clone/目录搬家后，端口上可能是伺服**别的根**的服务——
+    #     只探活不验身份会假绿（看板开着但永远不更新），故必须对 ping 的 root 字段。
+    #     自愈：自启项指向旧目录时就地重写（幂等）；运行中的旧进程由用户/agent 按提示处置）
     try:
         import opc_service
-        port = opc_service._service_cfg()["port"]
-        alive = opc_service.service_alive()   # 不传 port：感知启动时的端口顺延
-        if alive:
-            warns.append(f"OPC 服务在跑 ✓（http://127.0.0.1:{port}，看板实时化+巡检+通知）")
+        port, body = opc_service.service_probe()   # 不传 port：感知启动时的端口顺延
+        if port is not None:
+            svc_root = (body or {}).get("root") or ""
+            if not svc_root:
+                warns.append(f"OPC 服务在跑 ✓（http://127.0.0.1:{port}）"
+                             f"——但为旧版本（ping 无 root 字段），建议 taskkill /PID "
+                             f"{(body or {}).get('pid') or '?'} /F 后重启以启用根身份校验/静态缓存防护")
+            elif os.path.normcase(os.path.realpath(svc_root)) == os.path.normcase(os.path.realpath(root)):
+                warns.append(f"OPC 服务在跑 ✓（http://127.0.0.1:{port}，根一致，看板实时化+巡检+通知）")
+            else:
+                pid = (body or {}).get("pid") or "?"
+                warns.append(f"⚠️ 端口 {port} 上是**别的 OPC 根**的服务（serves {svc_root}）"
+                             f"——本根的看板/巡检不会更新！"
+                             f"处置：taskkill /PID {pid} /F（Windows）杀掉旧进程后重跑 bootstrap/服务；"
+                             f"若是目录搬家/多 clone 导致，确认要留哪一份")
         else:
             warns.append(f"OPC 服务未运行（巡检/通知/看板「同步」直算不会工作）"
                          f"→ 启动文件夹自启项，或 `python opc_service.py`；首次部署跑 --bootstrap")
+        # 自启项陈旧检查独立于运行中的服务：VBS/crontab 决定「下次开机起谁」——
+        # 目录搬家/多 clone 后指向旧目录，重启后就会悄悄伺服别的根（幂等重写自愈）
+        stale, detail = opc_service.startup_script_stale()
+        if stale:
+            opc_service.register_startup(opc_service._service_cfg()["port"])
+            warns.append(f"[fix] 自启项已重指向本根（原：{detail}；重启后生效）")
     except Exception:
         pass
 

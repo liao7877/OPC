@@ -413,7 +413,19 @@
     function doSync() {
       if (location.protocol === "http:" || location.protocol === "https:") {
         // 实时模式（经 opc_service 打开）：点同步=真重算，再取新数据
-        fetch("api/sync", { cache: "no-store" }).catch(function () {}).then(reloadData);
+        // 实时模式（经 opc_service 打开）：点同步=真重算（POST；GET /sync 已退役，
+        // 2026-08-30 排查：三页面漏改成 POST，按钮 405 静默失败 → 看板永远不更新）
+        fetch("api/sync", { method: "POST", cache: "no-store" })
+          .then(function (r) { return r.json().catch(function () { return { ok: false, error: "HTTP " + r.status }; }); })
+          .then(function (j) {
+            if (!j.ok) document.getElementById("genInfo").textContent =
+              "⚠️ 同步失败：" + (j.error || "未知错误") + "（OPC 服务未运行？跑 python opc_service.py）";
+          })
+          .catch(function () {
+            document.getElementById("genInfo").textContent =
+              "⚠️ 同步失败：连不上 OPC 服务（跑 python opc_service.py）";
+          })
+          .then(reloadData);
       } else { reloadData(); }  // file:// 降级：仅重读数据文件
     }
     document.getElementById("syncBtn").addEventListener("click", doSync);

@@ -79,6 +79,9 @@ run_boards.bat once                     # 可选：手动重建看板数据（bo
 python3 opc_resolver.py --selftest && python3 opc_model.py --selftest
 python3 opc_tickets.py --selftest && python3 opc_dashboards.py --selftest && python3 opc_patrol.py --selftest
 
+# —— 看板不同步时（新电脑 / 目录搬家 / 多份 clone）——
+python3 opc_resolver.py --doctor   # 服务探活含「根身份校验」：端口上是别的根的服务会点名 + 给处置命令；自启项指向旧目录则自动重写
+
 # —— 公司目录改名/迁移后（引用自愈）——
 python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公司 ID」扫描发现，幂等
 ```

@@ -166,8 +166,21 @@ class Tenant:
                         pass
         return latest
 
+    def _patrol_async(self):
+        """watch 触发的巡检异步化：巡检要拿跨进程锁（patrol-state.json.lock），
+        异常环境（沙箱拦 unlink / 持有者卡死）下锁等待会把串行调用拖满超时——
+        2026-08-30 双机排查：watch 串行跑 patrol，锁超时把整个监听循环冻死。
+        放独立线程后巡检再卡也只拖慢巡检自己，「数据变动即巡检」的时效保留
+        （决策 #18 不弱化）；兜底仍有 _patrol_loop 周期线程。"""
+        def _run():
+            try:
+                self.patrol()
+            except Exception as e:
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} patrol: {e!r}"
+        threading.Thread(target=_run, daemon=True).start()
+
     def _watch_loop(self):
-        """数据源监听：变动 → 重生成 → 即巡检（数据变动即巡检，决策 #18）。"""
+        """数据源监听：变动 → 重生成 → 异步巡检（决策 #18）。"""
         last = self._sources_mtime()
         while True:
             time.sleep(POLL_SECONDS)
@@ -182,7 +195,7 @@ class Tenant:
                 # mtime 变化若只是上轮生成自己写的数据文件（如 /sync 刚跑过）→ 只重定基线
                 if cur > self.last_gen_epoch + 1.0:
                     self.regenerate("watch")
-                    self.patrol()
+                    self._patrol_async()
                 last = self._sources_mtime()
             except Exception as e:
                 # 监听线程永不退出（单轮失败不断服务），但异常必须可查（防静默失能）
@@ -330,6 +343,7 @@ def make_handler(tenants, default_cid):
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
+            self._cc_done = True
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -338,7 +352,17 @@ def make_handler(tenants, default_cid):
             self.send_response(302)
             self.send_header("Location", loc)
             self.send_header("Content-Length", "0")
+            self._cc_done = True
             self.end_headers()
+
+        def end_headers(self):
+            # 静态产物禁启发式缓存：SimpleHTTPRequestHandler 只发 Last-Modified，
+            # 浏览器按「距修改时间的 10%」启发式缓存陈旧看板——/sync 重算后刷新
+            # 仍可能整段不回源，被误判为「同步无效」。API 已自带 no-store 不重发。
+            if not getattr(self, "_cc_done", False):
+                self._cc_done = True
+                self.send_header("Cache-Control", "no-cache")
+            super().end_headers()
 
         # ---- 动词 ----
 
@@ -348,6 +372,7 @@ def make_handler(tenants, default_cid):
                 return self._redirect(f"/{default_cid}/dashboard.html")
             if p == "/api/ping":
                 return self._json({"ok": True, "service": "opc-service",
+                                   "root": _ROOT, "pid": os.getpid(),   # 根身份：多份 clone 排查（doctor 用）
                                    "companies": sorted(tenants), "default": default_cid,
                                    "config": _service_cfg()})   # 实时读：改 opc.toml 后 ping 不误报旧值
             # API 分发：裸路径 /api/C001/...（agent/外部服务用）→ 按 CID 定租户；
@@ -417,21 +442,28 @@ def make_handler(tenants, default_cid):
 # 探活 / 自检
 # ---------------------------------------------------------------------------
 
-def service_alive(port=None):
-    """HTTP 探活：请求 /api/ping 并校验响应体——只测 TCP 会被占用端口的无关进程
-    误报「服务在跑」，也不感知端口顺延。未指定端口时扫 [port, port+10)（与启动
-    顺延口径一致）。0.5s 快速失败，不拖慢 doctor。"""
+def service_probe(port=None):
+    """探活并取回服务身份：返回 (port, payload)——payload 含 root/pid，可判断
+    端口上的服务是不是在伺服「本份」OPC 根。机器上可能同时存在多份 clone 的
+    服务（目录搬家/旧 clone 残留自启项），只测 TCP 或只看「有响应」会把别人家
+    的服务误当自己的——看板不同步的典型根因（2026-08-30 排查收口）。"""
     import urllib.request
     base = int(_service_cfg()["port"])
     ports = [port] if port else list(range(base, base + 10))
     for p in ports:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=0.5) as r:
-                if b"opc-service" in (r.read() or b""):
-                    return True
+                body = json.loads((r.read() or b"{}").decode("utf-8", errors="replace"))
+            if body.get("service") == "opc-service":
+                return p, body
         except Exception:
             continue
-    return False
+    return None, None
+
+
+def service_alive(port=None):
+    """布尔口径探活（兼容旧调用）；需要身份判断时用 service_probe。"""
+    return service_probe(port)[0] is not None
 
 
 def selftest():
@@ -480,6 +512,34 @@ def selftest():
 # ---------------------------------------------------------------------------
 # 自启（启动文件夹 .vbs：免管理员、隐藏窗口、删文件即卸载）
 # ---------------------------------------------------------------------------
+
+def startup_script_stale():
+    """自启项是否指向本根之外（目录搬家/多 clone 后的典型残留）。
+    返回 (stale, detail)。Windows 查启动文件夹 VBS；macOS/Linux 查 crontab 标记块。
+    stale=True 时重跑 register_startup 即自愈（两种后端都幂等重写）。"""
+    here = os.path.abspath(__file__)
+    if sys.platform.startswith("win"):
+        p = os.path.join(_startup_dir(), STARTUP_VBS)
+        if not os.path.isfile(p):
+            return False, "未注册"
+        try:
+            body = open(p, encoding="utf-8").read()
+        except OSError as e:
+            return False, f"读取失败：{e}"
+        if "opc_service.py" not in body.replace('"', ""):
+            return False, "内容不含 opc_service.py（非本服务自启项，不动）"
+        return (here not in body), f"VBS 指向其他位置（本根：{here}）"
+    import subprocess
+    try:
+        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout or ""
+    except OSError:
+        return False, "crontab 不可用"
+    lines = [ln for ln in cur.splitlines()
+             if ln.startswith("@reboot") and "opc_service.py" in ln]
+    if not lines:
+        return False, "未注册"
+    return (not any(here in ln for ln in lines)), f"@reboot 指向其他位置（本根：{here}）"
+
 
 def _startup_dir():
     return os.path.join(os.environ.get("APPDATA", ""),
@@ -558,10 +618,20 @@ def unregister_startup():
 
 def ensure_started(port=None, open_browser=False):
     """当场拉起服务（新 clone 零感知的关键：bootstrap 注册后立即生效，无需用户知道进程）。
-    已在跑则跳过（幂等）；CI 环境跳过（临时环境不应留驻留进程）。返回启动命令 or None。"""
+    已在跑则跳过（幂等）；CI 环境跳过（临时环境不应留驻留进程）。返回启动命令 or None。
+    端口上有**伺服别的 OPC 根**的服务（目录搬家/多 clone 残留）时明确告警——
+    这种情况下看板/巡检永远看不到本根的数据变化，静默跳过会让用户误判「同步坏了」。"""
     if os.environ.get("CI"):
         return None
-    if service_alive(port):
+    p, body = service_probe(port)
+    if p is not None:
+        svc_root = (body or {}).get("root") or "(旧版本服务，无 root 字段)"
+        if os.path.normcase(os.path.realpath(svc_root)) != os.path.normcase(os.path.realpath(_ROOT)):
+            print(f"[service] ⚠️ 端口 {p} 上已有一个 opc 服务，但它伺服的是别的 OPC 根：{svc_root}")
+            print(f"[service] ⚠️ 本根（{_ROOT}）的看板/巡检不会更新！处置：杀掉旧进程"
+                  f"（Windows: taskkill /PID {(body or {}).get('pid')} /F）后重跑本次命令；"
+                  f"并检查启动文件夹自启项是否指向旧目录")
+            return None
         return None
     import subprocess
     py = sys.executable or "python"
@@ -633,7 +703,9 @@ def main(argv=None):
     print(f"[service] 巡检兜底每 {cfg['patrol_interval_minutes']} 分钟 · "
           f"每日摘要 {cfg['digest_time']} · 通知通道 {cfg['notify_channels']}")
     for t in tenants.values():
-        t.regenerate("startup")
+        _ok, errs = t.regenerate("startup")
+        if errs:
+            t.last_error = "; ".join(errs)   # 启动失败别静默（pythonw 无控制台，/ping 可查）
         t.patrol()
         threading.Thread(target=t._watch_loop, daemon=True).start()
         threading.Thread(target=t._patrol_loop,
