@@ -164,14 +164,29 @@ def find(ctx):
                                     ref=t["id"], owner=t.get("owner") or ""))
 
     # 2) 认领缺口 + 3) 双账不一致（消费 dashboard 的核验告警，机器口径与生成器一致）
+    claimed = set()
     for w in warnings:
         msg = w.get("msg", "")
         m_ref = re.search(r"TSK\d{4,}|AFF\d{3,}", msg)
         ref = m_ref.group(0) if m_ref else ""
         if "未认领" in msg:
             ctx.findings.append(_mk(2, msg, ref=ref))
+            claimed.add(id(w))
         elif any(k in msg for k in ("未记", "非「进行中」", "已done", "仍未关", "不存在")):
             ctx.findings.append(_mk(3, msg, ref=ref))
+            claimed.add(id(w))
+
+    # 17) 看板告警兜底（2026-08-31 双告警教训：dashboard risks.warnings 里不被 2/3 号
+    #     关键词认领的告警（worklog 撞号 / 非工单填 ticket / deliverable 失效 / roster
+    #     未登记列 / 显示名不一致 / 事务类等）此前被静默丢弃——看板上挂着的告警巡检却
+    #     说无异常=发现链断裂。全量上报未认领项，保证「看板有的告警，巡检必报」；
+    #     ref 取 TSK/AFF 引用或消息指纹，处置仍交总管人工裁决（P29）。
+    for w in warnings:
+        if id(w) in claimed:
+            continue
+        msg = w.get("msg", "")
+        m_ref = re.search(r"TSK\d{4,}|AFF\d{3,}", msg)
+        ctx.findings.append(_mk(17, msg, ref=m_ref.group(0) if m_ref else msg[:60]))
 
     # 4) 脱期事务（机器可判定口径与生成器一致）
     for a in dd.get("affairs", []):
@@ -596,7 +611,10 @@ def selftest():
             ],
         }, fh, ensure_ascii=False)
     with open(os.path.join(tmp, "dashboard-data.js"), "w", encoding="utf-8") as fh:
-        json.dump({"risks": {"warnings": [{"scope": "核验", "msg": "E2 的工单 TSKD「x」未认领"}]},
+        json.dump({"risks": {"warnings": [
+                        {"scope": "核验", "msg": "E2 的工单 TSKD「x」未认领"},
+                        {"scope": "worklog", "msg": "E0001 worklog 重复 wid=W-X（热/归档范围内已存在，后者在看板覆盖前者）"},
+                    ]},
                    "affairs": [{"id": "AFF1", "title": "周报", "status": "active", "cadence": "每周",
                                 "owner": "E1", "overdue": True, "last_touched": "2026-08-01"}]},
                   fh, ensure_ascii=False)
@@ -617,6 +635,10 @@ def selftest():
     check("#4 脱期事务发现", any("AFF1" in m for m in msgs))
     check("#5 升级信箱 critical", any(f["no"] == 5 and f["severity"] == "critical" for f in ctx.findings))
     check("#2 认领缺口发现", any("未认领" in m for m in msgs))
+    check("#17 非 2/3 认领的看板告警兜底上报（撞号不被静默丢弃）",
+          any(f["no"] == 17 and "重复 wid" in f["msg"] for f in ctx.findings))
+    check("#17 已认领告警不重复上报",
+          not any(f["no"] == 17 and "未认领" in f["msg"] for f in ctx.findings))
     check("#9 僵尸工位卡发现", any("僵尸" in m for m in msgs))
     check("#10 数据陈旧发现", any("未刷新" in m for m in msgs))
     check("findings 结构化（kind/action/ref）", all(f.get("kind") and f.get("action") and "ref" in f for f in ctx.findings))
@@ -788,8 +810,30 @@ def run_once(company=None, dry=False, quiet=True):
         return _run_once_locked(ctx, dry, quiet)
 
 
+def sweep_tmp_orphans(base, max_age_hours=24):
+    """清扫原子写崩溃残留的孤儿临时文件（{name}.{pid}.{ns}.tmp，2026-08-31 实测
+    T001 残留两个）。只清超龄的——活跃写者的 tmp 是新鲜的，绝不误删。"""
+    pat = re.compile(r"\.\d+\.\d+\.tmp$")
+    n = 0
+    for dirpath, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for f in files:
+            if not pat.search(f):
+                continue
+            p = os.path.join(dirpath, f)
+            try:
+                if time.time() - os.path.getmtime(p) > max_age_hours * 3600:
+                    os.unlink(p)
+                    n += 1
+            except OSError:
+                pass
+    return n
+
+
 def _run_once_locked(ctx, dry, quiet):
     auto_refresh(ctx, dry)          # 数据自愈在前：find() 的工单类检查消费的是新鲜投影
+    if not dry:
+        sweep_tmp_orphans(ctx.base)  # 原子写孤儿残留例行清扫（超龄才清，静默）
     find(ctx)
     pre_open = set()
     if not dry and ctx.findings:

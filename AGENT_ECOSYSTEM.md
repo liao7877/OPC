@@ -20,7 +20,7 @@
 | 任意目录技能接入 | junction 到工作区级目录 | junction 到 `{项目}/.claude/skills/` | 待核实 | 待核实 |
 | **会话门禁钩子** | 待核实（无规范不盲写） | ✅ `SessionStart`/command（`.claude/settings.json`） | 待核实 | ✅ `SessionStart`/process（`.zcode/config.json`，schema 已核实） |
 
-> **会话门禁钩子（2026-08-31）**：开工门禁（doctor）的强制力来自平台 SessionStart 钩子——「要 agent 记得跑」的机制不算代码保证。统一入口 `python opc_resolver.py --install-hooks`（幂等增量合并，路径走 `${*_PROJECT_DIR}` 模板变量跨 clone 有效），钩子调 `--session-gate`：跑 doctor 自愈并把一行状态打到 stdout 注入会话上下文、永远 exit 0（知情不阻断；硬拦截仍由 pre-commit/pre-push/服务巡检承担）。输出刻意用纯文本——两平台对钩子 JSON 均为 strict schema 且事件包装键不同，裸文本是两边都安全的交集。未核实 schema 的平台不盲写，兜底 = git 门禁 + 服务巡检 + AGENTS 铁律。每实测一个新平台，把上表「待核实」改掉并补一节。
+> **会话门禁钩子（2026-08-31）**：开工门禁（doctor）的强制力来自平台 SessionStart 钩子——「要 agent 记得跑」的机制不算代码保证。统一入口 `python opc_resolver.py --install-hooks`（幂等刷新，脚本写 OPC 根绝对路径，当前工作区由 `${*_PROJECT_DIR}` 传入；下层员工/团队工作区也可用），钩子调 `--session-gate`：跑 doctor 自愈并把状态行与当前 workspace 的直属上级规范链打到 stdout，永远 exit 0（知情不阻断；硬拦截仍由 pre-commit/pre-push/服务巡检承担）。输出刻意用纯文本——两平台对钩子 JSON 均为 strict schema 且事件包装键不同，裸文本是两边都安全的交集。组织变动由常驻服务按 roster 被动重建规范链；`--ensure-links` 只是初始化/手动兜底。未核实 schema 的平台不盲写，兜底 = git 门禁 + 服务巡检 + AGENTS 铁律。每实测一个新平台，把上表「待核实」改掉并补一节。
 
 ---
 

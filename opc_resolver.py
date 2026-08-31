@@ -297,10 +297,17 @@ def resolve(uri):
             cfg = load_company(cid)
             return _require_dir(cfg.home_abs, uri)
         if len(parts) == 1:
+            if parts[0] == "agents":
+                # 公司级规范文件（四级规范链，2026-08-31）：opc://company:C001/agents -> {home}/AGENTS.md
+                return _require_file(os.path.join(load_company(cid).home_abs, "AGENTS.md"), uri)
             p = load_company(cid)._abs(parts[0])
             if not os.path.exists(p):
                 raise FileNotFoundError(f"失效引用：{uri} -> {p}（不存在）")
             return p
+        if len(parts) == 3 and parts[0] == "team" and parts[2] == "agents":
+            # 团队级规范文件：规范链生成端写 team/<TID>/agents，解析端必须与之对齐。
+            team_dir = resolve_entity(cid, "team", parts[1])
+            return _require_file(os.path.join(team_dir, "AGENTS.md"), uri)
         return resolve_entity(cid, parts[0], parts[1], sub=parts[2:])
 
     if uri.startswith("opc://org"):
@@ -960,25 +967,43 @@ def _write_json(path, obj):
         fh.write("\n")
 
 
-def session_gate(root=None):
-    """会话启动门禁（供各平台 SessionStart 钩子调用，永远 exit 0）：
-    跑 doctor（含自愈），把一行状态打到 stdout 注入会话上下文——agent 开工
-    第一眼就看到门禁状态与未过项。语义是「知情」而非「阻断」：会话级硬阻断会
-    卡死用户，真正的拦截仍由 pre-commit/pre-push/服务巡检承担。
-    输出刻意用**纯文本**而非 JSON（2026-08-31 自审修正）：两平台对钩子 JSON 都是
-    strict schema（多余键即整条丢弃并标记 failed），且各自的事件包装键不同
-    （Claude Code 要 hookSpecificOutput 包装）；而 SessionStart 的裸 stdout 文本
-    两边都安全——Claude 直接注入上下文，ZCode 最坏静默忽略，doctor 自愈照常发生。"""
-    import contextlib
-    import io
+def _agent_chain_docs(workspace, root=None):
+    """从 workspace/AGENTS.md 的直属声明沿链向上解析，返回 [(uri,path,text)]（根→直属上级）。
+    当前层 AGENTS 由平台原生加载，故不返回；seen 防环/防重复。"""
     root = root or _find_root()
-    buf = io.StringIO()
+    cur = os.path.join(os.path.abspath(workspace or root or ""), "AGENTS.md")
+    seen, docs = set(), []
+    while os.path.isfile(cur):
+        decls = _read_chain_decls(cur)
+        if len(decls) != 1:
+            break
+        uri = decls[0]
+        if uri in seen:
+            raise ValueError(f"规范链循环：{uri}")
+        seen.add(uri)
+        p = resolve(uri)
+        text = opc_model.read_text_warn(p)
+        docs.append((uri, p, text))
+        cur = p
+    docs.reverse()
+    return docs
+
+
+def session_gate(root=None, workspace=None):
+    """会话启动门禁（永远 exit 0）：doctor 自愈 + 上级规范链内容注入。
+    当前层 AGENTS 由平台原生加载；这里只注入根→直属上级，每个 URI 一次（seen 防重复/环）。
+    这把「请 agent 沿链补读」升级为平台钩子自动注入；无钩子平台由原生层级 AGENTS
+    （Codex）或 AGENT_ECOSYSTEM 兜底适配。输出用纯文本（跨平台 strict JSON 安全集）。"""
+    import contextlib
+    import io as _io
+    root = root or _find_root()
+    workspace = workspace or root
+    buf = _io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
             errs, warns = doctor(root, auto_fix=True)
     except Exception as e:
-        # 缺 manifest / 环境异常也要优雅降级：钩子永远 exit 0
-        print(f"[OPC 开工门禁] 自检异常：{e}——确认当前目录是否为 OPC 根（含 opc.toml）")
+        print(f"[OPC 开工门禁] 自检异常：{e}——确认当前目录是否属于 OPC 根")
         return 0
     if errs:
         print(f"[OPC 开工门禁] {len(errs)} 项未过 ✗ 先修复再开工：{errs[0]}；"
@@ -986,12 +1011,20 @@ def session_gate(root=None):
     else:
         svc = next((w for w in warns if "OPC 服务" in w), "")
         print(f"[OPC 开工门禁] 全绿 ✓ 可开工（OPC 根：{root}）。{svc}")
+    try:
+        docs = _agent_chain_docs(workspace, root)
+        if docs:
+            print(f"[OPC 规范链自动注入] 上级 {len(docs)} 层；当前层 AGENTS 由平台原生加载。")
+            for uri, path, text in docs:
+                print(f"\n===== 上级规范 {uri}（{path}）=====\n{text.rstrip()}")
+    except Exception as e:
+        print(f"[OPC 规范链异常] {e}（本轮只加载当前层；跑 --ensure-links 修复）")
     return 0
 
-
 def install_session_gates(root=None):
-    """把开工门禁装进各平台会话钩子（幂等：含 --session-gate 即跳过，只增量
-    合并不动其他配置；路径走平台模板变量 ${*_PROJECT_DIR}，跨机器/跨 clone 有效）。"""
+    """把开工门禁装进各平台 SessionStart（幂等刷新本机制条目、不动其他配置）。
+    执行脚本写本次 bootstrap 的根绝对路径（员工目录没有 opc_resolver.py）；当前工作区由
+    ${*_PROJECT_DIR} 作为 --workspace 传入，gate 据此注入正确规范链。目录搬家重跑 bootstrap 刷新。"""
     root = root or _find_root()
     report = []
     # ZCode：工作区 .zcode/config.json，process 型免 shell（官方 schema 2026-08-31 核实）
@@ -1000,27 +1033,25 @@ def install_session_gates(root=None):
     hooks = cfg.setdefault("hooks", {})
     hooks["enabled"] = True
     entries = hooks.setdefault("events", {}).setdefault("SessionStart", [])
-    if any("--session-gate" in json.dumps(e) for e in entries):
-        report.append(("ZCode", "已存在，跳过"))
-    else:
-        entries.append({"hooks": [{"type": "process", "command": "python",
-                                   "args": ["${ZCODE_PROJECT_DIR}/opc_resolver.py", "--session-gate"],
-                                   "timeoutMs": 60000,
-                                   "statusMessage": "OPC 开工门禁自检"}]})
-        _write_json(zc_path, cfg)
-        report.append(("ZCode", "已装（SessionStart/process，.zcode/config.json）"))
+    entries[:] = [e for e in entries if "--session-gate" not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "process", "command": "python",
+                               "args": [os.path.join(root, "opc_resolver.py"), "--session-gate",
+                                        "--workspace", "${ZCODE_PROJECT_DIR}"],
+                               "timeoutMs": 60000,
+                               "statusMessage": "OPC 开工门禁+规范链加载"}]})
+    _write_json(zc_path, cfg)
+    report.append(("ZCode", "已刷新（SessionStart/process，根脚本+workspace）"))
     # Claude Code：.claude/settings.json，command 型（官方稳定 schema）
     cc_path = os.path.join(root, ".claude", "settings.json")
     cfgc = _read_json_or(cc_path, {})
     entries_c = cfgc.setdefault("hooks", {}).setdefault("SessionStart", [])
-    if any("--session-gate" in json.dumps(e) for e in entries_c):
-        report.append(("Claude Code", "已存在，跳过"))
-    else:
-        entries_c.append({"matcher": "", "hooks": [
-            {"type": "command",
-             "command": 'python "${CLAUDE_PROJECT_DIR}/opc_resolver.py" --session-gate'}]})
-        _write_json(cc_path, cfgc)
-        report.append(("Claude Code", "已装（SessionStart/command，.claude/settings.json）"))
+    entries_c[:] = [e for e in entries_c if "--session-gate" not in json.dumps(e)]
+    script = os.path.join(root, "opc_resolver.py")
+    entries_c.append({"matcher": "", "hooks": [
+        {"type": "command",
+         "command": f'python "{script}" --session-gate --workspace "${{CLAUDE_PROJECT_DIR}}"'}]})
+    _write_json(cc_path, cfgc)
+    report.append(("Claude Code", "已刷新（SessionStart/command，根脚本+workspace）"))
     report.append(("WorkBuddy/Codex", "会话钩子规范待核实（不盲写）→ 兜底：git 门禁+服务巡检+AGENTS 铁律"))
     return report
 
@@ -1039,6 +1070,256 @@ def session_gate_coverage(root=None):
                 pass
         out.append((name, "--session-gate" in body))
     return out
+
+
+# ---------------------------------------------------------------------------
+# 四级规范链（2026-08-31 用户拍板）：根 AGENTS ← 公司 AGENTS ← 团队 AGENTS ← 员工 AGENTS。
+# 引用链是组织结构的**派生投影**（唯一真相 = roster「团队」列，一人一团队），禁止手写——
+# 组织变动后跑 --ensure-links 即重建；防重复铁律 = 每个文件恰好一条声明、只指直接上级。
+# ---------------------------------------------------------------------------
+
+_CHAIN_SECTION = "## 规范链"
+_CHAIN_RE = re.compile(r"^[-*>]\s*上级规范[：:]\s*(opc://\S+)\s*$")
+_CHAIN_NOTE = ("> 本层已含全部上层规范内容（沿链补读一次即可，按需渐进加载）；"
+               "禁止在本文件内再直接引用上层规范——防重复（规范链铁律）。\n")
+
+
+def _read_chain_decls(path):
+    """读 AGENTS.md 的全部「上级规范」声明（围栏内是示例不计；文件缺失返回 []）。"""
+    if not os.path.isfile(path):
+        return []
+    return [m.group(1) for _, ln in _iter_prose_lines(path)
+            for m in [_CHAIN_RE.match(ln)] if m]
+
+
+def _roster_team_map(cfg, root=None):
+    """roster「团队」列 → {员工ID: 团队ID 或 None}（一人一团队唯一权威；缺 roster 返回 {}）。"""
+    try:
+        path = cfg.roster_abs
+    except Exception:
+        path = os.path.join(cfg.home_abs, "roster.md")
+    try:
+        lines = opc_model.read_text_warn(path).splitlines()
+    except Exception:
+        return {}
+    hdr_i, cols = -1, []
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if s.startswith("|") and "员工" in s and "ID" in s:
+            cols = [c.strip() for c in s.strip("|").split("|")]
+            hdr_i = i
+            break
+    if hdr_i < 0:
+        return {}
+    def col(*names):
+        for i, c in enumerate(cols):
+            if any(n in c for n in names):
+                return i
+        return -1
+    eid_i, team_i = col("员工", "ID"), col("团队")
+    if eid_i < 0 or team_i < 0:
+        return {}
+    emp_prefix = entity_types(root).get("employee", "E")
+    out = {}
+    for ln in lines[hdr_i + 2:]:          # 跳过表头与分隔行
+        s = ln.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if len(cells) <= max(eid_i, team_i) or set(cells[0]) <= set("-: "):
+            continue
+        eid = opc_model.strip_inline_comment(cells[eid_i])
+        if not re.match(rf"^{emp_prefix}\d+$", eid):
+            continue
+        team = opc_model.strip_inline_comment(cells[team_i])
+        out[eid] = team if team and team not in ("-", "—") else None
+    return out
+
+
+def _write_chain_section(path, uri):
+    """写入/替换 AGENTS.md 的「规范链」声明节（幂等；位置=首个一级标题之后，无则文末）。
+    全程持锁 + 原子写。返回 True 表示内容有变更。"""
+    new_section = [_CHAIN_SECTION + "\n", _CHAIN_NOTE, f"- 上级规范：{uri}\n", "\n"]
+    with opc_model.file_lock(path):
+        try:
+            text = open(path, encoding="utf-8").read()
+        except FileNotFoundError:
+            text = _CHAIN_SECTION + "\n" + _CHAIN_NOTE + f"- 上级规范：{uri}\n"
+            opc_model.atomic_write(path, text)
+            return True
+        lines = text.splitlines(keepends=True)
+        sec_start = sec_end = None
+        for i, ln in enumerate(lines):
+            if ln.strip() == _CHAIN_SECTION:
+                sec_start = i
+                j = i + 1
+                while j < len(lines) and not lines[j].startswith("## "):
+                    j += 1
+                sec_end = j
+                break
+        if sec_start is not None:
+            if lines[sec_start:sec_end] == new_section:
+                return False
+            lines[sec_start:sec_end] = new_section
+        else:
+            ins = len(lines)
+            for i, ln in enumerate(lines[:6]):
+                if ln.startswith("# "):
+                    ins = i + 1
+                    break
+            lines[ins:ins] = ["\n"] + new_section
+        opc_model.atomic_write(path, "".join(lines))
+        return True
+
+
+def _write_team_agents_skeleton(tdir, tid):
+    """团队缺 AGENTS.md 时创建骨架（引用 team.md；成员清单不在此维护——roster 唯一权威）。"""
+    p = os.path.join(tdir, "AGENTS.md")
+    sk = (f"# {tid} | 团队规范\n\n"
+          "> 本文件是团队级规范入口（四级规范链的团队层）：协作口径、团队级技能披露（skills/）。\n"
+          "> 成员归属唯一权威在 roster「团队」列，本文件不维护成员清单。\n"
+          "> 平台适配：CLAUDE.md 用一行 `@AGENTS.md` 导入。\n")
+    changed = False
+    with opc_model.file_lock(p):
+        if not os.path.isfile(p):
+            opc_model.atomic_write(p, sk)
+            changed = True
+    cp = os.path.join(tdir, "CLAUDE.md")
+    if not os.path.isfile(cp):
+        with opc_model.file_lock(cp):
+            if not os.path.isfile(cp):
+                opc_model.atomic_write(cp, "@AGENTS.md\n")
+                changed = True
+    return changed
+
+
+def sync_agent_chains(root=None, dry_run=False, cid=None):
+    """按 roster 派生重建四级规范链。返回 (actions, issues)。
+    规则：公司→opc://org/agents；团队→opc://company:<cid>/agents；
+    员工→(团队存在? opc://company:<cid>/team/<TID>/agents : 公司直挂)。
+    roster 登记的团队不存在/缺 team.md 时降级公司直挂并记 issue（绝不写悬空声明）。
+    cid 可限定单租户，供 OPC 服务避免多公司并发时交叉重写。"""
+    root = root or _find_root()
+    actions, issues = [], []
+    reg = entity_types(root)
+    emp_prefix, team_prefix = reg.get("employee", "E"), reg.get("team", "T")
+    for company_id in all_company_ids(root):
+        if cid is not None and company_id.upper() != str(cid).upper():
+            continue
+        current_cid = company_id
+        try:
+            cfg = load_company(current_cid, root)
+        except Exception as e:
+            issues.append(f"{current_cid}: 加载失败 {e}")
+            continue
+        home = cfg.home_abs
+        teams = {}
+        if os.path.isdir(home):
+            for e in sorted(os.listdir(home)):
+                m = re.match(rf"^{team_prefix}(\d+)(?:-.+)?$", e)
+                if m and os.path.isdir(os.path.join(home, e)) \
+                        and os.path.isfile(os.path.join(home, e, "team.md")):
+                    teams[team_prefix + m.group(1)] = os.path.join(home, e)
+        # 公司层
+        comp_agents = os.path.join(home, "AGENTS.md")
+        if os.path.isfile(comp_agents):
+            if not dry_run and _write_chain_section(comp_agents, "opc://org/agents"):
+                actions.append(f"{current_cid}: 公司规范链 → opc://org/agents")
+        else:
+            issues.append(f"{current_cid}: 公司根缺 AGENTS.md，规范链未建")
+        # 团队层（缺骨架先补）
+        for tid, tdir in sorted(teams.items()):
+            ta = os.path.join(tdir, "AGENTS.md")
+            if not os.path.isfile(ta):
+                if dry_run:
+                    actions.append(f"{current_cid}/{tid}: 将创建团队 AGENTS.md 骨架")
+                elif _write_team_agents_skeleton(tdir, tid):
+                    actions.append(f"{current_cid}/{tid}: 已创建团队 AGENTS.md 骨架")
+            if not dry_run and not os.path.isfile(os.path.join(tdir, "CLAUDE.md")):
+                with opc_model.file_lock(os.path.join(tdir, "CLAUDE.md")):
+                    if not os.path.isfile(os.path.join(tdir, "CLAUDE.md")):
+                        opc_model.atomic_write(os.path.join(tdir, "CLAUDE.md"), "@AGENTS.md\n")
+                        actions.append(f"{current_cid}/{tid}: 已补 Claude 规范入口")
+            if not dry_run and _write_chain_section(ta, f"opc://company:{current_cid}/agents"):
+                actions.append(f"{current_cid}/{tid}: 团队规范链 → opc://company:{current_cid}/agents")
+        # 员工层
+        tmap = _roster_team_map(cfg, root)
+        if os.path.isdir(home):
+            for e in sorted(os.listdir(home)):
+                m = re.match(rf"^{emp_prefix}(\d+)(?:-.+)?$", e)
+                edir = os.path.join(home, e)
+                if not m or not os.path.isdir(edir):
+                    continue
+                ea = os.path.join(edir, "AGENTS.md")
+                if not os.path.isfile(ea):
+                    continue
+                eid = emp_prefix + m.group(1)
+                tid = tmap.get(eid)
+                if tid and tid not in teams:
+                    issues.append(f"{current_cid}/{eid}: roster 团队 {tid} 不存在或缺 team.md，规范链暂挂公司层")
+                    tid = None
+                if eid not in tmap:
+                    issues.append(f"{current_cid}/{eid}: roster 未登记，规范链按公司直挂")
+                uri = (f"opc://company:{current_cid}/team/{tid}/agents" if tid
+                       else f"opc://company:{current_cid}/agents")
+                if not dry_run and _write_chain_section(ea, uri):
+                    actions.append(f"{current_cid}/{eid}: 规范链 → {uri}")
+    return actions, issues
+
+
+def audit_agent_chains(root=None):
+    """check_links 第⑥项：规范链完整性——缺失/重复/漂移/悬空全部报错（跑 --ensure-links 修复）。"""
+    root = root or _find_root()
+    issues = []
+    if root is None:
+        return issues
+    reg = entity_types(root)
+    emp_prefix, team_prefix = reg.get("employee", "E"), reg.get("team", "T")
+    org_agents = "opc://org/agents"
+
+    def check_one(path, expected, label):
+        decls = _read_chain_decls(path)
+        if not os.path.isfile(path):
+            issues.append(f"规范链缺失：{label} 无 AGENTS.md（跑 python opc_resolver.py --ensure-links 重建）")
+        elif len(decls) == 0:
+            issues.append(f"规范链缺失：{label} 无「上级规范」声明（跑 --ensure-links 重建）")
+        elif len(decls) > 1:
+            issues.append(f"规范链重复：{label} 有 {len(decls)} 条声明，防重复铁律只允许一条（跑 --ensure-links 修复）")
+        elif decls[0] != expected:
+            issues.append(f"规范链漂移：{label} 应指向 {expected}，实为 {decls[0]}（跑 --ensure-links 修复）")
+
+    for cid in all_company_ids(root):
+        try:
+            cfg = load_company(cid, root)
+        except Exception as e:
+            issues.append(f"规范链：加载 {cid} 失败 {e}")
+            continue
+        home = cfg.home_abs
+        check_one(os.path.join(home, "AGENTS.md"), org_agents, f"{cid}/AGENTS.md")
+        tmap = _roster_team_map(cfg, root)
+        if os.path.isdir(home):
+            for e in sorted(os.listdir(home)):
+                edir = os.path.join(home, e)
+                if not os.path.isdir(edir):
+                    continue
+                tm = re.match(rf"^{team_prefix}(\d+)(?:-.+)?$", e)
+                em = re.match(rf"^{emp_prefix}(\d+)(?:-.+)?$", e)
+                if tm and os.path.isfile(os.path.join(edir, "team.md")):
+                    tid = team_prefix + tm.group(1)
+                    check_one(os.path.join(edir, "AGENTS.md"),
+                              f"opc://company:{cid}/agents", f"{cid}/{tid}/AGENTS.md")
+                elif em:
+                    eid = emp_prefix + em.group(1)
+                    tid = tmap.get(eid)
+                    if tid and not os.path.isdir(os.path.join(home, f"{tid}-")) \
+                            and not [d for d in os.listdir(home)
+                                     if d.startswith(tid + "-") and os.path.isfile(os.path.join(home, d, "team.md"))]:
+                        issues.append(f"规范链悬空：{cid}/{eid} roster 团队 {tid} 无对应目录")
+                        continue
+                    expected = (f"opc://company:{cid}/team/{tid}/agents" if tid
+                                else f"opc://company:{cid}/agents")
+                    check_one(os.path.join(edir, "AGENTS.md"), expected, f"{cid}/{eid}/AGENTS.md")
+    return issues
 
 
 def check_links(cid=None, root=None):
@@ -1100,6 +1381,10 @@ def check_links(cid=None, root=None):
     # ⑤ SKILL.md 相对链接（2026-08-29）：L2 路由层的 Markdown 相对链接此前不在
     #    扫描范围，断链静默通过——L3 附属文件里的链接不递归（控制范围，只管路由层）
     issues += scan_skill_links(root)
+
+    # ⑥ 规范链完整性（2026-08-31）：四级 AGENTS 引用链是 roster 派生物——
+    #    缺失/重复/漂移/悬空都报（组织变动后跑 --ensure-links 重建）
+    issues += audit_agent_chains(root)
 
     return issues
 
@@ -1327,9 +1612,10 @@ def _skill_layers(company_dir):
 
 
 def ensure_links(root=None):
-    """同步全部 OS 级链接（幂等，可反复跑）：
+    """同步全部 OS 级链接 + 规范链（幂等，可反复跑）：
     ① 稳定锚 companies/<cid> -> 真实公司目录（复用 sync_links）；
-    ② 各层技能披露 {层}/.workbuddy/skills -> {层}/skills（按 manifest [platform.*] 配置）。
+    ② 各层技能披露 {层}/.workbuddy/skills -> {层}/skills（按 manifest [platform.*] 配置）；
+    ③ 四级规范链 AGENTS.md 声明（按 roster 派生，2026-08-31）——组织变动后跑本命令即重建。
     返回 (ok_list, err_list)。scripts/link-company 与未来 watcher 都只调本函数。"""
     root = root or _find_root()
     if root is None:
@@ -1347,6 +1633,12 @@ def ensure_links(root=None):
             ok.append(f"技能披露 {os.path.relpath(link, root)} -> skills/")
         except Exception as e:
             err.append(f"{link}: 建链失败：{e}")
+    try:
+        acts, issues = sync_agent_chains(root)
+        ok += [f"规范链: {a}" for a in acts]
+        err += [f"规范链（异常）: {i}" for i in issues]
+    except Exception as e:
+        err.append(f"规范链同步失败：{e}")
     return ok, err
 
 
@@ -2078,7 +2370,7 @@ def selftest():
               out.startswith("[OPC 开工门禁]") and "{" not in out)
         rep = dict(install_session_gates(tmp))
         check("钩子安装：ZCode/Claude 两平台落地",
-              "已装" in rep.get("ZCode", "") and "已装" in rep.get("Claude Code", ""))
+              "已刷新" in rep.get("ZCode", "") and "已刷新" in rep.get("Claude Code", ""))
         check("钩子安装：未核实平台明示兜底不盲写", "待核实" in rep.get("WorkBuddy/Codex", ""))
         zc = json.load(open(os.path.join(tmp, ".zcode", "config.json"), encoding="utf-8"))
         check("钩子安装：ZCode enabled+process 型+模板变量",
@@ -2087,14 +2379,69 @@ def selftest():
               and any("${ZCODE_PROJECT_DIR}" in a
                       for a in zc["hooks"]["events"]["SessionStart"][0]["hooks"][0]["args"]))
         rep2 = dict(install_session_gates(tmp))
-        check("钩子安装：幂等不重复注入",
-              "已存在" in rep2.get("ZCode", "") and "已存在" in rep2.get("Claude Code", ""))
+        zc2 = json.load(open(os.path.join(tmp, ".zcode", "config.json"), encoding="utf-8"))
+        cc2_pre = json.load(open(os.path.join(tmp, ".claude", "settings.json"), encoding="utf-8"))
+        check("钩子安装：幂等刷新不重复注入",
+              "已刷新" in rep2.get("ZCode", "") and "已刷新" in rep2.get("Claude Code", "")
+              and len(zc2["hooks"]["events"]["SessionStart"]) == 1
+              and len(cc2_pre["hooks"]["SessionStart"]) == 1)
         cc = json.load(open(os.path.join(tmp, ".claude", "settings.json"), encoding="utf-8"))
         cc["model"] = "keep-me"
         _write_json(os.path.join(tmp, ".claude", "settings.json"), cc)
         install_session_gates(tmp)
         cc2 = json.load(open(os.path.join(tmp, ".claude", "settings.json"), encoding="utf-8"))
         check("钩子安装：不动平台配置其他键", cc2.get("model") == "keep-me")
+    # 13) 四级规范链（2026-08-31 用户拍板）：roster 派生 / 防重复 / 组织变动自愈
+    with tempfile.TemporaryDirectory() as tmp:
+        def w(rel, text):
+            fp = os.path.join(tmp, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        w("opc.toml", '[company.C001]\nhome = "C001-甲公司"\nroster = "E0000-AI员工-总管/roster.md"\n\n[entity_types]\nemployee = "E"\nteam = "T"\nproject = "P"\n')
+        w("AGENTS.md", "# 组织根规范\n\n宪法内容\n")
+        w("C001-甲公司/AGENTS.md", "# C001-甲公司\n\n公司规范\n")
+        w("C001-甲公司/T001-开发团队/team.md", "# T001\n\n> 成员以 roster 为准\n")
+        w("C001-甲公司/E0000-AI员工-总管/AGENTS.md", "# E0000 | 总管\n\n人设\n")
+        w("C001-甲公司/E0001-甲员工/AGENTS.md", "# E0001 | 甲员工\n\n人设\n")
+        w("C001-甲公司/E0002-乙员工/AGENTS.md", "# E0002 | 乙员工\n\n人设\n")
+        w("C001-甲公司/E0000-AI员工-总管/roster.md",
+          "| 员工 ID | 路径 | 岗位 | 状态 | 团队 |\n|---|---|---|---|---|\n"
+          "| E0000 | E0000-AI员工-总管/ | 总管 | 在职 | - |\n"
+          "| E0001 | E0001-甲员工/ | 甲 | 在职 | T001 |\n"
+          "| E0002 | E0002-乙员工/ | 乙 | 在职 | - |\n")
+        acts, iss = sync_agent_chains(tmp)
+        check("规范链：无团队员工公司直挂", any("E0002" in a and a.endswith("opc://company:C001/agents") for a in acts))
+        check("规范链：团队员工挂团队层", any("E0001" in a and "/team/T001/agents" in a for a in acts))
+        check("规范链：团队缺骨架自动补建", any("T001" in a and "骨架" in a for a in acts))
+        check("规范链：公司层指向根", any(a.startswith("C001: 公司规范链") for a in acts))
+        check("规范链：同步后审计零问题", audit_agent_chains(tmp) == [])
+        # 真实加载语义：员工当前层由平台加载，gate 只注入根→公司→团队，且每层一次
+        old_root = _find_root
+        try:
+            globals()["_find_root"] = lambda: tmp
+            chain = _agent_chain_docs(os.path.join(tmp, "C001-甲公司", "E0001-甲员工"), tmp)
+            direct = _agent_chain_docs(os.path.join(tmp, "C001-甲公司", "E0002-乙员工"), tmp)
+        finally:
+            globals()["_find_root"] = old_root
+        check("规范链：团队员工自动注入根/公司/团队三层且无重复",
+              [u for u, _, _ in chain] == ["opc://org/agents", "opc://company:C001/agents",
+                                            "opc://company:C001/team/T001/agents"])
+        check("规范链：直属员工只注入根/公司两层（不跨级重复）",
+              [u for u, _, _ in direct] == ["opc://org/agents", "opc://company:C001/agents"])
+        # 组织变动：E0001 调出团队 → 审计报漂移 → 再同步自愈
+        w("C001-甲公司/E0000-AI员工-总管/roster.md",
+          "| 员工 ID | 路径 | 岗位 | 状态 | 团队 |\n|---|---|---|---|---|\n"
+          "| E0001 | E0001-甲员工/ | 甲 | 在职 | - |\n")
+        drift = audit_agent_chains(tmp)
+        check("规范链：调出团队后审计报漂移", any("E0001" in i and "漂移" in i for i in drift))
+        sync_agent_chains(tmp)
+        check("规范链：再同步自愈归零", audit_agent_chains(tmp) == [])
+        # 防重复：手工塞第二条声明 → 审计必报
+        with open(os.path.join(tmp, "C001-甲公司", "E0002-乙员工", "AGENTS.md"), "a", encoding="utf-8") as fh:
+            fh.write("- 上级规范：opc://company:C001/agents\n")
+        dup = audit_agent_chains(tmp)
+        check("规范链：重复声明必报（防重复铁律）", any("E0002" in i and "重复" in i for i in dup))
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -2107,7 +2454,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
     ap.add_argument("--check", action="store_true", help="校验命名空间路径自洽（含全文扫描）")
     ap.add_argument("--ensure-links", action="store_true",
-                    help="同步全部 OS 级链接（稳定锚 + 各层技能披露；幂等，clone/改名后跑一次）")
+                    help="同步稳定锚、各层技能披露与四级 AGENTS 规范链（幂等；clone/改名/组织变动后可兜底）")
     ap.add_argument("--sync-links", action="store_true",
                     help="--ensure-links 的别名（兼容 scripts/link-company 与既有文档）")
     ap.add_argument("--company", default=None, help="公司 id（--check 默认遍历全部公司）")
@@ -2131,7 +2478,8 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true",
                     help="配合 --rename-entity/--heal-entity-refs：只演示将做什么，不落盘")
     ap.add_argument("--session-gate", action="store_true",
-                    help="会话启动门禁（供各平台 SessionStart 钩子调用）：跑 doctor 自愈并以 additionalContext 注入状态，永远 exit 0")
+                    help="会话启动门禁（SessionStart 调用）：doctor 自愈 + 按当前 workspace 自动注入根到直属上级规范，纯文本状态行，永远 exit 0")
+    ap.add_argument("--workspace", default=None, help="--session-gate 当前工作区（平台钩子传入）")
     ap.add_argument("--install-hooks", action="store_true",
                     help="把会话门禁装进各平台 SessionStart 钩子（幂等；支持矩阵见 AGENT_ECOSYSTEM.md）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（临时目录，不碰真实数据）")
@@ -2192,7 +2540,7 @@ if __name__ == "__main__":
             sys.exit(1)
         print("[ok] 自愈完成：链接/散文旧名/roster/看板全部同步")
     elif a.session_gate:
-        sys.exit(session_gate())
+        sys.exit(session_gate(workspace=a.workspace))
     elif a.install_hooks:
         for plat, st in install_session_gates():
             print(f"[hooks] {plat}: {st}")

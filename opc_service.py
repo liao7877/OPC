@@ -120,6 +120,14 @@ class Tenant:
             # 只在完成时置的话，生成期间 watch 采样到中间态 mtime 会排队再跑一遍全量重算
             self.last_gen_epoch = time.time()
             errs = []
+            # 组织结构是规范链的唯一真相：roster/团队变动被 watch 捕获后，
+            # 先重建公司→团队→员工的直属声明，再生成看板；不要求 agent 另跑命令。
+            try:
+                _chain_actions, chain_issues = opc_resolver.sync_agent_chains(
+                    self.pctx.cfg.root, cid=self.cid)
+                errs.extend(f"agent-chain: {e}" for e in chain_issues)
+            except Exception as e:
+                errs.append(f"agent-chain: {e}")
             for name, fn, ctx in (("tickets", opc_tickets.generate, self.tctx),
                                   ("dashboards", opc_dashboards.generate_all, self.dctx)):
                 try:
