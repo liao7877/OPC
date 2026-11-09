@@ -1787,7 +1787,8 @@ def diff_template(root=None, cid=None):
             if os.path.basename(dirpath) == "workbench":
                 dirs[:] = [d for d in dirs if not _ENTITY.match(d)]
             for fn in files:
-                if _EXCL_FILE.search(fn) or fn.endswith(".tmp"):
+                if (_EXCL_FILE.search(fn) or fn.endswith(".tmp")
+                        or (fn.startswith(".opc-") and fn.endswith(".lock"))):
                     continue
                 fp = os.path.join(dirpath, fn)
                 rel = os.path.relpath(fp, base).replace(os.sep, "/")
@@ -2040,7 +2041,7 @@ def _repair(root):
     return fixed
 
 
-def doctor(root=None, auto_fix=True):
+def doctor(root=None, auto_fix=True, machine_state=True):
     """系统初始化自检（init gate）：检查「系统正常跑」的前置条件。
 
     返回 (errors, warnings)。用于 agent 开工前门禁——全绿才进入业务。
@@ -2127,12 +2128,17 @@ def doctor(root=None, auto_fix=True):
                          f"→ 启动文件夹自启项，或 `python opc_service.py`；首次部署跑 --bootstrap")
         # 自启项陈旧检查独立于运行中的服务：VBS/crontab 决定「下次开机起谁」——
         # 目录搬家/多 clone 后指向旧目录，重启后就会悄悄伺服别的根（幂等重写自愈）
-        stale, detail = opc_service.startup_script_stale()
-        if stale:
-            opc_service.register_startup(opc_service._service_cfg()["port"])
-            warns.append(f"[fix] 自启项已重指向本根（原：{detail}；重启后生效）")
-    except Exception:
-        pass
+        if machine_state and not os.environ.get("CI"):
+            stale, detail = opc_service.startup_script_stale()
+            if stale and auto_fix:
+                opc_service.register_startup(opc_service._service_cfg()["port"])
+                warns.append(f"[fix] 自启项已重指向本根（原：{detail}；重启后生效）")
+            elif stale:
+                warns.append(f"自启项陈旧（{detail}）；只读检查未修改机器状态")
+        else:
+            warns.append("CI/离线检查：跳过机器级自启项修改")
+    except Exception as exc:
+        warns.append(f"OPC 服务状态检查失败：{exc}")
 
     # 4. 命名空间全文扫描（核心，失效即阻断）
     iss = check_links()
@@ -2250,8 +2256,8 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
 
     # ⑤ OPC 服务自启项 + 当场拉起（决策 #18：唯一机器级副作用；新 clone 零感知——
     #    用户不需要知道这个进程存在，bootstrap 后看板/巡检/通知即全部生效。
-    #    heartbeat 参数名保留兼容旧口径；CI 环境只注册不拉起（ensure_started 护栏））
-    if heartbeat and cids:
+    #    heartbeat 参数名保留兼容旧口径；CI 环境不注册、不拉起）
+    if heartbeat and cids and not os.environ.get("CI"):
         import opc_service   # 运行时惰性导入（服务依赖本模块，避免环）
         try:
             p = opc_service.register_startup(opc_service._service_cfg()["port"])
@@ -2267,6 +2273,8 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
             print(f"[init] OPC 服务启动失败：{e}")
     elif not cids:
         print("[init] 无公司，跳过服务自启与看板重建")
+    elif os.environ.get("CI"):
+        print("[init] CI 环境：跳过机器级服务注册与启动")
 
     # 会话门禁钩子（2026-08-31）：开工门禁不靠 agent「记得跑 doctor」，
     # 装进各平台 SessionStart（幂等，未核实 schema 的平台明确标注兜底）
@@ -2276,7 +2284,7 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
     except Exception as e:
         print(f"[init] 会话门禁钩子安装失败（不影响其他机制，可手动 --install-hooks）：{e}")
 
-    errs, ws = doctor(root, auto_fix=True)
+    errs, ws = doctor(root, auto_fix=True, machine_state=heartbeat)
     errs = init_errors + errs
     print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
           + ("" if heartbeat and cids else "（未挂服务自启：--no-heartbeat）"))

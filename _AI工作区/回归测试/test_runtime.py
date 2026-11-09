@@ -175,6 +175,57 @@ class HttpTests(unittest.TestCase):
         self.assertFalse(service._same_origin({'Origin':'https://localhost:8765','Host':'localhost:8765'}))
 
 
+class IsolationTests(unittest.TestCase):
+    def test_doctor_does_not_register_startup_in_ci_or_offline(self):
+        with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(resolver, '_load_toml', return_value={}))
+            for name, value in [('push_guard_issues', []), ('session_gate_coverage', []), ('check_links', []), ('private_entities', {}), ('check_disclosure_links', []), ('diff_template', {})]:
+                stack.enter_context(patch.object(resolver, name, return_value=value))
+            stack.enter_context(patch.object(service, 'service_probe', return_value=(None, None)))
+            stale=stack.enter_context(patch.object(service, 'startup_script_stale', return_value=(True, 'fixture')))
+            register=stack.enter_context(patch.object(service, 'register_startup'))
+            for ci, machine_state in [('true', True), ('', False)]:
+                with patch.dict(os.environ, {'CI':ci}):
+                    errors, notes=resolver.doctor(tmp, auto_fix=False, machine_state=machine_state)
+                    self.assertEqual(errors, [])
+                    self.assertTrue(any('跳过机器级' in note for note in notes))
+            stale.assert_not_called(); register.assert_not_called()
+            with patch.dict(os.environ, {'CI':''}):
+                errors, notes=resolver.doctor(tmp, auto_fix=False)
+                self.assertTrue(any('只读检查未修改' in note for note in notes))
+                register.assert_not_called()
+
+    def test_bootstrap_ci_skips_machine_registration(self):
+        with patch.dict(os.environ, {'CI':'true'}), patch.object(resolver, 'all_company_ids', return_value=['C001']), patch.object(resolver.subprocess, 'run', return_value=NS(returncode=0, stdout='', stderr='')), patch.object(resolver, 'install_session_gates', return_value=[]), patch.object(resolver, 'doctor', return_value=([], [])), patch.object(service, 'register_startup') as register, patch.object(service, 'ensure_started') as started:
+            self.assertEqual(resolver.bootstrap(str(ROOT))[0], [])
+            register.assert_not_called(); started.assert_not_called()
+
+    def test_bootstrap_offline_preserves_doctor_isolation(self):
+        with patch.object(resolver, 'all_company_ids', return_value=[]), patch.object(resolver.subprocess, 'run', return_value=NS(returncode=0, stdout='', stderr='')), patch.object(resolver, 'install_session_gates', return_value=[]), patch.object(resolver, 'doctor', return_value=([], [])) as doctor:
+            self.assertEqual(resolver.bootstrap(str(ROOT), heartbeat=False)[0], [])
+            doctor.assert_called_once_with(str(ROOT), auto_fix=True, machine_state=False)
+
+    def test_template_diff_ignores_runtime_locks_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); company=root/'company'; template=root/'company-template'
+            company.mkdir(); template.mkdir()
+            for base in (company, template): (base/'AGENTS.md').write_text('fixture', encoding='utf-8')
+            (company/'.opc-kb-transaction.lock').write_text('active', encoding='utf-8')
+            (company/'requirements.lock').write_text('dependency', encoding='utf-8')
+            with patch.object(resolver, '_load_toml', return_value={'company':{'C001':{}}}), patch.object(resolver, 'load_company', return_value=NS(home_abs=str(company))), patch.object(resolver, 'entity_types', return_value={'employee':'E'}):
+                result=resolver.diff_template(tmp)
+            self.assertEqual(result['unregistered'], ['requirements.lock'])
+            self.assertTrue((company/'.opc-kb-transaction.lock').exists())
+
+    def test_codepages_not_misdetected_as_utf16(self):
+        for enc, sample in [('cp1252','café'), ('gbk','中文内容')]:
+            with patch.object(model.locale, 'getpreferredencoding', return_value=enc):
+                self.assertEqual(model._decode_input(sample.encode(enc)),sample)
+                self.assertEqual(model._decode_input('中文'.encode('utf-8')),'中文')
+        for enc in ['utf-16', 'utf-8-sig']:
+            self.assertEqual(model._decode_input('中文'.encode(enc)), '中文')
+
+
 class StartupTests(unittest.TestCase):
     def test_macos_plist(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(service.sys,'platform','darwin'), patch.object(service,'_ROOT',tmp), patch.object(service,'_launch_agent_path',return_value=Path(tmp)/'service.plist'), patch.object(service,'_startup_command',return_value=['/python with spaces/python','/opc/service.py']), patch.dict(os.environ, {'CI':'true'}):
@@ -202,7 +253,7 @@ class StartupTests(unittest.TestCase):
             serve.assert_called_once()
 
     def test_bootstrap_does_not_hide_failures(self):
-        with patch.object(resolver, 'all_company_ids', return_value=['C001']), patch.object(resolver.subprocess, 'run', return_value=NS(returncode=1, stdout='failure', stderr='')), patch.object(resolver, 'install_session_gates', return_value=[]), patch.object(resolver, 'doctor', return_value=([], [])), patch.object(service, 'register_startup', side_effect=RuntimeError('registration failure')), patch.object(service, 'ensure_started') as started:
+        with patch.dict(os.environ, {'CI':''}), patch.object(resolver, 'all_company_ids', return_value=['C001']), patch.object(resolver.subprocess, 'run', return_value=NS(returncode=1, stdout='failure', stderr='')), patch.object(resolver, 'install_session_gates', return_value=[]), patch.object(resolver, 'doctor', return_value=([], [])), patch.object(service, 'register_startup', side_effect=RuntimeError('registration failure')), patch.object(service, 'ensure_started') as started:
             errors, _ = resolver.bootstrap(str(ROOT))
             self.assertEqual(len(errors),4)
             started.assert_called_once()
@@ -220,4 +271,7 @@ class StartupTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     unittest.main(verbosity=2)

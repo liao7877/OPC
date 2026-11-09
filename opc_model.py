@@ -562,10 +562,12 @@ def _unquote_path(s):
 
 
 def _decode_input(data):
-    """字节流 → 文本：UTF-8 优先、UTF-16、本机编码兜底。Windows 管道下 sys.stdin
+    """字节流 → 文本：带 BOM 的 UTF-16、UTF-8、本机编码兜底。Windows 管道下 sys.stdin
     默认走 ANSI 代码页（cp936/cp1252），而 agent/heredoc 喂进来的几乎总是 UTF-8——
     按 locale 解会把中文读成乱码甚至异常，故从 buffer 拿字节自己解码。"""
-    for enc in ("utf-8", "utf-16", locale.getpreferredencoding(False)):
+    # 无 BOM 的偶数字节 ANSI 输入也可能被 UTF-16 接受，必须先确认签名。
+    encodings = (["utf-16"] if data.startswith((b"\xff\xfe", b"\xfe\xff")) else [])
+    for enc in encodings + ["utf-8-sig", locale.getpreferredencoding(False)]:
         try:
             return data.decode(enc)
         except (UnicodeDecodeError, LookupError):
@@ -1504,9 +1506,11 @@ def selftest():
           _unquote_path("it's.md") == "it's.md" and _unquote_path("普通.md") == "普通.md")
     import io
     check("stdin 解码：UTF-8 字节流直读不乱码", _decode_input(io.BytesIO("中文内容".encode("utf-8")).read()) == "中文内容")
-    enc = locale.getpreferredencoding(False)
-    check("stdin 解码：本机编码兜底可解",
-          _decode_input(io.BytesIO("中文内容".encode(enc)).read()) == "中文内容")
+    from unittest.mock import patch
+    for enc, sample in (("cp1252", "café"), ("gbk", "中文内容")):
+        with patch.object(locale, "getpreferredencoding", return_value=enc):
+            check(f"stdin 解码：{enc} 代码页兜底可解", _decode_input(sample.encode(enc)) == sample)
+    check("stdin 解码：UTF-16 BOM 可解", _decode_input("中文内容".encode("utf-16")) == "中文内容")
 
     # ---- worklog 门禁（2026-08-31 双告警治本层）----
     def gate(content, pool=()):
