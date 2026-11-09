@@ -30,6 +30,9 @@ opc_patrol.py —— 公司巡检器（机制层，OPC 根单例）
 调度：由 OPC 服务进程内调用 run_once()（常规），本 CLI 仅手动应急用。
 """
 
+import opc_runtime
+opc_runtime.ensure_supported()
+
 import os
 import sys
 import re

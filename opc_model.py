@@ -26,6 +26,9 @@ opc_model.py — OPC 实体共享读取器（唯一解析点）
 """
 
 from __future__ import annotations
+
+import opc_runtime
+opc_runtime.ensure_supported()
 import argparse
 import datetime
 import hashlib
@@ -343,6 +346,24 @@ def file_lock(path, timeout=10.0, poll=0.05):
         if acquired:
             _break_lock(lock_path, token=token)
 
+
+_generation_state = threading.local()
+
+@contextmanager
+def generation_lock(company):
+    key = str(Path(company).resolve())
+    held = getattr(_generation_state, "held", set())
+    if key in held:
+        yield
+        return
+    lock = Path(company) / ".opc-data" / "generation"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with file_lock(lock, timeout=60):
+        _generation_state.held = held | {key}
+        try:
+            yield
+        finally:
+            _generation_state.held = held
 
 def locked_append(path, text):
     """锁内追加：读 → 拼 → 原子替换，全程持锁（worklog/台账等追加型写路径的标准姿势）。

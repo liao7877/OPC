@@ -28,6 +28,8 @@ import os
 import re
 import shutil
 import sys
+from opc_runtime import ensure_supported
+ensure_supported()
 import tomllib
 import subprocess
 
@@ -265,6 +267,34 @@ def _require_file(path, what):
     return path
 
 
+class PrivateEntityUnavailable(FileNotFoundError):
+    """A declared private entity is intentionally absent from this checkout."""
+
+def private_entities(root=None):
+    root = root or _find_root()
+    data = _load_toml(os.path.join(root, "opc.toml"))
+    declarations = data.get("private_entities", {})
+    if not isinstance(declarations, dict):
+        raise ValueError("private_entities must be a table")
+    for key, item in declarations.items():
+        if (not re.fullmatch(r"[A-Z]\d{3}/[a-z_]+/[A-Z]\d+", key)
+                or not isinstance(item, dict)
+                or item.get("availability") != "optional"
+                or not isinstance(item.get("reason"), str) or not item["reason"].strip()):
+            raise ValueError(f"Invalid private entity declaration: {key}")
+    return declarations
+
+def private_reference(uri, root=None):
+    prefix = "opc:" + "//company:"
+    if not uri.startswith(prefix):
+        return None
+    cid, _, tail = uri[len(prefix):].partition("/")
+    parts = tail.split("/")
+    if len(parts) < 2:
+        return None
+    item = private_entities(root).get("/".join([cid] + parts[:2]))
+    return item if isinstance(item, dict) else None
+
 def resolve_entity(cid, etype, eid, sub=None):
     """opc://company:C001/<type>/<id>[/<sub...>] -> 绝对路径。子路径逐级校验存在。"""
     cfg = load_company(cid)
@@ -288,6 +318,9 @@ def resolve_entity(cid, etype, eid, sub=None):
         if len(hits) > 1:
             raise ValueError(f"实体 {etype}:{eid} 目录歧义：{home} 下多个匹配 {hits}（请改用唯一前缀）")
         if not hits:
+            declaration = private_entities(cfg.root).get(f"{cid}/{etype}/{eid}", {})
+            if declaration.get("availability") == "optional" and declaration.get("reason"):
+                raise PrivateEntityUnavailable(f"私有实体未挂载：{cid}/{etype}/{eid}；原始资料未恢复")
             raise FileNotFoundError(
                 f"未找到实体 {etype}:{eid}（扫描 {home} 无匹配 {eid}-*）")
         p = _require_dir(_safe_path(home, hits[0]), f"opc://company:{cid}/{etype}/{eid}")
@@ -389,7 +422,7 @@ def scan_refs(root):
     - 不可解码文件（GBK 等）以 latin-1 兜底读取而非静默跳过——门禁不假绿
     """
     refs = {}
-    skip_dirs = {".git", "node_modules", ".workbuddy"}
+    skip_dirs = {".git", "node_modules", ".workbuddy", "_AI工作区", ".opc-data", ".opc-sync"}
     exts = DOC_EXTS
     for dirpath, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in skip_dirs]
@@ -625,7 +658,7 @@ def scan_stale_dir_refs(root=None):
 _HEAL_PROTECT_DIRS = {"memory", "archive"}          # 历史留痕区目录名（目录树任一层命中即排除）
 _HEAL_PROTECT_FILES = {"worklog.md"}                # 历史留痕文件名
 _HEAL_SKIP_DIRS = {".git", ".workbuddy", "node_modules", "companies",
-                   ".zcode", "company-template"}    # 非组织文档/受管锚/模板母版
+                   ".zcode", "company-template", "_AI工作区", ".opc-data", ".opc-sync"}    # 非组织文档/受管锚/模板母版
 _HEAL_SKIP_EXT_GENERATED = ("-data.js", "tasks-data.json")
 _DIRNAME_CHARS = r"[A-Za-z0-9_\u4e00-\u9fff\-]"     # 与散文扫描同口径
 
@@ -1395,6 +1428,8 @@ def check_links(cid=None, root=None):
             continue    # 模板建司占位符（create-company 问卷回填），不算失效（P31 打样约定）
         try:
             resolve(uri)
+        except PrivateEntityUnavailable:
+            continue  # Explicit optional-private declaration; ordinary missing files still fail.
         except Exception as e:
             # 生成产物例外（与 ① 同口径）：tasks_data 是 run_boards 产物，
             # clone 后首跑前不存在属正常，不算失效引用（源目录在即可）
@@ -1803,7 +1838,7 @@ def diff_template(root=None, cid=None):
 # 相对实例根的技能目录；E0000* 按总管 ID 前缀匹配（决策 #17），模板侧固定 E0000-AI员工-总管
 _SYNC_SKILLS = (
     "skills/ticket-system", "skills/worklog-discipline",
-    "skills/concurrent-work", "skills/patrol",
+    "skills/concurrent-work", "skills/patrol", "skills/privacy-publish",
     "E0000*/skills/dispatch-sop", "E0000*/skills/mechanism-sop", "E0000*/skills/ticket-split",
 )
 
@@ -1925,23 +1960,51 @@ def _hook_installed(root):
     return False
 
 
+def _git_local(root, *args):
+    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=10)
+
+def _hooks_dir(root):
+    result = _git_local(root, "rev-parse", "--git-path", "hooks")
+    if result.returncode:
+        return None
+    value = result.stdout.strip()
+    return value if os.path.isabs(value) else os.path.join(root, value)
+
 def install_hook(root=None):
-    """安装 pre-commit 门禁（自举化）：把 scripts/pre-commit 复制到 .git/hooks/
-    并加执行位。幂等（覆盖写）。返回 (ok, msg)。"""
+    """Install both guards, preserving unrelated custom hooks."""
     root = root or _find_root()
-    src = os.path.join(root, "scripts", "pre-commit")
-    if not os.path.isfile(src):
-        return False, f"找不到 {src}"
-    hooks_dir = os.path.join(root, ".git", "hooks")
-    os.makedirs(hooks_dir, exist_ok=True)
-    dst = os.path.join(hooks_dir, "pre-commit")
-    with open(src, "rb") as f:
-        data = f.read()
-    with open(dst, "wb") as f:
-        f.write(data)
-    if not sys.platform.startswith("win"):
-        os.chmod(dst, 0o755)
-    return True, dst
+    directory = _hooks_dir(root)
+    if not directory:
+        return False, "非 Git 检出：跳过机器级 hooks"
+    os.makedirs(directory, exist_ok=True)
+    for name in ("pre-commit", "pre-push"):
+        src, dst = os.path.join(root, "scripts", name), os.path.join(directory, name)
+        data = open(src, "rb").read()
+        old = open(dst, "rb").read() if os.path.isfile(dst) else b""
+        if old and old != data and b"OPC" not in old:
+            return False, f"保留自定义 {name}；需要合并 OPC 门禁"
+        if old != data:
+            with open(dst, "wb") as f:
+                f.write(data)
+        if not sys.platform.startswith("win"):
+            os.chmod(dst, 0o755)
+    if _git_local(root, "config", "--get", "opc.publicRemote").returncode:
+        if _git_local(root, "config", "opc.publicRemote", "origin").returncode:
+            return False, "公开远程配置失败"
+    return True, directory
+
+def push_guard_issues(root):
+    directory = _hooks_dir(root)
+    if directory is None:
+        return []
+    for name in ("pre-commit", "pre-push"):
+        path = os.path.join(directory, name)
+        expected = open(os.path.join(root, "scripts", name), "rb").read()
+        if not os.path.isfile(path) or open(path, "rb").read() != expected:
+            return [f"{name} 未安装或版本陈旧；运行 --bootstrap"]
+        if not sys.platform.startswith("win") and not os.access(path, os.X_OK):
+            return [f"{name} 缺少执行权限"]
+    return []
 
 
 def _repair(root):
@@ -1953,7 +2016,7 @@ def _repair(root):
     ok, err = ensure_links(root)
     fixed += [f"OS 级链接：{m}" for m in ok if "无需改动" not in m]
     fixed += [f"OS 级链接（异常）：{m}" for m in err]
-    if not _hook_installed(root):
+    if not _hook_installed(root) or push_guard_issues(root):
         hok, hmsg = install_hook(root)
         if hok:
             fixed.append(f"pre-commit 门禁已装：{hmsg}")
@@ -2023,6 +2086,8 @@ def doctor(root=None, auto_fix=True):
     else:
         warns.append("pre-commit 门禁未装（提交前不拦截失效引用）→ 跑 `python opc_resolver.py --bootstrap`")
 
+    errors.extend(push_guard_issues(root))
+
     # 3a. 会话门禁钩子覆盖面（2026-08-31）：开工门禁的强制力来自平台会话钩子，
     #     不靠 agent「记得跑 doctor」；未覆盖仅提示（安装是显式动作，不自动改平台配置）
     try:
@@ -2075,6 +2140,15 @@ def doctor(root=None, auto_fix=True):
         errors.append(f"命名空间存在 {len(iss)} 处失效引用 → 跑 `python opc_resolver.py --check` 查看并修")
     else:
         warns.append("命名空间全文扫描自洽 ✓")
+
+    for key, declaration in private_entities(root).items():
+        try:
+            cid, etype, eid = key.split("/")
+            resolve_entity(cid, etype, eid)
+        except PrivateEntityUnavailable:
+            warns.append(f"私有实体 {key} 未挂载（显式声明；资料未恢复，不能访问其交付物）")
+        except Exception as exc:
+            errors.append(f"私有实体声明异常 {key}：{exc}")
 
     # 5. OS 级链接完整性（稳定锚已在第 2 项；这里查各层技能披露，缺失即阻断——防门禁假绿）
     disc = check_disclosure_links(root)
@@ -2156,17 +2230,22 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
     print("[init] OPC 自举开始……")
     py = sys.executable or "python"
     cids = all_company_ids(root)
+    init_errors = []
 
     # ① ② doctor 自愈段统一做（幂等，结果随终检打印）；这里先补数据与索引：
     for cid in cids:
         for mod in ("opc_tickets.py", "opc_dashboards.py"):
             r = subprocess.run([py, os.path.join(root, mod), "--company", cid],
-                               cwd=root, capture_output=True, text=True, check=False)
+                               cwd=root, capture_output=True, text=True, check=False, timeout=120)
+            if r.returncode:
+                init_errors.append(f"{mod} --company {cid} 失败（退出码 {r.returncode}）")
             tail = (r.stdout or r.stderr or "").strip().splitlines()
             print(f"[init] {mod} --company {cid} ->", "ok" if r.returncode == 0
                   else f"FAILED（{tail[-1] if tail else r.returncode}）")
     r = subprocess.run([py, os.path.join(root, "opc_model.py"), "--sync-index"],
-                       cwd=root, capture_output=True, text=True, check=False)
+                       cwd=root, capture_output=True, text=True, check=False, timeout=120)
+    if r.returncode:
+        init_errors.append(f"opc_model --sync-index 失败（退出码 {r.returncode}）")
     print("[init] opc_model --sync-index ->", "ok" if r.returncode == 0 else "FAILED")
 
     # ⑤ OPC 服务自启项 + 当场拉起（决策 #18：唯一机器级副作用；新 clone 零感知——
@@ -2177,11 +2256,15 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
         try:
             p = opc_service.register_startup(opc_service._service_cfg()["port"])
             print(f"[init] OPC 服务自启已挂：{p}")
-            started = opc_service.ensure_started()
-            print("[init] OPC 服务已当场拉起 ✓（巡检/通知/看板实时化即刻生效）" if started
-                  else "[init] OPC 服务已在跑或 CI 环境——跳过拉起")
         except Exception as e:
-            print(f"[init] OPC 服务注册/拉起失败（不影响本地使用，可手动 `python opc_service.py --register`）：{e}")
+            init_errors.append(f"自启注册失败：{e}")
+            print(f"[init] 自启注册失败（当场启动仍将独立尝试）：{e}")
+        try:
+            started = opc_service.ensure_started()
+            print("[init] OPC 服务已拉起并通过身份探活" if started else "[init] OPC 服务已在跑或 CI 环境")
+        except Exception as e:
+            init_errors.append(f"OPC 服务启动失败：{e}")
+            print(f"[init] OPC 服务启动失败：{e}")
     elif not cids:
         print("[init] 无公司，跳过服务自启与看板重建")
 
@@ -2194,6 +2277,7 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
         print(f"[init] 会话门禁钩子安装失败（不影响其他机制，可手动 --install-hooks）：{e}")
 
     errs, ws = doctor(root, auto_fix=True)
+    errs = init_errors + errs
     print(f"[init] 自举完成：{'全绿 ✓' if not errs else f'{len(errs)} 项未过（见上）'}"
           + ("" if heartbeat and cids else "（未挂服务自启：--no-heartbeat）"))
     return errs, ws

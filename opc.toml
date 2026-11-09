@@ -59,3 +59,8 @@ project = "P"
 # 接新平台（如 Claude Code）只加一段配置，零代码改动。
 [platform.workbuddy]
 skill_link = ".workbuddy/skills"   # 相对各层目录（公司根/员工/团队，凡含 skills/ 的层自动覆盖）
+
+# Declared private entities may be absent; no fake files are generated.
+[private_entities."C001/project/P0005"]
+availability = "optional"
+reason = "私有商业项目不随仓库分发；保留历史引用，资料尚未挂载"

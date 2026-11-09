@@ -58,3 +58,16 @@ patrol-pending.md
 
 # 商业私密项目（含域名资产、支付渠道调研、资质核查；属个人商业信息，不入库、不发布）
 C001-AI自动化公司/P0005-算命网站变现项目/
+
+# AI process material is local; portable synthetic regressions are versioned.
+_AI工作区/*
+!_AI工作区/回归测试/
+
+# Machine-local platform settings contain absolute paths and are regenerated.
+.zcode/
+.claude/settings.local.json
+
+# Private user-facing review reports remain local.
+OPC项目体检报告-*.md
+OPC问题修复交付-*.md
+OPC复查与同步-*.md

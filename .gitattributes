@@ -15,3 +15,5 @@
 
 # pre-commit 钩子无扩展名，必须 LF（/bin/sh 直跑）
 scripts/pre-commit text eol=lf
+
+scripts/pre-push text eol=lf

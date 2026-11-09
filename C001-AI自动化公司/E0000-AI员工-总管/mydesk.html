@@ -197,7 +197,9 @@
         // deliverable_href 由生成器换算为相对本页的纯路径；页面不再拼 ../
         deliv = w.deliverable_valid && w.deliverable_href
           ? '<span class="badge" title="' + esc(w.deliverable) + '"><a href="' + esc(w.deliverable_href) + '">📎 交付物</a></span>'
-          : '<span class="badge bad">📎 交付物路径失效</span>';
+          : w.deliverable_state === "private_unmounted"
+            ? '<span class="badge" title="原始资料尚未挂载，历史记录保留">🔒 私有资料未挂载</span>'
+            : '<span class="badge bad">📎 交付物路径失效</span>';
       }
       return '<div class="card wcard"><div class="title">' + esc(w.title) + "</div>" +
         '<div><span class="badge">' + esc(w.type) + "</span>" + tk + pj +

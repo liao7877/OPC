@@ -120,7 +120,7 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 | 只读 API + 唯一写边界 | GET `/api/{公司ID}/tickets、/dashboard、/patrol、/ping` 供 agent 与外部服务查询；唯一带副作用的动作是 POST `/api/{公司ID}/sync`（重算看板数据，同站校验）——文件仍是唯一真相 |
 
 - 进程=宿主、公司=租户：扫描 `opc.toml` 全部公司逐家装配，新公司自动纳管；`opc.toml [service]` 可配端口/巡检周期/每日摘要时间/通知通道。
-- 跨平台自启：Windows=启动文件夹 `OPC-Service.vbs`（headless 无窗口）；macOS/Linux=crontab `@reboot` 标记块。删自启项即卸载；`python opc_service.py` 可前台手动跑（`--open` 顺带开浏览器）。
+- 跨平台自启：Windows=启动文件夹 `OPC-Service.vbs`（headless 无窗口）；macOS=launchd LaunchAgent；Linux=crontab `@reboot` 标记块。删自启项即卸载；`python opc_service.py` 可前台手动跑（`--open` 顺带开浏览器）。
 
 **3.1 在线协作 Level 3（飞书第一版）**
 - 员工先加载公司级 `feishu-bitable` / `feishu-knowledge` Skill；执行通道优先采用已核验 CLI 或官方 HTTP API，MCP 仅作可选 fallback。
@@ -145,29 +145,20 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 ---
 
-## 对外发布（机制公开 / 私有备份）
+## 对外发布与私有备份
+公开远程只接收经 opc_privacy.py 过滤的 main 全历史；pre-push 拒绝直推公开地址及其别名。私有备份目标必须实际确认并登记 opc.privateRemote；未配置远程时可使用仓库外的版本化文件备份。本地同盘副本不等于异地保护。
 
-本仓库采用「单仓双远程」模型：机制改进对外公开供 fork，私有内容只留在 `main` 与私有远程做版本管理与备份，绝不进公开分支。
+- scripts/opc-publish.sh / .ps1：默认离线构建并验证历史和命名空间，不上传。
+- --preview-working：离线包含未提交修复，不能同时 --push。
+- --push：要求工作树干净、main 已提交，验证通过后才上传公开目标。
+- 依赖 Python 3.11+、git-filter-repo；入口通过 opc_runtime.py 选择受支持解释器。
+- 私有目录按任意层级匹配，私有实体按 ID 匹配，附加路径在 .opc-private-paths.txt。唯一合成回归测试例外由共享策略明示。
+- 完整执行标准：opc://company:C001/skill/privacy-publish。
 
-- **公开远程 `origin`**（github.com/liao7877/OPC，Public）：只接收「按 `.opc-private-paths.txt` 剥离私有后」的干净 `main`。**禁止从工作仓库直推**——pre-push 守卫已启用（`opc.publicRemote=origin`）。
-- **私有远程 `backup`**（已配置：本机另一块盘的裸仓库，与工作仓不同卷）：直推 `main` 全量（机制 + 私有）= 完整版本管理 + 备份。**允许且应当做**。具体路径只存本机 `.git/config`（不入库、不进公开仓），查地址 `git remote get-url backup`。
+## 运行状态判读
 
-日常开发一切照旧：在 `main` 随便提交。备份与发布各一条命令：
+doctor 显示私有实体“未挂载”表示资料尚未恢复；显式声明只解释缺席，不能让已挂载实体的断链通过。/sync 的 ok 表示本地生成，partial=true 或 integration_ok=false 表示外部集成仍有问题。HTTP 仅开放看板页面、看板数据和只读 API；原始资料通过本地文件系统访问。
 
-```bash
-# 备份：推私有远程（含私有，做版本管理）——允许直推
-git push backup main
+服务启动共用跨进程单实例锁，防止自启与即时启动竞争。手动、监听、周期重算共用生成锁，内容哈希检测删除与快速修改，发布前复查源快照。回归入口：python _AI工作区/回归测试/test_runtime.py；CI 覆盖 Windows/macOS/Linux × Python 3.11/3.13。
 
-# 发布：自动剥离私有路径后推公开远程 origin —— 唯一合法途径
-./scripts/opc-publish.sh        # Git Bash / macOS / Linux
-.\scripts\opc-publish.ps1       # Windows PowerShell
-```
-
-- **私有清单**：`.opc-private-paths.txt` 控制「公开分支剥离什么」；引入隐私文件往里加一行即可，公开分支自动不含它，且不影响 `main` 的备份。完整操作（怎么加 / 怎么剥 / 怎么发）见 `opc://company:C001/skill/privacy-publish`。
-- **红线**：pre-push 钩子禁止从工作仓库直接推公开远程，只允许经发布脚本（在临时克隆里剥离后推送）。
-- ⚠️ 公开分支历史每次发布会重写，forkers 需偶尔 `git pull --rebase`（或重新 fork）。
-- 一旦私有文件误推公开远程，立即用 `git filter-repo` scrub 历史并轮换任何泄露凭据。
-
----
-
-*创建：2026-08-28 · 本仓库随 OPC 组织实践持续迭代*
+初始化验收：bootstrap 保留生成器、自启注册与服务启动的真实失败并返回非零；自启失败仍独立尝试即时启动。公开发布使用远端 main 的已观测版本作为 force-with-lease 条件，远端变动则拒绝覆盖。

@@ -16,4 +16,4 @@
 python opc_resolver.py --doctor      # 查看环境、锚、钩子、服务与治理检查
 python opc_resolver.py --check       # 只检查命名空间和结构引用</pre><p>Windows 通常使用 <code>python</code>，macOS/Linux 可能使用 <code>python3</code>。完整命令、服务启动和故障排查见 <a href="README.md">README.md</a>；机制原理见 <a href="SYSTEM_GUIDE.html">SYSTEM_GUIDE.html</a>。</p></section>
 <footer>OPC 用户操作手册 · 手工维护的静态文档 · 动态角色、命令和状态以 roster、README、schema 与技能文件为准</footer>
-</div></body></html>
+</div><section id="repair-20261109"><h2>运行机制亮点 · 2026-11-09</h2><div class="grid"><div class="card"><h3>变化不丢，批次可验</h3><p>文件内容哈希识别快速修改和删除；手动、周期、监听共用生成锁。生成过程中源数据再变，则保留待重试状态。</p></div><div class="card"><h3>状态说实话</h3><p>本地看板成功与外部集成成功分别返回。私有资料缺席保留历史并标记未挂载，不伪造交付物。</p></div><div class="card"><h3>发布有两道核验</h3><p>共享策略按目录和实体 ID 过滤历史，随后逐历史树扫描；默认离线预览，显式发布才上传。工作仓库直推公开地址及其别名均拒绝。</p></div><div class="card"><h3>服务有明确边界</h3><p>HTTP 只提供看板白名单和 API，校验本机 Host。macOS launchd、Windows 启动文件夹和 Linux crontab 共用启动身份探活与超时策略。</p></div></div><p>本地备份以恢复校验为准，不能冒充异地备份；三平台测试矩阵与合成回归共同守住机制边界。</p></section></body></html>

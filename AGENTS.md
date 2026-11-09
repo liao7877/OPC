@@ -22,8 +22,8 @@
 
 ## 对外发布与隐私剥离（单仓双远程 · 任何推送动作前必读）
 - **红线 ⛔ 禁止 `git push origin`**：`origin`（github.com/liao7877/OPC）是**公开**远程，而工作仓库 `main` **含私有内容**。pre-push 守卫已启用（`opc.publicRemote=origin`），直推会被拦下。
-- **发布到公开仓库只走** `scripts/opc-publish.sh`（Windows PowerShell 用 `scripts/opc-publish.ps1`）：在临时克隆里按清单剥离后，force-push 干净 `main` 到 `origin`。
-- **备份走私有远程**：`main` 可直推私有远程（默认名 `backup`）做版本管理与异地备份——**允许且应当做**，私有远程承载含私有的全量。
+- **发布到公开仓库只走** `scripts/opc-publish.sh`（Windows PowerShell 用 `scripts/opc-publish.ps1`）：默认在临时克隆过滤并校验全部历史；显式 --push 才发布已提交的干净 `main` 到 `origin`。
+- **备份边界**：已确认私有的远程须登记 opc.privateRemote 才可推全量；未配置时使用仓库外的本地版本化备份并校验恢复，不得声称已有异地备份。
 - **清单维护**：私有路径点名写进仓库根 `.opc-private-paths.txt`（每行一相对路径，`*` 通配、`**` 跨目录，`#` 注释）。判据：**拿不准就加**——多剥无害，漏剥是事故。
 - 唯一权威流程见 `opc://company:C001/skill/privacy-publish`（对外发布与隐私剥离）。机制改动波及面四处须同步：C001 实例 + E0000 总管 + company-template + 本文件。
 
@@ -37,3 +37,11 @@
 | `opc_resolver.py` / `opc_model.py` / `opc.toml` | 命名空间运行时（DI 容器 / 共享读取器 / 配置） |
 | `opc_tickets.py` / `opc_dashboards.py` | 看板机制层生成器（公司目录零机制代码，run_boards 薄壳调用） |
 | `opc_service.py` | **OPC 服务**（决策 #18：组织级常驻后台中枢，升级自 opc_board_server.py）：进程=宿主、公司=租户（扫描 opc.toml 全公司自动装载）；承载看板实时化（`同步`按钮直算 + 秒级监听）、巡检（含工单逾期/停滞预警）、实时通知与每日摘要、只读 API（`/api/{CID}/tickets|dashboard|patrol`，唯一写边界=POST `/sync` 同站校验）；`--register` 挂开机自启；看板从 `http://127.0.0.1:8765/{CID}/dashboard.html` 打开 |
+
+## 运行边界与验收
+- 缺席私有实体须在 opc.toml 的 private_entities 显式声明和说明；保留历史，显示未挂载，不生成虚假交付物，不放过普通断链。
+- 手动、监听、周期重算共用公司生成锁；哈希快照捕获删除及快速修改。源数据在生成中变化时保留待重试状态，不发布不一致批次。
+- 同步接口分别报告本地生成与外部集成：partial / integration_ok 不可被解释为全量成功。
+- HTTP 只服务看板白名单与只读 API，校验 loopback Host；原始文件从本地路径访问。macOS 用 launchd、Windows 用启动文件夹、Linux 用有超时的 crontab。
+
+初始化验收：bootstrap 保留生成器、自启注册与服务启动的真实失败并返回非零；自启失败仍独立尝试即时启动。公开发布使用远端 main 的已观测版本作为 force-with-lease 条件，远端变动则拒绝覆盖。

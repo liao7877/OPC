@@ -37,7 +37,13 @@
   python opc_service.py --unregister
 """
 
+import opc_runtime
+opc_runtime.ensure_supported()
+
 import json
+import hashlib
+import ipaddress
+from pathlib import Path
 import os
 import re
 import sys
@@ -59,6 +65,7 @@ import opc_sync
 import opc_patrol
 import opc_resolver
 import opc_tickets
+import opc_privacy
 
 POLL_SECONDS = 3.0
 STARTUP_VBS = "OPC-Service.vbs"
@@ -110,6 +117,7 @@ class Tenant:
         self.dctx = opc_dashboards.resolve_ctx(company=cid)          # 驾驶舱生成器 ctx
         self.base = self.pctx.base
         self.gen_lock = threading.Lock()
+        self.last_source_snapshot = None
         self.last_gen_epoch = 0.0
         self.last_findings = []      # 最近一轮巡检发现（/api/{cid}/patrol 用）
         self.last_error = ""         # 后台循环最近一次异常（/api/{cid}/ping 可查，防静默）
@@ -120,10 +128,11 @@ class Tenant:
 
     def regenerate(self, why=""):
         """重算该公司双投影（单飞锁）；返回 (ok, errors)。"""
-        with self.gen_lock:
+        with self.gen_lock, opc_model.generation_lock(self.base):
             # 进锁先置 + 完成后再置（2026-08-29 三轮体检）：生成全程对 watch 不可见——
             # 只在完成时置的话，生成期间 watch 采样到中间态 mtime 会排队再跑一遍全量重算
             self.last_gen_epoch = time.time()
+            source_before = self._source_snapshot()
             errs = []
             # 组织结构是规范链的唯一真相：roster/团队变动被 watch 捕获后，
             # 先重建公司→团队→员工的直属声明，再生成看板；不要求 agent 另跑命令。
@@ -136,11 +145,7 @@ class Tenant:
             # External integrations are optional. Publish their connector-neutral shadow
             # before dashboard generation so this round can display the current state.
             try:
-                sync_kernel = opc_sync.SyncKernel(self.base)
-                opc_sync.register_configured_connectors(sync_kernel)
-                if sync_kernel.snapshot().get("bindings"):
-                    sync_kernel.reconcile()
-                sync_kernel.write_projection(os.path.join(self.base, ".opc-sync", "projection.json"))
+                self.sync_integrations()
             except Exception as e:
                 self.last_integration_ok = False
                 self.last_integration_error = str(e)
@@ -157,12 +162,21 @@ class Tenant:
                 opc_model.sync_kb_index(self.pctx.cfg.root, self.cid)
             except Exception as e:
                 errs.append(f"kb-index: {e}")
+            source_after = self._source_snapshot()
+            if source_after != source_before:
+                errs.append("source_changed_during_generation: pending retry")
             if not errs:
                 try:
                     opc_projection.publish_legacy_snapshot(self.base, self.cid, install_loaders=False)
                 except Exception as e:
                     errs.append(f"projection: {e}")
             self.last_gen_epoch = time.time()
+            if not errs:
+                self.last_source_snapshot = source_before
+                if self.last_integration_ok:
+                    self.last_error = ""
+            else:
+                self.last_error = "; ".join(errs)
             return (not errs), errs
 
     def sync_integrations(self):
@@ -172,9 +186,12 @@ class Tenant:
         opc_integration_bridge.refresh_local_records(kernel, self.base)
         state = kernel.snapshot()
         results = kernel.reconcile() if state.get("bindings") else {}
-        failed = [value for value in results.values() if isinstance(value, dict) and value.get("status") == "failed"]
+        failed = [value for value in results.values() if isinstance(value, dict)
+                  and value.get("status") in ("failed", "conflict")]
         self.last_integration_ok = not failed
-        self.last_integration_error = "; ".join(str(value.get("message") or value.get("error_class")) for value in failed)
+        self.last_integration_error = "; ".join(str(value.get("message") or value.get("error_class") or value.get("status")) for value in failed)
+        if failed:
+            self.last_error = "integration: " + self.last_integration_error
         kernel.write_projection(os.path.join(self.base, ".opc-sync", "projection.json"))
         return results
 
@@ -184,30 +201,38 @@ class Tenant:
         self.last_findings = list(ctx.findings)
         return self.last_findings
 
-    def _sources_mtime(self):
-        return max(opc_tickets.tasks_mtime(self.tctx),
-                   opc_dashboards.deps_mtime(self.dctx),
-                   self._knowledge_mtime())
+    def _source_snapshot(self):
+        records = []
+        skip_dirs = {".git", ".workbuddy", ".opc-data", ".opc-sync", "node_modules",
+                     "_AI工作区", "OpenMAIC", "memory"}
+        skip_files = {"INDEX.md", "KB-CHANGELOG.md", "patrol-log.md", "patrol-pending.md",
+                      "AGENTS.md", "CLAUDE.md"}
+        for directory, dirs, files in os.walk(self.base):
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not os.path.islink(os.path.join(directory, d))]
+            for name in sorted(files):
+                rel = os.path.relpath(os.path.join(directory, name), self.base).replace(os.sep, "/")
+                if name in skip_files or name.endswith((".lock", ".tmp", "-data.js")):
+                    continue
+                if not (name.endswith((".md", ".toml")) or rel.startswith("page-templates/")):
+                    continue
+                try:
+                    path = Path(directory) / name
+                    records.append((rel, hashlib.sha256(path.read_bytes()).hexdigest()))
+                except FileNotFoundError:
+                    records.append((rel, "deleted-during-scan"))
+        manifest = Path(self.pctx.cfg.root) / "opc.toml"
+        if manifest.is_file():
+            records.append(("@manifest", hashlib.sha256(manifest.read_bytes()).hexdigest()))
+        return tuple(sorted(records))
 
-    def _knowledge_mtime(self):
-        """三级 knowledge/ 目录下条目文件的最新 mtime（决策 #19 §17.8）。
-
-        **必须排除 INDEX.md**——索引由本服务自己重生成，若计入 mtime 会自我触发、
-        无限重算。CHANGELOG 同理是留痕产物，不参与触发。
-        """
-        latest = 0.0
-        base = self.base
-        for kb in _iter_knowledge_dirs(base):
-            for root, dirs, files in os.walk(kb):
-                dirs[:] = [d for d in dirs if not d.startswith(".")]
-                for f in files:
-                    if not f.endswith(".md") or f in ("INDEX.md", "KB-CHANGELOG.md"):
-                        continue
-                    try:
-                        latest = max(latest, os.path.getmtime(os.path.join(root, f)))
-                    except OSError:
-                        pass
-        return latest
+    def _watch_once(self):
+        current = self._source_snapshot()
+        if current == self.last_source_snapshot or self.gen_lock.locked():
+            return False
+        ok, _errors = self.regenerate("watch")
+        if ok:
+            self._patrol_async()
+        return ok
 
     def _patrol_async(self):
         """watch 触发的巡检异步化：巡检要拿跨进程锁（patrol-state.json.lock），
@@ -223,43 +248,25 @@ class Tenant:
         threading.Thread(target=_run, daemon=True).start()
 
     def _watch_loop(self):
-        """数据源监听：变动 → 重生成 → 异步巡检（决策 #18）。"""
-        last = self._sources_mtime()
         while True:
             time.sleep(POLL_SECONDS)
             try:
-                cur = self._sources_mtime()
-                if cur == last:
-                    continue
-                if self.gen_lock.locked():
-                    last = cur    # 有生成正在进行（/sync/兜底重算）：产物即将刷新，重定基线不叠加
-                    continue
-                last = cur
-                # mtime 变化若只是上轮生成自己写的数据文件（如 /sync 刚跑过）→ 只重定基线
-                if cur > self.last_gen_epoch + 1.0:
-                    self.regenerate("watch")
-                    self._patrol_async()
-                last = self._sources_mtime()
+                self._watch_once()
             except Exception as e:
-                # 监听线程永不退出（单轮失败不断服务），但异常必须可查（防静默失能）
                 self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} watch: {e!r}"
 
+    def _periodic_once(self):
+        ok, errors = self.regenerate("periodic")
+        self.patrol()
+        return ok, errors
+
     def _patrol_loop(self, interval_minutes):
-        """周期兜底巡检：数据源 mtime 之外的第二触发源（如 worklog 无 mtime 变化的语义问题）。"""
         while True:
             time.sleep(max(1, int(interval_minutes)) * 60)
             try:
-                self.sync_integrations()
-                opc_dashboards.generate_all(self.dctx)
-                opc_projection.publish_legacy_snapshot(self.base, self.cid, install_loaders=False)
+                self._periodic_once()
             except Exception as e:
-                self.last_integration_ok = False
-                self.last_integration_error = str(e)
-                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} integration: {e!r}"
-            try:
-                self.patrol()
-            except Exception as e:
-                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} patrol: {e!r}"
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} periodic: {e!r}"
 
     def open_items(self):
         """state 里未处置（open/reopened）的待办，每日摘要重提用。"""
@@ -358,14 +365,52 @@ def _same_origin(headers):
     页面也算跨源——一并拒绝）；本机无头工具直连（两头皆空）放行。"""
     origin = headers.get("Origin")
     if origin:
-        return urllib.parse.urlparse(origin).netloc == (headers.get("Host") or "")
+        parsed = urllib.parse.urlparse(origin)
+        return parsed.scheme == "http" and parsed.netloc == (headers.get("Host") or "")
     return headers.get("Sec-Fetch-Site") in (None, "same-origin", "none")
 
+
+def _allowed_host(value, port):
+    try:
+        parsed = urllib.parse.urlsplit("http://" + (value or ""))
+        return (parsed.hostname in ("127.0.0.1", "localhost", "::1")
+                and parsed.port == port and not parsed.username and not parsed.password
+                and not parsed.path and not parsed.query and not parsed.fragment)
+    except ValueError:
+        return False
+
+def _static_allowed(tenant, rest):
+    parts = rest.strip("/").split("/")
+    if not parts or any(p in ("", ".", "..") for p in parts):
+        return False
+    if opc_privacy.private_path(rest):
+        return False
+    rel = "/".join(parts)
+    if rel in ("dashboard.html", "dashboard-data.js", "workbench/kanban.html",
+               "workbench/tasks-data.js", "workbench/tasks-data.json"):
+        return True
+    if len(parts) == 2 and parts[1] in ("mydesk.html", "mydesk-data.js", "teamboard.html", "teamboard-data.js"):
+        kinds = opc_resolver.entity_types()
+        prefix = kinds["employee"] if parts[1].startswith("mydesk") else kinds["team"]
+        return bool(re.fullmatch(re.escape(prefix) + r"\d{3,}(?:-.+)?", parts[0]))
+    return False
 
 def make_handler(tenants, default_cid):
     from http.server import SimpleHTTPRequestHandler
 
     class H(SimpleHTTPRequestHandler):
+        def parse_request(self):
+            if not super().parse_request():
+                return False
+            if not _allowed_host(self.headers.get("Host"), self.server.server_port):
+                self.send_error(403, "Untrusted Host")
+                return False
+            return True
+
+        def list_directory(self, path):
+            self.send_error(403, "Directory listing disabled")
+            return None
+
         def log_message(self, *a):
             pass    # pythonw 下无 stderr；看板轮询噪音也不值得记
 
@@ -387,6 +432,16 @@ def make_handler(tenants, default_cid):
                 return super().translate_path(path)
             if rest.endswith("/"):
                 rest += "index.html"
+            if not _static_allowed(tenant, rest):
+                return os.path.join(tenant.base, "__opc_static_denied__")
+            if rest.endswith(("-data.js", "tasks-data.json")):
+                try:
+                    pointer = opc_projection.read_current(tenant.base)
+                    rel = pointer["artifacts"][rest.strip("/")]
+                    data_root = Path(tenant.base) / ".opc-data"
+                    return _safe_join(str(data_root), pointer["base"] + rel)
+                except (OSError, ValueError, KeyError):
+                    return os.path.join(tenant.base, "__opc_projection_unavailable__")
             return _safe_join(tenant.base, rest)
 
         def _json(self, obj, code=200, headers=None):
@@ -575,107 +630,134 @@ def selftest():
 # 自启（启动文件夹 .vbs：免管理员、隐藏窗口、删文件即卸载）
 # ---------------------------------------------------------------------------
 
-def startup_script_stale():
-    """自启项是否指向本根之外（目录搬家/多 clone 后的典型残留）。
-    返回 (stale, detail)。Windows 查启动文件夹 VBS；macOS/Linux 查 crontab 标记块。
-    stale=True 时重跑 register_startup 即自愈（两种后端都幂等重写）。"""
-    here = os.path.abspath(__file__)
-    if sys.platform.startswith("win"):
-        p = os.path.join(_startup_dir(), STARTUP_VBS)
-        if not os.path.isfile(p):
-            return False, "未注册"
-        try:
-            body = open(p, encoding="utf-8").read()
-        except OSError as e:
-            return False, f"读取失败：{e}"
-        if "opc_service.py" not in body.replace('"', ""):
-            return False, "内容不含 opc_service.py（非本服务自启项，不动）"
-        return (here not in body), f"VBS 指向其他位置（本根：{here}）"
+def _startup_dir():
+    return os.path.join(os.environ.get("APPDATA", ""), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+
+def _launch_agent_path():
+    return Path.home() / "Library" / "LaunchAgents" / "org.opc.service.plist"
+
+def _startup_command():
+    from opc_runtime import supported_python
+    return [supported_python(), os.path.abspath(__file__)]
+
+def _system_run(command, **kwargs):
     import subprocess
     try:
-        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout or ""
-    except OSError:
-        return False, "crontab 不可用"
-    lines = [ln for ln in cur.splitlines()
-             if ln.startswith("@reboot") and "opc_service.py" in ln]
-    if not lines:
-        return False, "未注册"
-    return (not any(here in ln for ln in lines)), f"@reboot 指向其他位置（本根：{here}）"
+        return subprocess.run(command, capture_output=True, timeout=10, **kwargs)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"自启系统命令失败或超时：{command[0]}：{exc}") from exc
 
+def startup_script_stale():
+    here = os.path.abspath(__file__)
+    if sys.platform == "darwin":
+        import plistlib
+        path = _launch_agent_path()
+        if not path.exists():
+            return False, "LaunchAgent 未注册"
+        try:
+            data = plistlib.loads(path.read_bytes())
+            expected = _startup_command()
+            return data.get("ProgramArguments", [])[:2] != expected, "LaunchAgent 路径或解释器陈旧"
+        except (OSError, ValueError):
+            return True, "LaunchAgent 内容无效"
+    if sys.platform.startswith("win"):
+        path = Path(_startup_dir()) / STARTUP_VBS
+        if not path.exists():
+            return False, "未注册"
+        return here not in path.read_text(encoding="utf-8"), "VBS 路径陈旧"
+    result = _system_run(["crontab", "-l"], text=True)
+    lines = [line for line in result.stdout.splitlines() if line.startswith("@reboot") and "opc_service.py" in line]
+    return (bool(lines) and not any(here in line for line in lines)), "crontab 路径状态"
 
-def _startup_dir():
-    return os.path.join(os.environ.get("APPDATA", ""),
-                        "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-
+def _cron_update(current, command=None):
+    marker = "# OPC-Service"
+    out, skip = [], False
+    for line in current.splitlines():
+        if line.strip() == marker:
+            skip = True
+            continue
+        if skip:
+            skip = False
+            continue
+        out.append(line)
+    if command:
+        out.extend([marker, command])
+    return "\n".join(out).rstrip() + "\n"
 
 def register_startup(port):
-    """注册开机自启（P30 三平台收敛在本函数）：
-    Windows → 启动文件夹 OPC-Service.vbs（pythonw headless）；macOS/Linux →
-    crontab `@reboot` 标记块（幂等，沿旧心跳口径）。返回人类可读的落点描述。"""
+    command = _startup_command() + ["--port", str(port)]
+    if sys.platform == "darwin":
+        import plistlib
+        path = _launch_agent_path()
+        logs = Path(_ROOT) / "_AI工作区" / "运行日志"
+        logs.mkdir(parents=True, exist_ok=True)
+        data = {"Label": "org.opc.service", "ProgramArguments": command,
+                "WorkingDirectory": _ROOT, "RunAtLoad": True,
+                "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 10,
+                "StandardOutPath": str(logs / "service.stdout.log"),
+                "StandardErrorPath": str(logs / "service.stderr.log")}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = plistlib.dumps(data).decode("utf-8")
+        changed = not path.exists() or path.read_text(encoding="utf-8") != content
+        if changed:
+            opc_model.atomic_write(path, content)
+        if not os.environ.get("CI"):
+            target = f"gui/{os.getuid()}/org.opc.service"
+            state = _system_run(["launchctl", "print", target], text=True)
+            if changed and state.returncode == 0:
+                _system_run(["launchctl", "bootout", target], text=True)
+                state = None
+            if state is None or state.returncode != 0:
+                loaded = _system_run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(path)], text=True)
+                if loaded.returncode:
+                    raise RuntimeError(f"LaunchAgent 已保存但加载失败：{loaded.stderr.strip()}")
+        return str(path)
     if sys.platform.startswith("win"):
-        pyw = (sys.executable or "python").replace("python.exe", "pythonw.exe")
-        vbs = (f"' OPC service autostart -- delete this file to uninstall\r\n"
-               f"CreateObject(\"WScript.Shell\").Run \"\"\"{pyw}\"\" "
-               f"\"\"{os.path.abspath(__file__)}\" --port {port}\"\", 0, False\r\n")
-        os.makedirs(_startup_dir(), exist_ok=True)
-        p = os.path.join(_startup_dir(), STARTUP_VBS)
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(vbs)
-        return p
-    # macOS / Linux：crontab 幂等标记块
+        import subprocess
+        py = command[0]
+        pyw = str(Path(py).with_name("pythonw.exe"))
+        if Path(pyw).exists():
+            command[0] = pyw
+        quoted = subprocess.list2cmdline(command).replace('"', '""')
+        content = "' OPC service autostart\r\n" + 'CreateObject("WScript.Shell").Run "' + quoted + '", 0, False\r\n'
+        path = Path(_startup_dir()) / STARTUP_VBS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        opc_model.atomic_write(path, content)
+        return str(path)
     import shlex
-    import subprocess
-    py = sys.executable or "python3"
-    mark = "# OPC-Service"
-    line = (f"@reboot {shlex.quote(py)} {shlex.quote(os.path.abspath(__file__))} "
-            f"--port {port}\n")
-    try:
-        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout or ""
-    except OSError as e:
-        raise RuntimeError(f"crontab 不可用：{e}")
-    out, skip = [], False
-    for ln in cur.splitlines():          # 幂等：先移除旧标记块
-        if ln.strip() == mark:
-            skip = True
-            continue
-        if skip:
-            skip = False
-            continue
-        out.append(ln)
-    new = ("\n".join(out).rstrip("\n") + "\n" if any(out) else "") + f"{mark}\n{line}"
-    r = subprocess.run(["crontab", "-"], input=new.encode("utf-8"), capture_output=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"crontab 写入失败：{(r.stderr or b'').decode(errors='replace')}")
-    return f"crontab @reboot（标记 {mark}）"
-
+    current = _system_run(["crontab", "-l"], text=True)
+    if current.returncode and (current.returncode != 1 or "no crontab" not in current.stderr.lower()):
+        raise RuntimeError("无法可靠读取现有 crontab，拒绝覆盖：" + current.stderr.strip())
+    new = _cron_update(current.stdout, "@reboot " + " ".join(shlex.quote(v) for v in command))
+    written = _system_run(["crontab", "-"], input=new, text=True)
+    if written.returncode:
+        raise RuntimeError("crontab 写入失败：" + written.stderr.strip())
+    return "crontab @reboot (# OPC-Service)"
 
 def unregister_startup():
+    if sys.platform == "darwin":
+        path = _launch_agent_path()
+        if not path.exists():
+            return None
+        if not os.environ.get("CI"):
+            _system_run(["launchctl", "bootout", f"gui/{os.getuid()}/org.opc.service"], text=True)
+        path.unlink()
+        return str(path)
     if sys.platform.startswith("win"):
-        p = os.path.join(_startup_dir(), STARTUP_VBS)
-        if os.path.isfile(p):
-            os.remove(p)
-            return p
+        path = Path(_startup_dir()) / STARTUP_VBS
+        if path.exists():
+            path.unlink()
+            return str(path)
         return None
-    import subprocess
-    mark = "# OPC-Service"
-    try:
-        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout or ""
-    except OSError:
+    current = _system_run(["crontab", "-l"], text=True)
+    if current.returncode and "no crontab" not in current.stderr.lower():
+        raise RuntimeError("无法可靠读取现有 crontab，拒绝删除")
+    if "# OPC-Service" not in current.stdout:
         return None
-    if mark not in cur:
-        return None
-    out, skip = [], False
-    for ln in cur.splitlines():
-        if ln.strip() == mark:
-            skip = True
-            continue
-        if skip:
-            skip = False
-            continue
-        out.append(ln)
-    subprocess.run(["crontab", "-"], input=("\n".join(out) + "\n").encode("utf-8"),
-                   capture_output=True)
-    return f"crontab 标记 {mark}（已移除）"
+    result = _system_run(["crontab", "-"], input=_cron_update(current.stdout), text=True)
+    if result.returncode:
+        raise RuntimeError("crontab 删除失败：" + result.stderr.strip())
+    return "crontab OPC-Service removed"
 
 
 def ensure_started(port=None, open_browser=False):
@@ -693,11 +775,25 @@ def ensure_started(port=None, open_browser=False):
             print(f"[service] ⚠️ 本根（{_ROOT}）的看板/巡检不会更新！处置：杀掉旧进程"
                   f"（Windows: taskkill /PID {(body or {}).get('pid')} /F）后重跑本次命令；"
                   f"并检查启动文件夹自启项是否指向旧目录")
-            return None
+            raise RuntimeError("已有服务属于其他 OPC 根，请先处理端口冲突")
         return None
+    # Give the registered supervisor first ownership of the singleton process.
+    if sys.platform == "darwin" and _launch_agent_path().exists():
+        target = f"gui/{os.getuid()}/org.opc.service"
+        state = _system_run(["launchctl", "print", target], text=True)
+        if state.returncode == 0:
+            _system_run(["launchctl", "kickstart", target], text=True)
+            for _ in range(30):
+                time.sleep(0.2)
+                found, body = service_probe(port)
+                if found and os.path.realpath((body or {}).get("root", "")) == os.path.realpath(_ROOT):
+                    return ["launchctl", "kickstart", target]
+            raise RuntimeError("launchd 服务未通过身份探活，请检查运行日志")
     import subprocess
-    py = sys.executable or "python"
-    args = [py, os.path.abspath(__file__)]
+    args = _startup_command()
+    py = args[0]
+    if port is not None:
+        args.extend(["--port", str(port)])
     if open_browser:
         args.append("--open")
     kw = dict(cwd=_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -709,8 +805,15 @@ def ensure_started(port=None, open_browser=False):
         kw["creationflags"] = 0x00000008 | 0x00000200   # DETACHED_PROCESS | NEW_PROCESS_GROUP
     else:
         kw["start_new_session"] = True
-    subprocess.Popen(args, **kw)
-    return args
+    child = subprocess.Popen(args, **kw)
+    for _ in range(30):
+        time.sleep(0.2)
+        found, body = service_probe(port)
+        if found and os.path.realpath((body or {}).get("root", "")) == os.path.realpath(_ROOT):
+            return args
+        if child.poll() not in (None, 0):
+            raise RuntimeError(f"OPC 服务启动后退出：{child.returncode}")
+    raise RuntimeError("OPC 服务尚未通过身份探活；请检查运行日志")
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +837,22 @@ def main(argv=None):
     if "--selftest" in argv:
         return selftest()
 
+    lock_path = Path(_ROOT) / "_AI工作区" / "运行日志" / "service-instance"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    from contextlib import ExitStack
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(opc_model.file_lock(lock_path, timeout=0.2))
+        except TimeoutError:
+            print("[service] 本仓库已有服务实例正在运行或启动")
+            return 0
+        return _serve(argv)
+
+
+def _serve(argv):
     cfg = _service_cfg()
+    if "--port" in argv:
+        cfg["port"] = int(argv[argv.index("--port") + 1])
     cids = opc_resolver.all_company_ids(opc_resolver._find_root())
     tenants = {}
     for cid in cids:

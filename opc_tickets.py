@@ -27,6 +27,9 @@ opc_tickets.py —— 工单看板数据生成器（机制层，OPC 根单例）
 - 容错：缺字段 / 坏 frontmatter 的工单跳过并告警，不中断整体生成。
 """
 
+import opc_runtime
+opc_runtime.ensure_supported()
+
 import os
 import sys
 import re
@@ -436,6 +439,12 @@ def find_cycles(graph):
 
 
 def generate(ctx):
+    import opc_model
+    with opc_model.generation_lock(ctx.company_dir):
+        return _generate_locked(ctx)
+
+
+def _generate_locked(ctx):
     """扫描 ctx.tasks_dir 生成 ctx.out_json / ctx.out_js。"""
     tasks = []
     seen_ids = {}

@@ -847,7 +847,7 @@
       localStorage.removeItem("kanban-theme");
     } catch (e) {}
     // 主题键与三级看板统一为 boards-theme：六级页面一处切换全局一致
-    applyTheme(saved || "dark");
+    applyTheme(saved || "light");
 
     // 筛选状态恢复：localStorage 记忆 + URL 参数覆盖（分享视图）
     loadState();

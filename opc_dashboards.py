@@ -30,6 +30,9 @@ P*/project.md），复用工单产物 workbench/tasks-data.json（不重复解�
 - 容错家规：坏条目跳过+告警不阻断；日期规整；deliverable/ticket/team 引用失效标 ⚠️。
 """
 
+import opc_runtime
+opc_runtime.ensure_supported()
+
 import os
 import sys
 import re
@@ -362,6 +365,7 @@ def parse_worklog(ctx, eid, emp_dir):
             deliverable = unplaceholder(fm.get("deliverable"))
             valid_deliv = True
             deliv_href = ""
+            deliv_state = "available"
             if deliverable:
                 # 两种写法都支持（PRINCIPLES P26 命名空间）：
                 # ① opc:// 逻辑符号 —— 走 resolver 解析（文档层推荐写法，改名免疫）
@@ -370,14 +374,18 @@ def parse_worklog(ctx, eid, emp_dir):
                     try:
                         import opc_resolver   # 惰性导入：避免与 resolver 形成顶层循环依赖
                         full = opc_resolver.resolve(deliverable)
+                    except opc_resolver.PrivateEntityUnavailable:
+                        full = None
+                        deliv_state = "private_unmounted"
                     except Exception:
                         full = None            # 解析失败按失效处理（告警文案指向 URI 本身）
                 else:
                     full = os.path.normpath(os.path.join(ctx.base, emp_dir, deliverable))
                 valid_deliv = bool(full) and os.path.exists(full)
-                if not valid_deliv:
+                if not valid_deliv and deliv_state != "private_unmounted":
+                    deliv_state = "missing"
                     warnings.append({"scope": "核验", "msg": f"{eid}「{title}」deliverable 路径失效：{deliverable}"})
-                else:
+                elif valid_deliv:
                     deliv_href = os.path.relpath(full, os.path.join(ctx.base, emp_dir)).replace(os.sep, "/")
             entries.append({
                 "wid": wid, "date": date or "", "title": str(title), "status": status,
@@ -385,7 +393,7 @@ def parse_worklog(ctx, eid, emp_dir):
                 "updated": updated, "note": str(fm.get("note") or ""),
                 "aff": unplaceholder(fm.get("aff")),   # 常设事务引用（type=事务/工单均可带）
                 "deliverable": deliverable, "deliverable_valid": valid_deliv,
-                "deliverable_href": deliv_href,
+                "deliverable_href": deliv_href, "deliverable_state": deliv_state,
                 "archived": rel != "worklog.md",   # 归档条目标记（mydesk「含归档」筛选用）
             })
     entries.sort(key=lambda e: (e["updated"] or e["date"], wid_seq(e.get("wid"))), reverse=True)
@@ -607,6 +615,12 @@ def verify_outputs(ctx):
 
 
 def generate_all(ctx):
+    import opc_model
+    with opc_model.generation_lock(ctx.base):
+        return _generate_all_locked(ctx)
+
+
+def _generate_all_locked(ctx):
     """主流程：扫描 -> 核验 -> 三级切片产出。ctx 携带全部路径（可注入临时目录做自测）。"""
     base_dir = ctx.base
     ctx.warnings = []

@@ -42,9 +42,9 @@ def _source_fingerprint(company: Path) -> str:
     """Fingerprint domain inputs and legacy projection sources deterministically."""
     files = []
     for root, dirs, names in os.walk(company):
-        dirs[:] = [d for d in dirs if d not in {".git", ".opc-data", "OpenMAIC"}]
+        dirs[:] = [d for d in dirs if not (Path(root) / d).is_symlink() and d not in {".git", ".opc-data", ".opc-sync", "OpenMAIC", "_AI工作区", "node_modules", "memory", ".workbuddy"}]
         for name in names:
-            if name.endswith((".md", ".json", ".js")) and name not in {"INDEX.md", "KB-CHANGELOG.md"}:
+            if name.endswith((".md", ".json", ".js")) and name not in {"INDEX.md", "KB-CHANGELOG.md", "patrol-log.md", "patrol-pending.md", "patrol-state.json"}:
                 p = Path(root) / name
                 rel = p.relative_to(company).as_posix()
                 files.append((rel, _sha256(p)))
@@ -54,7 +54,7 @@ def _source_fingerprint(company: Path) -> str:
 
 def _artifact_paths(company: Path):
     for root, dirs, names in os.walk(company):
-        dirs[:] = [d for d in dirs if d not in {".git", ".opc-data", "OpenMAIC"}]
+        dirs[:] = [d for d in dirs if not (Path(root) / d).is_symlink() and d not in {".git", ".opc-data", ".opc-sync", "OpenMAIC", "_AI工作区", "node_modules", "memory", ".workbuddy"}]
         for name in names:
             if name in DATA_NAMES or name.endswith("-data.js"):
                 p = Path(root) / name
@@ -166,7 +166,7 @@ def publish_legacy_snapshot(company: str | os.PathLike, cid: str, install_loader
     root.mkdir(parents=True, exist_ok=True)
     staging.mkdir(exist_ok=True)
     releases.mkdir(exist_ok=True)
-    with opc_model.file_lock(root / "publish", timeout=60):
+    with opc_model.generation_lock(company), opc_model.file_lock(root / "publish", timeout=60):
         return _publish_locked(company, cid, install_loaders, root, staging, releases)
 
 
