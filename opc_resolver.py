@@ -28,7 +28,7 @@ import os
 import re
 import shutil
 import sys
-from opc_runtime import ensure_supported
+from opc_runtime import ensure_supported, configure_output
 ensure_supported()
 import tomllib
 import subprocess
@@ -2033,7 +2033,7 @@ def _repair(root):
         if not os.path.isfile(cfg.tasks_data_abs) and os.path.isdir(cfg.workbench_abs):
             for mod in ("opc_tickets.py", "opc_dashboards.py"):
                 r = subprocess.run([py, os.path.join(root, mod), "--company", cid],
-                                   cwd=root, capture_output=True, text=True, check=False)
+                                   cwd=root, capture_output=True, text=True, encoding="utf-8", check=False)
                 if r.returncode == 0:
                     fixed.append(f"看板数据已重建（{cid} ← {mod}）")
                 else:
@@ -2242,14 +2242,14 @@ def bootstrap(root=None, heartbeat=True, heartbeat_every=30):
     for cid in cids:
         for mod in ("opc_tickets.py", "opc_dashboards.py"):
             r = subprocess.run([py, os.path.join(root, mod), "--company", cid],
-                               cwd=root, capture_output=True, text=True, check=False, timeout=120)
+                               cwd=root, capture_output=True, text=True, encoding="utf-8", check=False, timeout=120)
             if r.returncode:
                 init_errors.append(f"{mod} --company {cid} 失败（退出码 {r.returncode}）")
             tail = (r.stdout or r.stderr or "").strip().splitlines()
             print(f"[init] {mod} --company {cid} ->", "ok" if r.returncode == 0
                   else f"FAILED（{tail[-1] if tail else r.returncode}）")
     r = subprocess.run([py, os.path.join(root, "opc_model.py"), "--sync-index"],
-                       cwd=root, capture_output=True, text=True, check=False, timeout=120)
+                       cwd=root, capture_output=True, text=True, encoding="utf-8", check=False, timeout=120)
     if r.returncode:
         init_errors.append(f"opc_model --sync-index 失败（退出码 {r.returncode}）")
     print("[init] opc_model --sync-index ->", "ok" if r.returncode == 0 else "FAILED")
@@ -2578,9 +2578,7 @@ def selftest():
 
 
 if __name__ == "__main__":
-    for _s in (sys.stdout, sys.stderr):
-        if hasattr(_s, "reconfigure"):
-            _s.reconfigure(encoding="utf-8", errors="replace")   # Windows cp1252 控制台/CI 下中文输出防崩（CI 实测）
+    configure_output()
     import argparse
     ap = argparse.ArgumentParser(description="OPC 命名空间解析 / 链接器自检")
     ap.add_argument("--check", action="store_true", help="校验命名空间路径自洽（含全文扫描）")

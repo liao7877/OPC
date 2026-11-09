@@ -176,6 +176,11 @@ class HttpTests(unittest.TestCase):
 
 
 class IsolationTests(unittest.TestCase):
+    def test_schema_cli_emits_utf8_on_ansi_pipe(self):
+        result=subprocess.run([sys.executable, str(ROOT/'opc_schema.py')], env={**os.environ, 'PYTHONIOENCODING':'cp1252'}, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', 'replace'))
+        self.assertIn('自洽', result.stdout.decode('utf-8'))
+
     def test_doctor_does_not_register_startup_in_ci_or_offline(self):
         with tempfile.TemporaryDirectory() as tmp, contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(resolver, '_load_toml', return_value={}))

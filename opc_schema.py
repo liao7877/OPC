@@ -124,6 +124,8 @@ def validate():
 
 if __name__ == "__main__":
     import sys
+    from opc_runtime import configure_output
+    configure_output()
     p = validate()
     if p:
         print("schema 不自洽：")

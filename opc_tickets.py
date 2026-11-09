@@ -1054,7 +1054,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    for _s in (sys.stdout, sys.stderr):
-        if hasattr(_s, "reconfigure"):
-            _s.reconfigure(encoding="utf-8", errors="replace")   # Windows cp1252 控制台/CI 下中文输出防崩（CI 实测）
+    opc_runtime.configure_output()
     sys.exit(main(sys.argv))

@@ -4,6 +4,12 @@ import shutil
 import subprocess
 import sys
 
+def configure_output():
+    """CLI output is UTF-8 even when Windows pipes default to an ANSI codepage."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
 def supported_python():
     candidates = []
     if os.environ.get("OPC_PYTHON"):
@@ -38,4 +44,5 @@ def ensure_supported():
     os.execv(executable, [executable] + sys.argv)
 
 if __name__ == "__main__":
+    configure_output()
     print(supported_python())

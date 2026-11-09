@@ -47,3 +47,5 @@
 初始化验收：bootstrap 保留生成器、自启注册与服务启动的真实失败并返回非零；自启失败仍独立尝试即时启动。公开发布使用远端 main 的已观测版本作为 force-with-lease 条件，远端变动则拒绝覆盖。
 
 - CI 环境的 doctor/bootstrap 不改机器自启项、不拉起服务；离线 bootstrap 使用 --no-heartbeat，终检同样保持此边界。模板比较排除 .opc-*.lock 运行锁，依赖锁文件仍参与比较。
+
+- 核心 CLI 输出编码统一交给 opc_runtime.configure_output；跨平台回归须覆盖 ANSI 管道下的真实子进程。

@@ -757,6 +757,8 @@ def _run_selftest():
 
 
 if __name__ == "__main__":
+    from opc_runtime import configure_output
+    configure_output()
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)

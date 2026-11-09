@@ -117,6 +117,7 @@ def main():
 
 
 if __name__ == '__main__':
+    opc_runtime.configure_output()
     try:
         main()
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:

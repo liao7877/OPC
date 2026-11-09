@@ -166,3 +166,5 @@ doctor 显示私有实体“未挂载”表示资料尚未恢复；显式声明�
 ### 隔离验证与编码边界
 
 CI 环境的 doctor/bootstrap 跳过机器自启项修改与服务拉起；离线自举使用 --no-heartbeat，终检不会重新注册服务。模板 diff 忽略 .opc-*.lock 运行锁，保留依赖锁文件比较。管道输入用 BOM 识别 UTF-16，其余优先 UTF-8 再回退本机编码；跨平台自测固定覆盖 cp1252 与 GBK，不假定系统代码页支持中文。
+
+所有核心 CLI 的 stdout/stderr 由 opc_runtime.configure_output 统一为 UTF-8，管道重定向不依赖 Windows 控制台代码页。
