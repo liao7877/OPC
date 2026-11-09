@@ -29,7 +29,6 @@ if (-not $hasRemote) { Write-Error "公开远程 '$PUBLIC_REMOTE' 不存在。�
 if (Test-Path $BUILD_DIR) { Remove-Item $BUILD_DIR -Recurse -Force }
 git clone $REPO_ROOT $BUILD_DIR | Out-Null
 Set-Location $BUILD_DIR
-git remote add $PUBLIC_REMOTE $PUBLIC_URL 2>$null
 
 $argsList = @()
 foreach ($line in (Get-Content $MANIFEST)) {
@@ -41,6 +40,11 @@ foreach ($line in (Get-Content $MANIFEST)) {
 Write-Host "▶ 按 $($argsList.Count / 2) 条私有规则剥离…"
 & $PY -m git_filter_repo --force --invert-paths @argsList
 if ($LASTEXITCODE -ne 0) { Write-Error 'filter-repo 失败'; exit 1 }
+
+# ⚠ git-filter-repo 默认会删除 clone 时的 origin 远程（防误推回原仓库）。
+# 因此公开远程必须在剥离【之后】重建，否则 push 会报 'origin' does not appear to be a git repository。
+git remote remove $PUBLIC_REMOTE 2>$null
+git remote add $PUBLIC_REMOTE $PUBLIC_URL
 
 $TARGET_BRANCH = if ($env:OPC_PUBLISH_BRANCH) { $env:OPC_PUBLISH_BRANCH } else { 'main' }
 Write-Host "▶ 推送剥离后的分支 '$TARGET_BRANCH' 到公开远程 '$PUBLIC_REMOTE'（force）…"
