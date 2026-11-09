@@ -47,7 +47,7 @@ cd <OPC 仓库根>
 `git push --force` 到公开远程的 `main`。
 
 - 依赖 `git-filter-repo`：脚本默认用 `python3`；本机已装在受控 venv，用环境变量指定：
-  `OPC_PYTHON=C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe`
+  `OPC_PYTHON=/path/to/python`（该解释器需已 `pip install git-filter-repo`）
 - **历史会被重写**，forkers 需 `git pull --rebase` 或重新 fork —— 这是 filter-repo 的固有行为，正常。
 - 发布后公开远程的 `main` 与本地 `main` **不同名同内容**：本地含私有，公开已剥离。
 

@@ -125,6 +125,31 @@ def _load_json(path):
         return None
 
 
+def _integration_findings(ctx):
+    path = os.path.join(ctx.base, ".opc-sync", "projection.json")
+    if not os.path.isfile(path):
+        return []
+    data = _load_json(path)
+    if not isinstance(data, dict):
+        return [_mk(18, "外部集成投影无法解析，请检查 opc_sync 状态", ref="integration-projection")]
+    out = []
+    for conflict in (data.get("conflicts") or {}).values():
+        if isinstance(conflict, dict) and not conflict.get("resolved"):
+            out.append(_mk(18, "外部同步冲突 %s：%s" % (
+                conflict.get("binding_id") or "?", conflict.get("message") or conflict.get("kind") or "待人工裁决"),
+                ref=conflict.get("binding_id") or conflict.get("conflict_id") or "integration-conflict"))
+    for tomb in (data.get("tombstones") or {}).values():
+        if isinstance(tomb, dict) and not tomb.get("propagated"):
+            out.append(_mk(18, "外部资源删除/缺失待确认：%s" % (tomb.get("external_id") or tomb.get("binding_id") or "?"),
+                           ref=tomb.get("binding_id") or tomb.get("tombstone_id") or "integration-delete"))
+    for event in data.get("events_tail") or []:
+        if isinstance(event, dict) and event.get("status") == "failed":
+            out.append(_mk(18, "外部同步失败 %s：%s" % (
+                event.get("binding_id") or "?", event.get("message") or event.get("error_class") or "unknown"),
+                ref=event.get("binding_id") or event.get("event_id") or "integration-failed"))
+    return out
+
+
 def find(ctx):
     """执行机器可判定的巡检项（1~6 号；7~10 需要处置联动，产出提示交总管）。"""
     pe = opc_resolver.entity_types()["employee"]   # 员工前缀唯一真相（实体注册表）
@@ -154,6 +179,8 @@ def find(ctx):
             print(f"  [i] {ctx.dash_data} 不存在（先跑 run_boards once），检查项 2/3/4 本轮跳过")
         dd = {}
     warnings = dd.get("risks", {}).get("warnings", [])
+
+    ctx.findings.extend(_integration_findings(ctx))
 
     # 1) 阻塞解锁：blocked_by 上游全 done 而本单还在 backlog
     for t in tasks:
@@ -481,8 +508,8 @@ def notify_user(ctx, summary):
             _notify_windows(title, text)
         elif sys.platform == "darwin":
             subprocess.Popen(["osascript", "-e",
-                              'display notification "%s" with title "%s"'
-                              % (text.replace('"', '\\"'), title.replace('"', '\\"'))],
+                              'on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run',
+                              title, text],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             subprocess.Popen(["notify-send", title, text],
@@ -627,6 +654,11 @@ def selftest():
     old_ts = (datetime.datetime.now() - datetime.timedelta(days=5)).timestamp()
     os.utime(card, (old_ts, old_ts))
 
+    os.makedirs(os.path.join(tmp, ".opc-sync"), exist_ok=True)
+    with open(os.path.join(tmp, ".opc-sync", "projection.json"), "w", encoding="utf-8") as fh:
+        json.dump({"connections": {}, "bindings": {}, "shadows": {},
+                   "conflicts": {"c1": {"binding_id": "BND1", "kind": "version", "message": "双方已修改", "resolved": False}},
+                   "tombstones": {}, "events_tail": []}, fh, ensure_ascii=False)
     cfg = opc_resolver.CompanyConfig("C999", tmp, {})
     ctx = Ctx(cfg, tmp)
     find(ctx)
@@ -641,6 +673,7 @@ def selftest():
           not any(f["no"] == 17 and "未认领" in f["msg"] for f in ctx.findings))
     check("#9 僵尸工位卡发现", any("僵尸" in m for m in msgs))
     check("#10 数据陈旧发现", any("未刷新" in m for m in msgs))
+    check("#18 外部同步冲突发现", any(f["no"] == 18 and "BND1" in f["msg"] for f in ctx.findings))
     check("findings 结构化（kind/action/ref）", all(f.get("kind") and f.get("action") and "ref" in f for f in ctx.findings))
     check("#13 无环不误报", not any(f["no"] == 13 for f in ctx.findings))
     # 13) 依赖环：blocked_by A↔B 互锁 + parent 父子互嵌 → 永久无法开工

@@ -52,7 +52,10 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 import opc_dashboards
+import opc_integration_bridge
 import opc_model
+import opc_projection
+import opc_sync
 import opc_patrol
 import opc_resolver
 import opc_tickets
@@ -110,6 +113,8 @@ class Tenant:
         self.last_gen_epoch = 0.0
         self.last_findings = []      # 最近一轮巡检发现（/api/{cid}/patrol 用）
         self.last_error = ""         # 后台循环最近一次异常（/api/{cid}/ping 可查，防静默）
+        self.last_integration_ok = True
+        self.last_integration_error = ""
 
     # ---- 生成 + 巡检 ----
 
@@ -128,6 +133,18 @@ class Tenant:
                 errs.extend(f"agent-chain: {e}" for e in chain_issues)
             except Exception as e:
                 errs.append(f"agent-chain: {e}")
+            # External integrations are optional. Publish their connector-neutral shadow
+            # before dashboard generation so this round can display the current state.
+            try:
+                sync_kernel = opc_sync.SyncKernel(self.base)
+                opc_sync.register_configured_connectors(sync_kernel)
+                if sync_kernel.snapshot().get("bindings"):
+                    sync_kernel.reconcile()
+                sync_kernel.write_projection(os.path.join(self.base, ".opc-sync", "projection.json"))
+            except Exception as e:
+                self.last_integration_ok = False
+                self.last_integration_error = str(e)
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} integration: {e!r}"
             for name, fn, ctx in (("tickets", opc_tickets.generate, self.tctx),
                                   ("dashboards", opc_dashboards.generate_all, self.dctx)):
                 try:
@@ -140,8 +157,26 @@ class Tenant:
                 opc_model.sync_kb_index(self.pctx.cfg.root, self.cid)
             except Exception as e:
                 errs.append(f"kb-index: {e}")
+            if not errs:
+                try:
+                    opc_projection.publish_legacy_snapshot(self.base, self.cid, install_loaders=False)
+                except Exception as e:
+                    errs.append(f"projection: {e}")
             self.last_gen_epoch = time.time()
             return (not errs), errs
+
+    def sync_integrations(self):
+        """Reconcile configured external bindings without blocking local OPC."""
+        kernel = opc_sync.SyncKernel(self.base)
+        opc_sync.register_configured_connectors(kernel)
+        opc_integration_bridge.refresh_local_records(kernel, self.base)
+        state = kernel.snapshot()
+        results = kernel.reconcile() if state.get("bindings") else {}
+        failed = [value for value in results.values() if isinstance(value, dict) and value.get("status") == "failed"]
+        self.last_integration_ok = not failed
+        self.last_integration_error = "; ".join(str(value.get("message") or value.get("error_class")) for value in failed)
+        kernel.write_projection(os.path.join(self.base, ".opc-sync", "projection.json"))
+        return results
 
     def patrol(self, quiet=True):
         """单轮巡检（数据自愈+发现+去重+实时通知由 opc_patrol.run_once 一体完成）。"""
@@ -213,6 +248,14 @@ class Tenant:
         """周期兜底巡检：数据源 mtime 之外的第二触发源（如 worklog 无 mtime 变化的语义问题）。"""
         while True:
             time.sleep(max(1, int(interval_minutes)) * 60)
+            try:
+                self.sync_integrations()
+                opc_dashboards.generate_all(self.dctx)
+                opc_projection.publish_legacy_snapshot(self.base, self.cid, install_loaders=False)
+            except Exception as e:
+                self.last_integration_ok = False
+                self.last_integration_error = str(e)
+                self.last_error = f"{time.strftime('%m-%d %H:%M:%S')} integration: {e!r}"
             try:
                 self.patrol()
             except Exception as e:
@@ -346,9 +389,11 @@ def make_handler(tenants, default_cid):
                 rest += "index.html"
             return _safe_join(tenant.base, rest)
 
-        def _json(self, obj, code=200):
+        def _json(self, obj, code=200, headers=None):
             body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
             self.send_response(code)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self._cc_done = True
@@ -401,13 +446,19 @@ def make_handler(tenants, default_cid):
             if sub == "/ping":
                 return self._json({"ok": True, "company": t.cid, "base": t.base,
                                    "open_patrol_items": len(t.open_items()),
-                                   "last_error": t.last_error or None})
+                                   "last_error": t.last_error or None,
+                                   "integration_ok": t.last_integration_ok,
+                                   "integration_error": t.last_integration_error or None})
             if sub == "/sync":
                 return self._json({"ok": False, "error": "/sync 只收 POST（GET 已退役，防跨站滥用）"}, 405)
-            if sub == "/tickets":
-                return self._json(opc_patrol._load_json(t.tctx.out_json) or {})
-            if sub == "/dashboard":
-                return self._json(opc_patrol._load_json(t.pctx.dash_data) or {})
+            if sub in ("/tickets", "/dashboard"):
+                legacy = "tasks-data.json" if sub == "/tickets" else "dashboard-data.js"
+                try:
+                    payload, pointer = opc_projection.load_current_artifact(t.base, legacy)
+                    return self._json(payload, headers={"X-OPC-Batch-ID": pointer["batch_id"],
+                                                        "ETag": '"' + pointer["batch_id"] + '"'})
+                except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                    return self._json({"ok": False, "error": "projection_unavailable", "detail": str(exc)}, 503)
             if sub == "/patrol":
                 return self._json({"company": t.cid, "last_findings": t.last_findings,
                                    "open_items": t.open_items()})
@@ -438,7 +489,10 @@ def make_handler(tenants, default_cid):
         def _api_sync(self, t):
             ok, errs = t.regenerate("sync")
             findings = t.patrol() if ok else []
-            self._json({"ok": ok, "company": t.cid,
+            self._json({"ok": ok, "partial": ok and not t.last_integration_ok,
+                        "integration_ok": t.last_integration_ok,
+                        "integration_error": t.last_integration_error or None,
+                        "company": t.cid,
                         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                         "patrol_findings": len(findings), "errors": errs},
                        200 if ok else 500)

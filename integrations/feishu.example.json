@@ -1,0 +1,53 @@
+{
+  "connections": [
+    {
+      "connection_id": "feishu-main",
+      "connector_type": "feishu-bitable",
+      "enabled": true,
+      "config": {
+        "app_token": "REPLACE_WITH_TEST_APP_TOKEN",
+        "table_id": "REPLACE_WITH_TEST_TABLE_ID",
+        "app_id_env": "FEISHU_APP_ID",
+        "app_secret_env": "FEISHU_APP_SECRET",
+        "allowed_update_fields": ["status"],
+        "field_map": {
+          "title": "任务名称",
+          "status": "状态",
+          "due": "截止日期"
+        }
+      },
+      "capabilities": {
+        "pull": true,
+        "push": true,
+        "delete": false,
+        "idempotency": false,
+        "optimistic_versioning": true
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "binding_id": "BND-C001-0001",
+      "connection_id": "feishu-main",
+      "local_id": "EXT-FEISHU-0001",
+      "external_id": "REPLACE_WITH_TEST_RECORD_ID",
+      "entity_type": "task",
+      "display_fields": ["title", "status", "due"],
+      "external_ref": {
+        "kind": "bitable_record"
+      },
+      "field_policy": {
+        "default_authority": "external",
+        "authorities": {
+          "governance_tags": "local",
+          "local_note": "local",
+          "title": "external",
+          "status": "external",
+          "due": "external"
+        }
+      },
+      "delete_authority": "external",
+      "enabled": true
+    }
+  ]
+}

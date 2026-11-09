@@ -1,456 +1,113 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OPC 系统总览 · 用 AI Agent 跑公司的组织级框架</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPC 系统指南 · 从文件到组织操作系统</title>
 <style>
-  :root {
-    --ink: #1c2430; --sub: #5b6a7d; --line: #e5e9f0; --bg: #f4f6f9;
-    --accent: #2456d6; --accent-soft: #edf2fe; --accent-deep: #16305e;
-    --ok: #1a7f4e; --ok-soft: #ecf9f2; --bad: #c0392b; --bad-soft: #fdf0ee;
-    --warn: #b26a00; --warn-soft: #fdf6ec; --card: #ffffff;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); line-height: 1.85; font-size: 15px; }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 26px 90px; }
-
-  /* ---- 封面 ---- */
-  header.hero { background: linear-gradient(135deg, #16305e 0%, #2456d6 100%); color: #fff; border-radius: 20px; padding: 56px 52px; margin-bottom: 26px; }
-  header.hero .eyebrow { font-size: 13px; letter-spacing: 3px; opacity: .75; text-transform: uppercase; }
-  header.hero h1 { font-size: 36px; margin-top: 12px; letter-spacing: .5px; line-height: 1.4; }
-  header.hero p.lead { margin-top: 16px; font-size: 16px; opacity: .92; max-width: 820px; }
-  .hero-badges { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
-  .badge { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); padding: 4px 14px; border-radius: 999px; font-size: 12.5px; }
-
-  /* ---- 幻灯片式章节 ---- */
-  section.slide { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 46px 52px 42px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(22,48,94,.05); scroll-margin-top: 20px; }
-  section.slide .no { position: absolute; top: 30px; right: 44px; font-size: 30px; font-weight: 700; color: #dfe5ee; letter-spacing: 1px; }
-  .kicker { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 2.5px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 3px 12px; margin-bottom: 12px; text-transform: uppercase; }
-  section.slide h2 { font-size: 27px; line-height: 1.4; margin-bottom: 6px; color: var(--accent-deep); }
-  section.slide > .oneline { font-size: 16px; color: var(--sub); margin-bottom: 20px; }
-  section.slide h3 { font-size: 17.5px; margin: 26px 0 10px; color: var(--accent-deep); }
-  section.slide h3:first-of-type { margin-top: 8px; }
-  section.slide p { margin: 9px 0; }
-  section.slide li { margin: 6px 0; }
-
-  /* ---- 痛点 / 机制 / 落点 三段式 ---- */
-  .pain, .mech, .land { border-radius: 12px; padding: 16px 20px; margin: 14px 0; }
-  .pain { background: var(--bad-soft); border-left: 4px solid var(--bad); }
-  .mech { background: var(--accent-soft); border-left: 4px solid var(--accent); }
-  .land { background: var(--ok-soft); border-left: 4px solid var(--ok); }
-  .pain b:first-child, .mech b:first-child, .land b:first-child { display: inline-block; font-size: 12px; letter-spacing: 2px; border-radius: 5px; padding: 1px 10px; margin-right: 8px; color: #fff; vertical-align: 1px; }
-  .pain b:first-child { background: var(--bad); }
-  .mech b:first-child { background: var(--accent); }
-  .land b:first-child { background: var(--ok); }
-
-  /* ---- 流程图 ---- */
-  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 16px 0; }
-  .flow .step { flex: 1 1 170px; background: #fbfcfe; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 10px; padding: 14px 14px; font-size: 13.5px; }
-  .flow .step b { display: block; color: var(--accent-deep); font-size: 14.5px; margin-bottom: 5px; }
-  .flow .step .lvl { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 5px; padding: 0 8px; margin-bottom: 6px; }
-  .flow .arrow { align-self: center; color: var(--accent); font-weight: bold; font-size: 18px; }
-
-  /* ---- 表格 / 列表 / 代码 ---- */
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
-  th { background: var(--accent-deep); color: #fff; text-align: left; padding: 8px 12px; font-weight: 600; }
-  td { border: 1px solid var(--line); padding: 8px 12px; background: #fff; vertical-align: top; }
-  tr:nth-child(even) td { background: #fafbfd; }
-  ul.clean { list-style: none; }
-  ul.clean li { padding-left: 20px; position: relative; margin: 7px 0; }
-  ul.clean li::before { content: "▸"; position: absolute; left: 4px; color: var(--accent); font-weight: bold; }
-  code, .mono { font-family: Consolas, "Courier New", monospace; background: #eef1f6; border-radius: 5px; padding: 1px 7px; font-size: 12.5px; color: #24356b; }
-  pre { background: #f0f3f8; border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; overflow-x: auto; margin: 12px 0; }
-  pre code { background: none; padding: 0; }
-  .muted { color: var(--sub); font-size: 13.5px; }
-  .toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 16px; }
-  .toc a { display: block; background: #fbfcfe; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; text-decoration: none; color: var(--ink); font-size: 14px; }
-  .toc a:hover { border-color: var(--accent); background: var(--accent-soft); }
-  .toc a b { color: var(--accent); margin-right: 8px; }
-  footer { text-align: center; color: var(--sub); font-size: 13px; padding: 20px 0 6px; }
-  @media (max-width: 720px) { section.slide { padding: 30px 24px; } header.hero { padding: 38px 28px; } section.slide .no { display: none; } }
+:root{--ink:#182231;--muted:#5e6b7c;--line:#d9e1eb;--bg:#f5f7fb;--paper:#fff;--blue:#2859ce;--navy:#152d58;--blue-bg:#edf2ff;--green:#15724c;--green-bg:#eaf7ef;--red:#ae3b32;--red-bg:#fdf0ee;--amber:#946000;--amber-bg:#fff8e6;--violet:#6950a5;--violet-bg:#f3efff}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;font-size:15px;line-height:1.78}.wrap{max-width:1120px;margin:0 auto;padding:24px 24px 80px}.hero{background:linear-gradient(135deg,#132b55,#2859ce);color:#fff;border-radius:14px;padding:52px 48px;margin-bottom:22px}.eyebrow{font-size:12px;letter-spacing:2px;opacity:.8}.hero h1{font-size:38px;line-height:1.35;margin:14px 0 8px}.hero p{max-width:900px;font-size:16px;opacity:.94;margin:0}.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.badge{border:1px solid #ffffff55;background:#ffffff18;border-radius:999px;padding:3px 12px;font-size:12px}.toc{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:8px;margin-bottom:26px}.toc a{color:var(--ink);text-decoration:none;border-radius:7px;padding:8px 10px}.toc a:hover{background:var(--blue-bg);color:var(--blue)}.toc b{color:var(--blue);margin-right:7px}section{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:34px 40px;margin:20px 0;scroll-margin-top:14px}h2{font-size:26px;line-height:1.4;color:var(--navy);margin:0 0 8px}h3{font-size:18px;color:var(--navy);margin:26px 0 8px}h4{font-size:15px;color:var(--navy);margin:18px 0 5px}p{margin:8px 0}ul,ol{padding-left:24px}li{margin:6px 0}.lead{color:var(--muted);font-size:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.card{border:1px solid var(--line);border-radius:8px;padding:15px 17px;background:#fff}.card h3{margin:0 0 5px;font-size:16px}.card p{margin:0;font-size:14px}.label{display:inline-block;font-size:11px;font-weight:700;letter-spacing:1px;margin-right:8px}.band{padding:14px 17px;border-left:4px solid;border-radius:0 8px 8px 0;margin:13px 0}.problem{background:var(--red-bg);border-color:var(--red)}.design{background:var(--blue-bg);border-color:var(--blue)}.proof{background:var(--green-bg);border-color:var(--green)}.trade{background:var(--amber-bg);border-color:var(--amber)}.why{background:var(--violet-bg);border-color:var(--violet)}.problem .label{color:var(--red)}.design .label{color:var(--blue)}.proof .label{color:var(--green)}.trade .label{color:var(--amber)}.why .label{color:var(--violet)}code{font:12.5px Consolas,"Courier New",monospace;background:#eef2f7;color:#20386b;border-radius:4px;padding:1px 5px}pre{background:#101c30;color:#e9f0ff;border-radius:8px;padding:16px 18px;overflow:auto;font:12.5px/1.65 Consolas,"Courier New",monospace}figure{margin:18px 0}figcaption{font-size:13px;color:var(--muted);margin-top:7px}svg{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fbfcff}table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}th{background:var(--navy);color:#fff}tr:nth-child(even) td{background:#fafbfd}details{border:1px solid var(--line);border-radius:8px;margin:14px 0;background:#fcfdff}summary{cursor:pointer;padding:11px 14px;font-weight:700;color:var(--blue)}details>div{padding:0 15px 14px}.tree{font-size:13px;line-height:1.65}.muted{font-size:13px;color:var(--muted)}.two{columns:2;column-gap:26px}.two>*{break-inside:avoid}footer{border-top:1px solid var(--line);margin-top:28px;padding-top:16px;color:var(--muted);font-size:12.5px;text-align:center}@media(max-width:720px){.wrap{padding:14px 10px 48px}.hero{padding:32px 23px}.hero h1{font-size:29px}section{padding:25px 20px}h2{font-size:22px}.two{columns:1}.toc{grid-template-columns:1fr}svg{min-height:180px}}
 </style>
 </head>
 <body>
 <div class="wrap">
-
 <header class="hero">
-  <div class="eyebrow">OPC · Organization for AI-Agent Companies</div>
-  <h1>用 AI Agent 跑一家公司，<br>组织本身也要有一套「操作系统」</h1>
-  <p class="lead">你雇了一群 AI 员工（总管、售前、项目经理），把公司目录当工作区打开就能派活。但让几个 AI 稳定协作，靠的不是把提示词写得更好，而是给组织本身配上机制：文件即真相、目录即组织、巡检即管理、门禁即纪律。这份文档讲清楚这些机制从哪来、为什么这样设计——它站在计算机科学六十年的沉淀上。</p>
-  <div class="hero-badges">
-    <span class="badge">文件系统即真相</span><span class="badge">目录即组织</span><span class="badge">巡检 = 控制循环</span><span class="badge">技能 = 多级缓存</span><span class="badge">doctor 门禁 = init()</span><span class="badge">Windows / macOS / Linux</span>
-  </div>
+  <div class="eyebrow">OPC · ORGANIZATION FOR AI-AGENT COMPANIES</div>
+  <h1>给 AI Agent 一家公司，也给这家公司一套操作系统</h1>
+  <p>这不是一份“让模型更会说话”的提示词说明，而是一份解释组织如何被落到文件、目录、引用、校验、任务、知识和控制循环里的系统导览。第一次接触的人可以先看类比和例子；研发者可以展开每章的契约、实现入口和取舍。</p>
+  <div class="badges"><span class="badge">文件是真相</span><span class="badge">目录承载身份</span><span class="badge">引用隔离物理路径</span><span class="badge">技能按需加载</span><span class="badge">看板可重建</span><span class="badge">人保留决策权</span></div>
 </header>
+<nav class="toc" aria-label="章节目录">
+<a href="#why"><b>01</b>为什么需要 OPC</a><a href="#mental"><b>02</b>五个对象看懂全系统</a><a href="#tree"><b>03</b>目录结构与真相归属</a><a href="#address"><b>04</b>身份、规范链与 opc://</a><a href="#agent"><b>05</b>Agent 如何引用规范和技能</a><a href="#knowledge"><b>06</b>知识、记忆与组织学习</a><a href="#work"><b>07</b>工单、事务与 worklog 双账</a><a href="#concurrency"><b>08</b>原子写、锁与故障恢复</a><a href="#projection"><b>09</b>看板投影与批次发布</a><a href="#control"><b>10</b>服务、巡检与通知控制循环</a><a href="#integrations"><b>11</b>在线协作与 Level 3 同步</a><a href="#trust"><b>12</b>错误、安全、隐私与跨平台</a><a href="#sources"><b>13</b>思想来源、端到端案例与边界</a>
+</nav>
 
-<section class="slide">
-  <div class="no">00</div>
-  <span class="kicker">目录</span>
-  <h2>这份文档怎么读</h2>
-  <p class="oneline">每一页都是同一个骨架：<b style="color:var(--bad)">痛点</b>（真实的、你大概率撞过的坑）→ <b style="color:var(--accent)">机制</b>（用什么解决）→ <b style="color:var(--ok)">落点</b>（系统就是这么设计的）。先痛后药，不摆概念。</p>
-  <div class="toc">
-    <a href="#s01"><b>01</b>它解决什么问题</a>
-    <a href="#s02"><b>02</b>主线：文件系统即真相</a>
-    <a href="#s03"><b>03</b>目录即组织（实体即目录）</a>
-    <a href="#s04"><b>04</b>opc:// 寻址 = 虚拟内存</a>
-    <a href="#s05"><b>05</b>开工门禁：init() 化</a>
-    <a href="#s06"><b>06</b>技能体系 = 多级缓存</a>
-    <a href="#s07"><b>07</b>内容治理：三问法归位</a>
-    <a href="#s08"><b>08</b>并发协作：锁与原子取号</a>
-    <a href="#s09"><b>09</b>OPC 服务：微内核化</a>
-    <a href="#s10"><b>10</b>巡检 = 控制循环</a>
-    <a href="#s11"><b>11</b>容错哲学：绝不静默</a>
-    <a href="#s12"><b>12</b>安全边界：最小写权限</a>
-    <a href="#s12b"><b>12+</b>对外发布：单仓双远程剥离法</a>
-    <a href="#s13"><b>13</b>设计借鉴总表</a>
-    <a href="#s14"><b>14</b>三级知识库：查得到</a>
-    <a href="#s15"><b>15</b>知识飞轮：可复盘的组织学习</a>
-    <a href="#s16"><b>16</b>边界：明确不做什么</a>
-    <a href="#s17"><b>17</b>快速开始</a>
-  </div>
-</section>
+<section id="why"><h2>01 · 为什么需要 OPC</h2><p class="lead">一个聊天窗口能完成一件事，但一个组织要在很多天、很多会话、很多角色之间持续可靠地完成事情。</p>
+<div class="band problem"><span class="label">先用一句话理解</span>聊天像口头吩咐，组织需要的是一本能被不同人和不同工具共同读取的账本。</div>
+<div class="grid"><div class="card"><h3>会话会消失</h3><p>今天打开的 Agent 明天可能关闭。任务不能只放在上下文里，必须放进下一次会话仍能发现的文件。</p></div><div class="card"><h3>规则会复制漂移</h3><p>把同一条规则复制到总管、员工、团队和模板，修改一次就可能漏掉另一份。</p></div><div class="card"><h3>责任会变模糊</h3><p>“有人在做”不等于“谁负责、做到哪、何时验收”。组织需要可追溯的 owner、状态和交接。</p></div><div class="card"><h3>知识会腐烂</h3><p>对话里的经验难复用，公共库里的材料难定位；没有归属和复核机制，越积越不可信。</p></div><div class="card"><h3>自动化会静默失败</h3><p>程序遇到坏日期、断链或非法状态时如果悄悄忽略，仪表盘上的“正常”反而最危险。</p></div><div class="card"><h3>物理环境会变化</h3><p>公司目录可能改名，仓库可能搬家，系统可能从 Windows 换到 macOS。物理路径不应该成为组织关系本身。</p></div></div>
+<div class="band design"><span class="label">OPC 的回答</span>把组织能力拆成可验证的不变量：事实只有一个来源；身份有稳定 ID；引用走逻辑地址；写入有边界；投影可以重建；异常必须有等级和证据；机器发现问题，人决定意义。</div>
+<div class="band why"><span class="label">项目价值</span>OPC 把原本只存在于人脑、提示词和临时会话里的组织能力，变成可审计、可迁移、可复盘、可扩展的本地系统资产，同时避免把每家公司都做成一套分叉代码。</div></section>
 
-<section class="slide" id="s01">
-  <div class="no">01</div>
-  <span class="kicker">问题定义</span>
-  <h2>它解决什么问题</h2>
-  <p class="oneline">AI 员工单兵能力很强，但「一群 AI 组成的公司」会患上三种组织病——每一种都真实发生过。</p>
+<section id="mental"><h2>02 · 用五个对象看懂全系统</h2><p class="lead">先不要记命令。把 OPC 想成一家公司：用户提出意图，Agent 办事，文件保存事实，服务值班，页面展示结果。</p>
+<figure><svg viewBox="0 0 1000 270" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">OPC 总架构</title><desc id="arch-desc">用户意图经过 Agent 写入领域文件，机制内核验证和生成投影，用户根据投影做决策，决策再回到任务文件。</desc><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2859ce"/></marker></defs><g font-family="Microsoft YaHei, sans-serif" font-size="15" text-anchor="middle"><rect x="30" y="90" width="145" height="76" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="102" y="122">用户意图</text><text x="102" y="148" font-size="12">目标 · 约束 · 验收</text><line x1="175" y1="128" x2="245" y2="128" stroke="#2859ce" stroke-width="2" marker-end="url(#arr)"/><rect x="245" y="90" width="145" height="76" rx="8" fill="#f3efff" stroke="#6950a5"/><text x="317" y="122">Agent 会话</text><text x="317" y="148" font-size="12">角色 · 技能 · 对话</text><line x1="390" y1="128" x2="460" y2="128" stroke="#2859ce" stroke-width="2" marker-end="url(#arr)"/><rect x="460" y="90" width="145" height="76" rx="8" fill="#eaf7ef" stroke="#15724c"/><text x="532" y="122">领域文件</text><text x="532" y="148" font-size="12">工单 · worklog · 知识</text><line x1="605" y1="128" x2="675" y2="128" stroke="#2859ce" stroke-width="2" marker-end="url(#arr)"/><rect x="675" y="90" width="145" height="76" rx="8" fill="#fff8e6" stroke="#946000"/><text x="747" y="122">机制内核</text><text x="747" y="148" font-size="12">resolver · 门禁 · 巡检</text><line x1="820" y1="128" x2="890" y2="128" stroke="#2859ce" stroke-width="2" marker-end="url(#arr)"/><rect x="890" y="90" width="80" height="76" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="930" y="122">投影</text><text x="930" y="148" font-size="12">看板</text><path d="M930 166 C930 235 100 235 100 166" fill="none" stroke="#15724c" stroke-width="2" marker-end="url(#arr)"/><text x="515" y="224" fill="#15724c" font-size="13">看板和通知把“需要你决定的事”送回用户；它们不直接改写真相</text></g></svg><figcaption>这张图证明：OPC 把“对话”与“组织状态”分开；页面是读模型，人工决策是闭环中的固定节点。</figcaption></figure>
+<div class="grid"><div class="card"><h3>对象一：用户意图</h3><p>需求不是一句漂亮话，而是目标、范围、资料、验收和时限。缺信息可以先澄清，不能靠猜。</p></div><div class="card"><h3>对象二：Agent 会话</h3><p>Agent 是执行者，不是组织真相。会话可以短暂，角色规范和任务记录不能短暂。</p></div><div class="card"><h3>对象三：领域文件</h3><p>工单、worklog、roster、知识和制度保存可审计事实；它们可以被 Git 版本化。</p></div><div class="card"><h3>对象四：机制内核</h3><p>resolver、门禁、锁、取号、服务和巡检把“应该怎样”变成可检查行为。</p></div><div class="card"><h3>对象五：投影</h3><p>看板、INDEX、通知和 API 为发现服务。投影损坏时，应能从领域文件重建。</p></div></div>
+<details><summary>研发者展开：四种数据角色</summary><div><table><tr><th>角色</th><th>例子</th><th>是否权威</th><th>失败处理</th></tr><tr><td>写模型</td><td>task.md、worklog.md、roster.md</td><td>是</td><td>门禁、锁、人工修正</td></tr><tr><td>派生模型</td><td>INDEX.md、tasks-data.json</td><td>否</td><td>校验后重建</td></tr><tr><td>运行状态</td><td>patrol-state、pending、服务心跳</td><td>仅对运行过程</td><td>可重建、可过期</td></tr><tr><td>解释文档</td><td>SYSTEM_GUIDE、README、PRINCIPLES</td><td>各自有职责</td><td>以代码契约和 canonical skill 校准</td></tr></table></div></details></section>
 
-  <h3>组织病一：活儿没人接，接了没人推</h3>
-  <div class="pain"><b>痛点</b>总管派了一张工单给售前工程师，售前的会话恰好没开。这个活就静静躺在目录里——没有提醒、没有超时、没有兜底。三天后你想起来问进度，谁都不记得有这单。人类公司靠例会和经理盯，AI 会话今天开明天关，例会根本开不起来。</div>
+<section id="tree"><h2>03 · 目录结构：每个目录回答一个问题</h2><p class="lead">目录不是收纳习惯，而是组织模型。目录的位置表达“谁拥有它、它服务什么生命周期、能不能重建”。</p>
+<figure><pre class="tree">OPC/                              # 组织根：跨公司机制与规范
+├─ opc.toml                       # 物理布局、公司、实体类型的配置真相
+├─ opc_resolver.py                # 逻辑地址 → 物理路径；命名空间与规范链
+├─ opc_model.py                   # frontmatter、日期、锁、worklog、知识索引
+├─ opc_schema.py                  # 状态、字段、巡检元数据
+├─ opc_tickets.py                 # 工单写模型的解析与投影
+├─ opc_dashboards.py              # 公司/团队/个人/工单看板投影
+├─ opc_service.py                 # 本地常驻服务：监听、巡检、通知、只读 API
+├─ companies/&lt;CID&gt;                 # 稳定运行锚：指向真实公司目录
+├─ C001-AI自动化公司/              # 公司实例：业务事实与派生页面
+│  ├─ company.md                  # 公司身份、定位和边界
+│  ├─ AGENTS.md                   # 公司层规范入口，直属上级是 org
+│  ├─ roster.md                   # 人员与团队归属的事实来源
+│  ├─ E0007-AI员工-前端工程师/      # 员工实体：身份、技能、知识、worklog
+│  │  ├─ AGENTS.md                # 员工层规范入口，直属上级是团队或公司
+│  │  ├─ skills/                  # 该角色私有能力（单一真相）
+│  │  ├─ knowledge/               # 员工层知识与索引
+│  │  └─ workspace/worklog.md     # 该员工的工作流水与交接事实
+│  ├─ T001-AI开发团队/             # 团队实体：团队规范、成员视图、技能
+│  ├─ P0004-公司看板与工作记录系统/ # 项目实体：范围、团队、项目知识
+│  └─ workbench/
+│     ├─ tasks/                   # 需要验收的工作：一单一目录，task.md 权威
+│     ├─ affairs/                 # 常设事务：周期、负责人、推进记录
+│     └─ *-data.*                 # 可重建投影；不是业务真相
+└─ company-template/               # 新公司结构母版：参数化骨架，不是 C001 数据</pre><figcaption>目录图的读法：看到一个实体，先问“它是谁”；看到一个文件，先问“谁维护、谁消费、能否重建”。</figcaption></figure>
+<table><tr><th>位置</th><th>它回答的问题</th><th>维护者</th><th>能否重建</th></tr><tr><td><code>opc.toml</code></td><td>物理路径和注册表怎样映射到逻辑名称？</td><td>机制维护者</td><td>不能盲目自动生成，需审阅</td></tr><tr><td><code>company.md</code>/<code>roster.md</code></td><td>公司是谁、谁属于哪个团队？</td><td>公司/总管</td><td>事实不能由看板反推</td></tr><tr><td><code>AGENTS.md</code></td><td>这一层的规范入口和直属上级是什么？</td><td>对应层级</td><td>规范链声明可派生</td></tr><tr><td><code>task.md</code>/<code>worklog.md</code></td><td>组织承诺什么、实际推进了什么？</td><td>负责人/员工</td><td>不能用投影替代</td></tr><tr><td><code>INDEX.md</code>/<code>*-data.js</code></td><td>如何快速找到事实？</td><td>生成器/服务</td><td>可以删除后重建</td></tr></table>
+<div class="band trade"><span class="label">重要边界</span><code>companies/&lt;CID&gt;</code> 是稳定锚，不是第二份公司副本。真实目录改名时重指向锚；不能同时维护锚和实例两份正文。</div></section>
 
-  <h3>组织病二：同一条规则，三份版本</h3>
-  <div class="pain"><b>痛点</b>「工单怎么建」写进了总管的 SOP、售前的技能、项目经理的笔记。半年后机制升级了，三处只改了两处。新员工读到旧版，建出来的单看板不认——没人知道哪份是真的，因为<b>真相不止一份</b>。</div>
+<section id="address"><h2>04 · 身份、规范链与 opc://：名字可以变，身份证不能乱</h2><div class="band problem"><span class="label">生活类比</span>门牌可以换，身份证号不应跟着换。目录后缀给人读，实体 ID 给机器认。</div><div class="band design"><span class="label">实体规则</span>公司、团队、员工、项目、工单等都是实体。目录名采用“稳定 ID + 可读说明”，例如 <code>E0007-AI员工-前端工程师</code>。机器使用 <code>E0007</code>，人使用后缀；改名不应改变实体身份。</div><h3>逻辑地址和物理地址</h3><p>直接写 <code>../../C001-AI自动化公司/E0007...</code>，等于把门牌地址写进所有通讯录。OPC 使用 <code>opc://</code> 逻辑地址：</p><pre>opc://company:C001/skill/ticket-system/SKILL.md
+opc://company:C001/workbench/tasks/TSK00010-E0001分析员改名售前工程师并赋能售前技能/task.md
+opc://org/PRINCIPLES.md</pre><p><code>opc_resolver.py</code> 是地址簿：读取 <code>opc.toml</code> 和公司事实，把逻辑地址解析为当前机器上的路径。解析失败必须明确抛错；越界、歧义、断链不能“猜一个能用的路径”。</p><figure><svg viewBox="0 0 900 250" role="img" aria-labelledby="chain-title chain-desc"><title id="chain-title">规范链与稳定锚</title><desc id="chain-desc">根规范经过公司、团队到员工，roster 是归属事实，链是派生声明，稳定锚连接逻辑公司 ID 与物理目录。</desc><g font-family="Microsoft YaHei, sans-serif" font-size="14" text-anchor="middle"><defs><marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#15724c"/></marker></defs><rect x="35" y="65" width="150" height="62" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="110" y="92">org AGENTS</text><text x="110" y="113" font-size="11">opc://org/agents</text><line x1="185" y1="96" x2="250" y2="96" stroke="#15724c" stroke-width="2" marker-end="url(#arr2)"/><rect x="250" y="65" width="150" height="62" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="325" y="92">company AGENTS</text><text x="325" y="113" font-size="11">opc://company:C001/agents</text><line x1="400" y1="96" x2="465" y2="96" stroke="#15724c" stroke-width="2" marker-end="url(#arr2)"/><rect x="465" y="65" width="150" height="62" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="540" y="92">team AGENTS</text><text x="540" y="113" font-size="11">直属公司层</text><line x1="615" y1="96" x2="680" y2="96" stroke="#15724c" stroke-width="2" marker-end="url(#arr2)"/><rect x="680" y="65" width="150" height="62" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="755" y="92">employee AGENTS</text><text x="755" y="113" font-size="11">直属团队/公司层</text><path d="M325 135 C325 195 110 195 110 135" fill="none" stroke="#946000" stroke-dasharray="5 4"/><text x="215" y="219" fill="#946000" font-size="12">roster 的团队列是事实；规范链是按事实生成的派生声明</text></g></svg><figcaption>规范链的原则：每一层只声明直属上级，避免把根规范复制到每个员工文件；会话加载时沿链补读。</figcaption></figure>
+<details><summary>研发者展开：解析器的安全不变量</summary><div><ul><li>manifest 的公司 home、key、实体 ID 和子路径必须落在允许的公司根内。</li><li>使用真实路径 containment 检查，而不是字符串前缀；Windows 盘符、UNC、反斜杠和符号链接都要纳入判断。</li><li>roster 可以声明多个团队；当前规范链选择第一项有效团队作为直属链，同时报告多团队提示，避免假装支持未定义的多继承冲突规则。</li><li>稳定锚的作用是承接物理迁移，不是绕过权限或隐藏错误。</li></ul></div></details></section>
 
-  <h3>组织病三：改了机制，没人知道，也没人能验证</h3>
-  <div class="pain"><b>痛点</b>你让 AI 改了一处生成器逻辑，它说「改好了」。改的对不对？别的公司会不会被影响？Mac 上还能跑吗？下个月你自己都忘了当初为什么这么改。组织记忆随着会话结束而蒸发。</div>
+<section id="agent"><h2>05 · Agent 如何引用规范和技能</h2><p class="lead">“规范链”“技能披露”“平台钩子”是三个不同问题：谁应该遵守、哪里有能力、平台如何把文件交给会话。</p><div class="grid"><div class="card"><h3>AGENTS.md：应该遵守什么</h3><p>身份、职责、红线、直属上级和技能入口。它不是百科，也不是所有操作步骤的复制品。</p></div><div class="card"><h3>SKILL.md：怎样完成一类工作</h3><p>技能包含触发词、流程、模板、验收和边界。命中后按需读取，细节放 reference。</p></div><div class="card"><h3>INDEX.md：怎样快速找到</h3><p>技能和知识索引是生成物。它减少“全目录翻找”，不取代 frontmatter 和正文真相。</p></div><div class="card"><h3>平台适配：怎样被看见</h3><p>WorkBuddy junction、Claude/Codex 的 hook 和平台原生加载负责接入；平台差异集中在接入层。</p></div></div><figure><svg viewBox="0 0 900 260" role="img" aria-labelledby="load-title load-desc"><title id="load-title">Agent 引用与渐进加载</title><desc id="load-desc">会话先加载规范链和技能索引，触发后加载正文，再按需要加载参考资料；子 Agent 不因改变工作目录自动获得私有技能。</desc><g font-family="Microsoft YaHei, sans-serif" font-size="14" text-anchor="middle"><defs><marker id="arr3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2859ce"/></marker></defs><rect x="28" y="70" width="150" height="68" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="103" y="98">新会话</text><text x="103" y="120" font-size="11">平台加载当前层</text><line x1="178" y1="104" x2="230" y2="104" stroke="#2859ce" stroke-width="2" marker-end="url(#arr3)"/><rect x="230" y="70" width="150" height="68" rx="8" fill="#f3efff" stroke="#6950a5"/><text x="305" y="98">规范链</text><text x="305" y="120" font-size="11">根→公司→团队</text><line x1="380" y1="104" x2="432" y2="104" stroke="#2859ce" stroke-width="2" marker-end="url(#arr3)"/><rect x="432" y="70" width="150" height="68" rx="8" fill="#eaf7ef" stroke="#15724c"/><text x="507" y="98">技能 INDEX</text><text x="507" y="120" font-size="11">触发词 · 摘要</text><line x1="582" y1="104" x2="634" y2="104" stroke="#2859ce" stroke-width="2" marker-end="url(#arr3)"/><rect x="634" y="70" width="150" height="68" rx="8" fill="#fff8e6" stroke="#946000"/><text x="709" y="98">命中后读正文</text><text x="709" y="120" font-size="11">再按需读 reference</text><path d="M709 142 C709 210 305 210 305 142" fill="none" stroke="#ae3b32" stroke-dasharray="5 4"/><text x="507" y="239" fill="#ae3b32" font-size="12">换 cwd 不等于切换会话清单；跨目录子 Agent 不自动获得目标员工私有技能</text></g></svg><figcaption>渐进式披露借鉴了缓存和分层存储思想：常驻小摘要，命中后再读正文，减少 token 和误触发。</figcaption></figure><div class="band trade"><span class="label">不要混淆</span>技能是“完成工作的方法”，制度是“持续生效的组织约束”。需要每次都遵守的红线不能只放在一个可能没被触发的技能里。</div></section>
 
-  <div class="mech"><b>机制</b>OPC 的回答不是「加强提示词」，而是把组织搬到一套有纪律的机制上：<b>文件系统即真相</b>（02）让状态可见可审计；<b>实体即目录</b>（03）让身份不漂移；<b>符号引用 + 稳定锚</b>（04）让改名不断链；<b>门禁 + 自检</b>（05）让每次改动都被机器验证；<b>技能分层</b>（06-07）让知识单一真相；<b>常驻服务 + 巡检</b>（09-10）让组织自己发现漏接、逾期、失账——人只被真正需要决策的事打扰。</div>
-  <div class="land"><b>落点</b>一句话：OPC = 给「AI 员工组成的组织」装上操作系统级的机制层——调度、内存管理、中断、文件系统，一样不少，只是硬件换成了人、文件和会话。</div>
-</section>
+<section id="knowledge"><h2>06 · 知识、记忆与组织学习</h2><div class="band problem"><span class="label">生活类比</span>日记、百科、操作手册和公司制度不是同一种书。把它们全塞进一个目录，搜索和责任都会失真。</div><table><tr><th>层次</th><th>回答什么问题</th><th>典型位置</th><th>处理方式</th></tr><tr><td>memory</td><td>这个角色最近经历了什么？</td><td>员工 memory</td><td>时序事实，私有、细节优先</td></tr><tr><td>knowledge</td><td>组织已经知道什么？</td><td>员工/团队/公司 knowledge</td><td>三级同构，索引→摘要→全文</td></tr><tr><td>method</td><td>怎样稳定完成一类工作？</td><td>方法条目、技能 reference</td><td>提炼后复用，保留来源</td></tr><tr><td>policy</td><td>组织要求所有人怎样做？</td><td>制度、AGENTS、原则</td><td>规范化、可检查、不能只靠触发</td></tr></table><h3>两条轴，不要混成一条</h3><div class="grid"><div class="card"><h3>归属轴</h3><p>员工、团队、公司决定知识放在哪一级；越近越具体，越上浮越公共。</p></div><div class="card"><h3>硬度轴</h3><p>经验、方法卡、技能、制度决定知识稳定到什么程度；稳定性提高要经过复盘和审批。</p></div></div><div class="band design"><span class="label">上浮原则</span>上浮是归属转移，不是复制。目标层保存唯一正文，源位置保留一个真实存根承接旧 <code>opc://</code> 引用；索引由机器重建，结构变更默认需要人授权。</div><h3>知识飞轮</h3><ol><li><b>经历：</b>任务、对话或 worklog 产生事实。</li><li><b>留痕：</b>把关键结果和证据写进实体记录，而不是只留在会话上下文。</li><li><b>提炼：</b>从一次性事实中识别可复用方法，保留原始来源。</li><li><b>审核：</b>判断它是否足够普遍、稳定、无敏感信息。</li><li><b>归位：</b>进入员工、团队或公司知识层，必要时晋升为技能或制度。</li><li><b>复用：</b>通过索引和触发词按需加载，再在新任务中验证。</li></ol><details><summary>研发者展开：为什么不自动删除和自动晋升</summary><div><p>引用次数只能近似表示“被文档引用”，不能证明 Agent 真的读过或业务仍需要。自动删除会破坏历史证据；自动晋升会把一次偶然结论伪装成组织规则。因此机器只负责发现过期、零命中、疑似重复和结构漂移，处置由人决定且应可逆。</p></div></details></section>
 
-<section class="slide" id="s02">
-  <div class="no">02</div>
-  <span class="kicker">主线设计</span>
-  <h2>一条主线：文件系统即真相</h2>
-  <p class="oneline">整个组织没有任何私有数据库、私有服务端——所有状态都是你硬盘上的纯文本文件。</p>
+<section id="work"><h2>07 · 工单、事务与 worklog 双账</h2><p class="lead">工单是组织对“要交付什么”的承诺；worklog 是员工对“实际推进了什么”的流水。两者有关，但不是同一份数据复制两遍。</p><div class="grid"><div class="card"><h3>直聊车道</h3><p>问答、一次性小改、无需独立验收和交接的工作。关键结果仍按纪律留痕。</p></div><div class="card"><h3>工单车道</h3><p>需要验收、跨会话、多人协作、时限、依赖或复盘的工作。目录中的 <code>task.md</code> 是事实。</p></div><div class="card"><h3>事务车道</h3><p>没有明确终点但需要周期推进的事情，例如维护、复核、内容更新。通过 AFF 和 worklog 形成节奏。</p></div></div><h3>一张工单里有哪些事实</h3><table><tr><th>字段/文件</th><th>作用</th><th>为什么不能只写在对话里</th></tr><tr><td><code>id/title/owner</code></td><td>身份、目标、责任</td><td>不同会话需要同一称呼</td></tr><tr><td><code>status/due/priority</code></td><td>当前状态、时限、取舍</td><td>便于巡检和排序</td></tr><tr><td><code>blocked_by/parent</code></td><td>依赖和父子闭环</td><td>防止“看似进行、实际被锁死”</td></tr><tr><td><code>inputs/deliverables</code></td><td>输入和交付物地址</td><td>让验收有证据，不靠记忆</td></tr><tr><td><code>messages/logs</code></td><td>澄清、交接、执行轨迹</td><td>跨会话复盘不丢上下文</td></tr></table><h3>双账如何交叉核验</h3><figure><pre>建单       → task.md: backlog
+认领       → worklog: 计划中 + ticket
+开工       → task.md: in_progress / worklog: 进行中
+交接       → handoff / messages / worklog 更新
+待验收     → task.md: review + deliverable
+人工验收   → 通过：done；不通过：返工
+巡检       → 对照两账，发现“只关一边、无人认领、长期不动”</pre><figcaption>工单和 worklog 的重合点是 ticket 引用；它们分别回答组织承诺和个人推进。</figcaption></figure><div class="band proof"><span class="label">失败可见</span>缺 frontmatter、无法解析的文件跳过并告警；实体可识别但字段非法时保留投影、标红并告警。这样错误不会污染正常统计，也不会从系统中无声消失。</div></section>
 
-  <div class="pain"><b>痛点</b>常见的协作工具把状态藏在数据库里：任务在 Jira 的服务器上、知识在 Notion 的云端、流程在某个 SaaS 的后台。你想查「这单为什么黄了」，要在五个系统里跳；想回滚一个错误变更？对不起，没有版本历史。</div>
-  <div class="mech"><b>机制</b>OPC 反其道：工单是 <code>task.md</code>、员工档案是 <code>roster.md</code>、工作记录是 <code>worklog.md</code>、巡检结果是 <code>patrol-log.md</code>。生成器读这些文件算出看板数据，看板只是投影。<b>文件是唯一真相，看板、报表、API 全是只读投影。</b></div>
-  <div class="land"><b>落点</b>三个白赚的好处：① <b>git 天然接管审计与回滚</b>——任何变更可追溯、可撤销；② <b>file:// 双击即开</b>——看板不依赖服务器也能看（服务在线时自动实时化）；③ <b>任何编辑器、任何 agent 平台都能操作</b>——不锁定任何工具生态。代价是我们必须自己解决数据库本可以替我们解决的问题：并发锁（08）、缓存一致性（06）、数据校验（11）——这正是机制层存在的意义。</div>
-</section>
+<section id="concurrency"><h2>08 · 原子写、锁与故障恢复</h2><div class="band problem"><span class="label">先分清两个概念</span>原子写解决“读者不要看到半个文件”；锁解决“两个写者不要依据同一旧快照互相覆盖”。它们不是一回事。</div><div class="grid"><div class="card"><h3>atomic_write</h3><p>先写唯一临时文件，再用 <code>os.replace</code> 替换目标。目标读者看到的是旧文件或新文件，不是半截文件。</p></div><div class="card"><h3>file_lock</h3><p>用跨进程锁保护读→改→写。锁包含 PID、token、取得时间和 heartbeat；活进程不能仅因 mtime 过期被抢。</p></div><div class="card"><h3>worklog canonical lock</h3><p>同一员工的热账、归档账、自动建账和 append 使用同一把 workspace 锁，统一分配 wid。</p></div><div class="card"><h3>工位卡</h3><p>锁只保证文件互斥，工位卡表达“哪个会话负责当前工作”。语义所有权不能只靠 OS 锁。</p></div></div><h3>知识上浮为什么需要 journal</h3><p>上浮涉及目标写入、源替换、存根和索引，跨多个文件。journal 保存 source/destination、内容 hash 和阶段：</p><pre>prepared → dest_written → source_stubbed → indexes_synced → committed</pre><p>如果进程在中间退出，下一次操作先读取 journal，只按 hash 前滚。目标或源被人改过而 hash 不匹配时，保留 journal、报告冲突，绝不覆盖新事实。这是“小型事务日志”，不是把整个 OPC 变成重型数据库。</p><div class="band trade"><span class="label">边界</span>上述锁只约束遵守 OPC 写入口的写者。用户直接用编辑器裸改文件仍可能绕过锁，因此巡检和校验仍是第二道防线；网络共享盘也不一定提供与本地文件系统相同的 rename/O_EXCL 语义。</div><details><summary>研发者展开：故障矩阵</summary><div><table><tr><th>故障点</th><th>允许留下什么</th><th>下一次如何处理</th></tr><tr><td>目标写之前</td><td>journal=prepared</td><td>补写目标，前提是源 hash 未变</td></tr><tr><td>目标写之后</td><td>目标正确、源仍原文</td><td>写存根并继续</td></tr><tr><td>源替换之后</td><td>目标正确、源为存根</td><td>重建索引并提交</td></tr><tr><td>发现未知 hash</td><td>journal 保留</td><td>停机报告，人工合并</td></tr></table></div></details></section>
 
-<section class="slide" id="s03">
-  <div class="no">03</div>
-  <span class="kicker">组织结构</span>
-  <h2>目录即组织（实体即目录）</h2>
-  <p class="oneline">公司、团队、项目、员工、工单——每个组织实体就是一个目录，目录名就是身份证。</p>
-  <div class="pain"><b>痛点</b>组织架构记在聊天记录里：「售前工程师是谁来着？上次那个项目叫什么编号？」——问 AI，它要去翻十天前的会话；人入职离职、项目开结，状态散落各处，组织结构图永远过时。</div>
-  <div class="mech"><b>机制</b>实体即目录，ID 唯一真相：
-    <ul class="clean">
-      <li><code>C001-AI自动化公司/</code> —— 公司（C = Company）</li>
-      <li><code>T001-AI开发团队/</code> —— 团队（T = Team，内含 teamboard 团队看板）</li>
-      <li><code>P0004-公司看板与工作记录系统/</code> —— 项目（P = Project，归属用 team 字段声明）</li>
-      <li><code>E0001-AI员工-售前工程师/</code> —— 员工（E = Employee，内含 worklog 工作日志、mydesk 个人看板）</li>
-      <li><code>workbench/tasks/TSK00010-搭建日志系统/</code> —— 工单（一单一目录，task.md 是全部事实）</li>
-    </ul>
-    决策 #17：目录名 = <code>ID-说明后缀</code>——ID 是机器的唯一真相，后缀是给人看的显示名，一个名字同时服务两个读者。</div>
-  <div class="land"><b>落点</b>实体注册表（<code>opc.toml [entity_types]</code>）是前缀的唯一真相：加一种实体类型（比如「客户 CUST」「供应商 SUP」）= manifest 加一行，resolver、生成器、巡检、结构自检五处消费方自动跟随，零代码改动。开新公司 = 复制模板目录 + 填 company.md，脚手架技能一键完成。</div>
-</section>
+<section id="projection"><h2>09 · 看板投影与批次发布</h2><p class="lead">机场屏幕不是航班本身。屏幕坏了可以从航班记录重建；但同一位旅客不能同时看到来自三套不同航班表的拼接结果。</p><div class="band problem"><span class="label">旧问题</span>逐个替换 tasks、dashboard、teamboard、mydesk 文件，即使每个文件本身完整，进程中断仍可能让用户看到新工单配旧个人桌面。</div><div class="band design"><span class="label">新机制</span>每次生成先写到 staging，完成后形成不可变 release；manifest 记录批次、CID、来源指纹、每个 artifact 的 hash 和大小；最后只原子替换一个 <code>current.js</code> 指针。</div><figure><pre>.opc-data/
+├─ current.js                         # 唯一可变提交点
+├─ staging/&lt;batch_id&gt;/                 # 未发布的临时批次
+└─ releases/&lt;batch_id&gt;/
+   ├─ manifest.json                   # 完整文件清单和 SHA-256
+   └─ artifacts/
+      ├─ workbench/tasks-data.json
+      ├─ workbench/tasks-data.js
+      ├─ dashboard-data.js
+      ├─ T001-AI开发团队/teamboard-data.js
+      └─ E0007-AI员工-前端工程师/mydesk-data.js</pre><figcaption>发布提交点只有一个：current.js。生成中途失败不会改变上一批 current。</figcaption></figure><h3>一次发布的顺序</h3><ol><li>获取公司级跨进程发布锁。</li><li>给输入文件计算排序后的 SHA-256 source fingerprint。</li><li>生成全部投影到 staging，不直接改活文件。</li><li>验证 manifest、路径 containment、文件 hash、CID 和批次。</li><li>将 staging 原子重命名为 release。</li><li>原子更新 current.js；失败则旧批次继续服务。</li></ol><h3>兼容迁移</h3><p>当前旧的固定 <code>*-data.js</code> 文件仍可作为 legacy fallback，保证 <code>file://</code> 双击打开不突然失效。新页面和 API 逐步读取 current/release；兼容期必须明确显示“legacy fallback 不保证全批次”，不能静默假装已经原子发布。</p><details><summary>研发者展开：为什么用 manifest 和 hash</summary><div><p>时间戳只能说明文件大概什么时候写过，不能证明两个文件来自同一轮生成。batch_id 表示生成轮次，source_fingerprint 表示输入快照，artifact hash 表示发布内容未被篡改。它们分别解决“同批”“同源”“未变”三个问题。</p></div></details></section>
 
-<section class="slide" id="s04">
-  <div class="no">04</div>
-  <span class="kicker">组成原理 · 虚拟内存</span>
-  <h2>opc:// 寻址：给组织装一套 MMU</h2>
-  <p class="oneline">全仓库几十万字的文档互相引用，凭什么公司改名、目录迁移不断一根链？</p>
-  <div class="pain"><b>痛点</b>文档里写满相对路径：<code>../../companies/C001/workbench/...</code>。哪天你把公司目录改个名、或者把仓库挪个地方，几百处引用集体断掉——而且断得悄无声息，文档照常显示，点进去 404。</div>
-  <div class="mech"><b>机制</b>借鉴虚拟内存：应用程序只用虚拟地址，物理内存怎么布局是操作系统的事。
-    <ul class="clean">
-      <li><b>虚拟地址</b> = <code>opc://company:C001/skills/ticket-system</code>、<code>opc://org/PRINCIPLES</code>——文档里只写符号引用，禁止裸相对路径（P26）</li>
-      <li><b>MMU/页表</b> = <code>opc_resolver.py</code>：符号地址 → 物理路径，唯一翻译入口</li>
-      <li><b>物理帧</b> = 稳定锚 <code>companies/C001</code>（Windows junction / macOS·Linux symlink）——真实目录变了，锚重新指向即可</li>
-      <li><b>页表重映射</b> = 公司改名后跑 <code>--ensure-links</code>，全组织引用<b>零改动</b></li>
-      <li><b>缺页检测</b> = <code>--check</code> / pre-commit / doctor 全文扫描 opc:// 引用，失效即拦截，绝不静默；断了还能按 company.md 的「公司 ID」现场扫描自愈</li>
-    </ul></div>
-  <div class="land"><b>落点</b>这不是为了炫技：它让「组织结构可演化」成为常态——改名、迁移、重构在 OPC 里是低风险操作，因为物理布局从一开始就不进文档。</div>
-</section>
+<section id="control"><h2>10 · 服务、巡检与通知：把组织做成控制循环</h2><p class="lead">OPC 服务像夜班值守，不是老板，也不是远程数据库。它观察文件、执行校验、重建投影、发送提醒，然后把需要判断的事交还给人。</p><figure><svg viewBox="0 0 900 300" role="img" aria-labelledby="loop-title loop-desc"><title id="loop-title">OPC 控制循环</title><desc id="loop-desc">观察、验证、生成投影、通知、人工决策、记录结果形成循环。</desc><g font-family="Microsoft YaHei, sans-serif" font-size="14" text-anchor="middle"><defs><marker id="arr4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2859ce"/></marker></defs><circle cx="450" cy="150" r="108" fill="#fbfcff" stroke="#d9e1eb"/><g><rect x="370" y="25" width="160" height="48" rx="8" fill="#edf2ff" stroke="#2859ce"/><text x="450" y="54">observe · 观察输入</text><rect x="655" y="126" width="160" height="48" rx="8" fill="#fff8e6" stroke="#946000"/><text x="735" y="155">validate · 校验约束</text><rect x="530" y="238" width="160" height="48" rx="8" fill="#eaf7ef" stroke="#15724c"/><text x="610" y="267">project · 生成投影</text><rect x="210" y="238" width="160" height="48" rx="8" fill="#f3efff" stroke="#6950a5"/><text x="290" y="267">notify · 发送提醒</text><rect x="85" y="126" width="160" height="48" rx="8" fill="#fdf0ee" stroke="#ae3b32"/><text x="165" y="155">human decide · 人决策</text><path d="M530 73 L675 128" fill="none" stroke="#2859ce" stroke-width="2" marker-end="url(#arr4)"/><path d="M735 174 L672 238" fill="none" stroke="#2859ce" stroke-width="2" marker-end="url(#arr4)"/><path d="M530 262 L370 262" fill="none" stroke="#2859ce" stroke-width="2" marker-end="url(#arr4)"/><path d="M210 238 L165 174" fill="none" stroke="#2859ce" stroke-width="2" marker-end="url(#arr4)"/><path d="M245 126 L370 73" fill="none" stroke="#2859ce" stroke-width="2" marker-end="url(#arr4)"/><text x="450" y="145" font-size="18" fill="#152d58">组织状态</text><text x="450" y="169" font-size="12" fill="#5e6b7c">持续趋近期望态</text></g></g></svg><figcaption>控制循环借鉴操作系统和 Kubernetes controller 的 reconcile 思想，但 OPC 把最终业务决策固定留给人。</figcaption></figure><div class="grid"><div class="card"><h3>服务监听什么</h3><p>任务、worklog、roster、知识和模板的变动；周期兜底防止 mtime 或外部写入遗漏。</p></div><div class="card"><h3>巡检发现什么</h3><p>未认领、阻塞、逾期、停滞、双账不一致、依赖环、陈旧投影、知识腐烂和升级信箱。</p></div><div class="card"><h3>通知如何克制</h3><p>按 critical/warn/info 去重；勿扰和不在场模式影响普通提醒，真正紧急事项仍需可达。</p></div><div class="card"><h3>服务不做什么</h3><p>不替用户批准制度，不自动删除知识，不凭看板写回事实，不把单机服务伪装成集群。</p></div></div><div class="band proof"><span class="label">三类结果</span><b>error</b> 代表机制无法可信工作，应阻断；<b>warning</b> 代表业务需要人处理，不应让整台组织停机；<b>info</b> 代表可选优化。SessionStart 可以提示但保持平台兼容，真正硬阻断落在 doctor、pre-commit、CI 和严格 verify。</div></section>
 
-<section class="slide" id="s05">
-  <div class="no">05</div>
-  <span class="kicker">软件工程 · init 与 CI</span>
-  <h2>开工门禁：把系统初始化做成 init()</h2>
-  <p class="oneline">任何一个 AI agent 在这个仓库开工前，都必须先过一道机器自检——全绿才许进业务。</p>
-  <div class="pain"><b>痛点</b>新 clone 一个仓库，「能跑」全靠口口相传：要先装钩子、要建链接、要生成看板数据、Python 版本有要求…… agent 开工时这些全靠它自己想起来，漏一步就是各种诡异报错。更糟的是：上一手留下的坏引用、断掉的锚，没人拦。</div>
-  <div class="mech"><b>机制</b>把初始化收敛成一个函数调用 <code>python opc_resolver.py --doctor</code>，七项自检 + 自愈：
-    <ul class="clean">
-      <li>Python 版本 ≥ 3.11、稳定锚存在且指向有效、pre-commit 钩子已装</li>
-      <li>OPC 服务探活（HTTP /api/ping 实测，不轻信端口占用）</li>
-      <li>命名空间全文扫描（所有 opc:// 引用可解析 + SKILL.md 相对链接断链校验）</li>
-      <li><b>规范链自动派生</b>：根→公司→团队→员工只保留直属引用；唯一真相是 roster「团队」列。常驻服务监听组织变动并按租户被动重建，SessionStart 按当前工作区自动注入根到直属上级，当前层由平台原生加载；转组自动换链，无团队员工不重复直挂公司，审计拦缺失/重复/漂移/悬空</li>
-      <li>技能披露链接完整、实例↔模板 diff 无未登记差异、技能体量达标（P31）</li>
-      <li>自愈先行：缺锚、缺链接、缺看板数据，检查前自动补齐（打印 [fix] 行）——新 clone 跑一次 doctor 即完成自举</li>
-      <li>**门禁自己长腿**（2026-08-31）：「要 agent 记得跑」的机制不算代码保证——<code>--install-hooks</code> 把 doctor 装进各平台 SessionStart 钩子（ZCode process 型 / Claude Code command 型，路径走项目变量跨 clone 有效），会话一开自动自检并把状态行注入会话上下文；扫描面收口到组织文档面（代码里的路径示例不再误报烧 token），改名时全文件命中清单兜住代码路径依赖</li>
-    </ul>
-    兜底是 <code>python opc_resolver.py --bootstrap</code> 一键自举（链接 + 钩子 + 数据 + 索引 + 服务自启）。背后还有 GitHub Actions 三平台 × 双 Python 版本矩阵 + 七个模块内置 selftest，每次提交全量验证。</div>
-  <div class="land"><b>落点</b>「门禁即跨平台验收」：doctor 全绿 + selftest 全绿 + CI 矩阵全绿，才算改完。agent 的开工仪式和函数初始化一样可靠——这就是把 P30（三平台承诺）从口号变成每次提交的机器验证。</div>
-</section>
+<section id="integrations"><h2>11 · 在线协作与 Level 3 同步</h2><p class="lead">飞书、钉钉等在线平台是员工的协作工具；OPC 仍负责身份、治理、正式工单、worklog、正式知识和审计。Level 3 不是把两边全文复制，而是让每个资源有明确权威、稳定绑定、冲突和可追溯同步。</p><div class="grid"><div class="card"><h3>Skill 决定怎样做</h3><p>飞书多维表格与知识 Skill 规定可读/可写范围、确认边界、外部内容不可信和本地留痕。</p></div><div class="card"><h3>CLI/HTTP 负责动作</h3><p>优先使用可核验 CLI 或官方 HTTP API；MCP 只在已配置、已授权且 CLI/HTTP 不适用时作为 fallback。</p></div><div class="card"><h3>Binding 建立身份</h3><p>本地逻辑 ID 与外部 app、table、record、document 的稳定 ID 绑定；标题和 URL 不能单独充当身份。</p></div><div class="card"><h3>Shadow 进入看板</h3><p>外部任务标准化后进入公司驾驶舱的在线协作区，但不伪装成本地 task.md，也不进入本地完成率。</p></div></div><h3>五个核心对象</h3><table><tr><th>对象</th><th>作用</th><th>关键边界</th></tr><tr><td>authority</td><td>声明整个资源或字段由本地还是在线端负责</td><td>未声明不写回，不使用静默 last-write-wins</td></tr><tr><td>binding</td><td>连接本地实体和外部稳定 ID</td><td>包含方向、字段 policy 和最近检查点</td></tr><tr><td>shadow</td><td>保存外部资源的标准化只读影子</td><td>不保存第三方 prompt 为指令，不自动创建本地工单</td></tr><tr><td>conflict</td><td>双方变化、版本竞态或字段歧义</td><td>暂停覆盖，进入 #18 巡检，等待人裁决</td></tr><tr><td>tombstone</td><td>记录外部或本地删除事实</td><td>先保留墓碑，不自动传播硬删除</td></tr></table><h3>飞书第一版的真实能力</h3><p>当前适配器通过标准库 HTTP 调官方开放平台：支持 tenant token、多维表格分页/单条读取、字段白名单的单条更新，以及 Wiki/DOCX 只读。飞书更新接口没有公开 If-Match/ETag 条件写，OPC 因此在单表写锁内先回读，以字段内容 hash 做应用层 expected version；它能发现大多数竞态，但不能冒充平台提供的强 CAS。删除、批量修改、字段结构和权限变更默认关闭。</p><figure><pre>人类在飞书修改记录
+  → 事件/轮询只提示“可能变化”
+  → Connector 重新读取权威记录
+  → Normalize 为 ExternalShadow
+  → 按 authority + field policy 比较
+  ├─ 单侧变化：reconcile
+  ├─ 双侧变化：Conflict，停止覆盖
+  └─ 删除/失权：Tombstone + 巡检
+  → 写 SyncEvent 审计
+  → 公司 dashboard 在线协作区 + #18 巡检</pre><figcaption>外部平台故障只影响在线协作状态，不阻断本地工单、知识索引和看板生成。</figcaption></figure><details><summary>研发者展开：状态和持久化</summary><div><p><code>opc_integrations.py</code> 定义平台中立模型和 Connector 契约；<code>opc_sync.py</code> 使用 <code>.opc-sync/state.json</code>、<code>events.jsonl</code> 和 <code>projection.json</code> 保存绑定、shadow、冲突、墓碑与事件；<code>integrations/feishu.py</code> 只处理飞书 HTTP 边界；<code>integrations/feishu_connector.py</code> 将多维表格映射为统一 Connector。状态文件是本机运行态，不存 app secret。</p></div></details></section>
 
-<section class="slide" id="s06">
-  <div class="no">06</div>
-  <span class="kicker">组成原理 · 多级缓存</span>
-  <h2>技能体系：给 agent 的知识装上多级缓存</h2>
-  <p class="oneline">一个售前技能 260 行，十五个技能全塞进会话？agent 的「寄存器」当场爆掉。缓存分层是唯一解。</p>
-  <div class="pain"><b>痛点</b>最常见的失败模式：把方法论、模板、告警对照、书单全部写进一个 SKILL.md，认为「写全才专业」。结果每次触发加载 260 行，其中这次任务用得上的不到 30 行——贵、慢，而且长上下文会稀释模型对关键规则的注意力。反过来，全部外链则 agent 每次都要猜该读哪个文件。</div>
-  <div class="mech"><b>机制</b>渐进式披露（Anthropic Agent Skills 的官方设计），像 CPU 缓存一样分层，越热的层越小越快：</div>
-  <div class="flow">
-    <div class="step"><span class="lvl">L1 · 常驻</span><b>name + description + triggers</b>只有技能名和触发词进系统提示，每技能约一行；agent 靠它判断「这个场景该用哪个技能」</div>
-    <div class="arrow">→</div>
-    <div class="step"><span class="lvl">L2 · 按需</span><b>SKILL.md 正文</b>命中触发词才整篇加载。定位是<b>路由器不是百科</b>：只写规则主干，≤120 行（doctor 门禁检测超限）</div>
-    <div class="arrow">→</div>
-    <div class="step"><span class="lvl">L3 · 冷存</span><b>附属文件</b>PRD 大模板、19 类告警对照、书单、新手示例——正文给链接，用到才读，读了不亏</div>
-    <div class="arrow">→</div>
-    <div class="step"><span class="lvl">磁盘</span><b>archive/ 归档</b>历史过程文档冷热分层，绝不占缓存</div>
-  </div>
-  <div class="land"><b>落点</b>打样实证：ticket-system 258→80 行、售前技能 260→64 行（-75%），规则一条没丢，细节全部下放 L3。三个配套纪律：① 正文 ≤120 行进 doctor 门禁，防止将来写肿回去；② description 只写「何时触发」，不复制内容摘要（那是 L1 重复 L2）；③ 技能/索引变更后必须提醒重开会话——会话里的技能列表是启动时的快照，这是已知的缓存一致性行为（缓存失效纪律，见 dispatch-sop）。</div>
-</section>
+<section id="trust"><h2>12 · 错误、安全、隐私与跨平台</h2><h3>错误不是失败，静默才是</h3><table><tr><th>输入情况</th><th>处理</th><th>原因</th></tr><tr><td>缺文件、缺 frontmatter、无法解析</td><td>跳过并告警</td><td>避免坏结构污染正常投影</td></tr><tr><td>实体可识别但 status/date 非法</td><td>保留、标红、告警</td><td>不能因为字段错就抹掉事实</td></tr><tr><td>路径越界、命名空间断链</td><td>失败并阻断</td><td>这是安全边界或身份关系错误</td></tr><tr><td>业务巡检发现逾期/阻塞</td><td>通知并生成待办</td><td>这是管理问题，不是生成器崩溃</td></tr></table><h3>读宽写窄</h3><p>只读 API 让 Agent 和页面容易发现状态；写动作集中到明确的 POST <code>/sync</code> 和受门禁保护的文件写入口。路径参数必须经过租户 containment；输入物链接只允许 workbench 内相对路径，不能把 <code>javascript:</code> 或 <code>../../</code> 变成可点击地址。</p><h3>公开发布不是普通 push</h3><p>工作 <code>main</code> 可能含私有内容，私有 <code>backup</code> 保存全量；公开远程只能接收经过私有清单剥离的干净子集。发布应保留来源、revision、剥离清单和审批证据。历史重写不能让已经泄露的凭据重新安全，泄露后仍需轮换。</p><h3>三平台的共同契约</h3><table><tr><th>层</th><th>共同要求</th><th>平台差异</th></tr><tr><td>路径</td><td>使用 resolver 和 Path API，拒绝裸组织路径</td><td>Windows 盘符/反斜杠；Unix 分隔符</td></tr><tr><td>稳定锚</td><td><code>companies/&lt;CID&gt;</code> 承接逻辑地址</td><td>Windows junction；macOS/Linux symlink</td></tr><tr><td>自启</td><td>同一个前台服务契约</td><td>Windows SCM、launchd、systemd/crontab</td></tr><tr><td>验证</td><td>Python 3.11+、selftest、doctor、CI</td><td>CI runner 和 shell/PowerShell 语法</td></tr></table><div class="band trade"><span class="label">明确限制</span>OPC 是本地优先的组织框架，不是强一致多机数据库、细粒度远程权限系统，也不承诺在网络共享盘上复制本地 rename 和锁的全部语义。</div></section>
 
-<section class="slide" id="s07">
-  <div class="no">07</div>
-  <span class="kicker">内容治理 · P31 三问法</span>
-  <h2>内容归位：一份知识到底放哪？</h2>
-  <p class="oneline">同一条规范被复制进三个员工的技能，半年后三处三个版本——治理知识的第一步是决定它住在哪。</p>
-  <div class="pain"><b>痛点</b>AI 写文档的通病是「太具体、太片面、到处复制」：为了自包含，每个技能里都塞一份背景；为了安全，每层目录都放一份规则。结果是组织知识大爆炸，真相却在复制中漂移。</div>
-  <div class="mech"><b>机制</b>写任何内容前过四问，落位唯一：</div>
-  <div class="flow">
-    <div class="step"><b>① 跨公司成立？</b>换一家公司这条内容还成立 → 根层一份（如 create-company 技能、PRINCIPLES 原则）</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>② 多角色纪律？</b>公司政策、多个角色必须动作一致 → 公司层正文；其他层只留<b>一行引用</b>（opc:// 链接 + 一句为什么读）</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>③ 单角色手艺？</b>只有一个角色执行 → 该员工的 skills/，且<b>一技能一触发场景</b>（巨型技能 = 缓存污染）</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>④ 跟实体走？</b>属于某项目/工单/人的生命周期 → 实体目录（事实记录，细节优先）</div>
-  </div>
-  <h3>配套判据（SOP 归位实战沉淀）</h3>
-  <table>
-    <tr><th style="width:190px">判据</th><th>内容</th></tr>
-    <tr><td><b>纪律 vs 手艺</b></td><td>「大家动作不一致协作就断」→ 公司级纪律（如 ticket-system）；「某角色干得好不好的方法」→ 员工手艺（如 presales）。判例：公司级四技能全是纪律，总管五技能全是手艺。</td></tr>
-    <tr><td><b>最小公共上浮</b></td><td>执行者跨 N 个角色 → 放最小公共层。上浮有成本：加载者变多、审批链变长——没有真实复用就不上浮（类比缓存上浮：没有命中率不往 L1 推）。</td></tr>
-    <tr><td><b>参数回机制层</b></td><td>SOP 正文出现具体参数值（「14 天未动算停滞」）= 双真相警觉：阈值真相在 opc_schema，文档引用不复制。</td></tr>
-    <tr><td><b>表达总纲</b></td><td>写规范/原则/技能类内容：「精准高效、本质而非肤浅」——每句话要么改变行为、要么帮助定位。<b>例外</b>：记忆/日志/worklog/messages 等事实记录类，细节优先不精简（P31 例外条款）。</td></tr>
-  </table>
-  <div class="land"><b>落点</b>约束不靠自觉：<b>doctor 门禁检测正文超限</b>（机器发现、人工决策），模板与实例的一致性由 diff-template + 已知差异登记清单管理；纪律类技能真相源在实例，<code>--sync-skills</code> 一键单向刷进模板（方案 C，开第二家公司时再换轨根层 junction）。整套规则固化在 PRINCIPLES P31，全组织一处真相。</div>
-</section>
-
-<section class="slide" id="s08">
-  <div class="no">08</div>
-  <span class="kicker">OS · 并发控制</span>
-  <h2>并发协作：工位卡、锁原语、原子取号</h2>
-  <p class="oneline">两个 AI 会话同时给同一份台账写「已占用」，谁后写谁覆盖谁——人肉眼看不见，数据悄悄坏。</p>
-  <div class="pain"><b>痛点</b>用户同时开了两个会话，都让 AI 从号池取号建工单。两个会话同时读到「TSK00011 未占用」，同时落笔——一个工单两个号，或两个工单一个号。数据库时代用事务解决；我们是纯文件，怎么办？</div>
-  <div class="mech"><b>机制</b>把操作系统文件并发的那一套搬过来：
-    <ul class="clean">
-      <li><b>锁原语</b>：<code>file_lock</code>（O_EXCL 创建锁文件 + 忙等超时 + 三重自愈）保护台账、建账等一切热写路径——只约束「同样走锁的写方」，机制层全员遵守。自愈三重奏：持有者 PID 失活立即抢占（Windows 走 OpenProcess 探测——os.kill(pid,0) 在 Windows 有误杀/误判史）、mtime 30s 过期兜底、抢占与释放全走 rename 旁路（沙箱拦 unlink 的环境不再永久死锁）</li>
-      <li><b>原子写</b>：<code>atomic_write</code>（唯一名临时文件 + os.replace）保证「写一半被读」不可能发生；临时文件掺 pid+纳秒，双写者不互踩</li>
-      <li><b>写前日志（WAL）</b>：取号协议 = 先占台账后建单，「写完并保存才算占到号」——先落日志再干活，崩溃了也不会开出幽灵工单</li>
-      <li><b>原子取号</b>：<code>--new --auto-id</code> 由生成器取「最大号+1」，目录存在性即锁，并发建单不撞号、自动登记台账</li>
-      <li><b>工位卡</b>：一个会话 = 一张卡（会话目录 + status），「台账写权 = 唯一在岗会话」；卡 3 天不动 = 僵尸工位卡，巡检自动收割（类比 waitpid）</li>
-    </ul></div>
-  <div class="land"><b>落点</b>巡检日志、巡检状态、worklog 追加全程持锁；服务端三个触发源（监听//sync/周期兜底）全程串行化。这些不是理论——「巡检日志重复追加」「tmp 互踩」「重复弹通知」都是真实踩过并在三轮体检中收口的坑。</div>
-</section>
-
-<section class="slide" id="s09">
-  <div class="no">09</div>
-  <span class="kicker">OS · 微内核</span>
-  <h2>OPC 服务：把散落的守护进程收敛成微内核</h2>
-  <p class="oneline">历史上这个系统靠「计划任务 + 双 watcher + 心跳脚本」维持运转——直到它们开始互相打架。</p>
-  <div class="pain"><b>痛点</b>v1 架构：登录自启脚本拉起两个 watcher（工单 + 看板各一个），再加计划任务心跳。问题接踵而至：watcher 和计划任务抢文件锁、谁先跑看运气；一台机器三套调度逻辑，出问题不知道查谁；新机器忘配置，看板悄悄变黄条。</div>
-  <div class="mech"><b>机制</b>决策 #18：全部收敛为一个常驻进程 <code>opc_service.py</code>——微内核化：
-    <ul class="clean">
-      <li><b>进程 = 宿主，公司 = 租户</b>：启动时扫描 opc.toml 装载全部公司，新公司自动纳管，互不串数据（多租户）</li>
-      <li><b>看板实时化</b>：数据一变即重算 + 秒级监听；巡检异步解耦（巡检的跨进程锁再卡也不冻结监听循环）；「同步」按钮 POST 直算且失败原因上屏（GET /sync 已退役防跨站），静态产物一律 no-cache 防浏览器启发式缓存把陈旧看板钉在屏上</li>
-      <li><b>根身份校验</b>：探活不只问「端口上有没有服务」，还问「它伺服的是不是本根」（ping 携带 root/pid）——目录搬家/多 clone 后的旧服务会被 doctor 点名并给出处置命令，指向旧目录的自启项就地重写自愈</li>
-      <li><b>巡检调度</b>、实时通知与每日摘要、只读 API——全部进程内装配，配置驱动</li>
-      <li><b>唯一调度权</b>：旧的 watcher/计划任务全部退役，脚本降级为手动应急（默认一次性模式）——系统里只有一个会自己动的进程</li>
-      <li><b>零感知运维</b>：开机自启（Windows 启动文件夹 vbs / macOS·Linux crontab @reboot）、headless 无窗口、删文件即卸载、HTTP 探活感知端口顺延</li>
-    </ul></div>
-  <div class="land"><b>落点</b>微内核化的收益和操作系统教科书说的一模一样：调度逻辑唯一、故障域集中、新增服务（如将来的 agent 平台通知通道）按配置插拔，不碰内核。</div>
-</section>
-
-<section class="slide" id="s10">
-  <div class="no">10</div>
-  <span class="kicker">Kubernetes · 控制循环</span>
-  <h2>巡检 = 组织的 reconcile 循环</h2>
-  <p class="oneline">AI 员工会漏接单、忘推进、改了 A 忘了 B——靠经理每小时盯一眼？盯不住，也不该盯。</p>
-  <div class="pain"><b>痛点</b>传统管理是「人盯人」：例会、周报、口头催办。这套对 AI 组织失效——会话今天开明天关，没有「例会」可开。你需要一种不依赖任何人在场的管理方式。</div>
-  <div class="mech"><b>机制</b>不指挥每个动作，只声明「组织应该长什么样」（期望态），剩下的交给循环——Kubernetes 控制器模式：</div>
-  <div class="flow">
-    <div class="step"><b>① 期望态声明</b>每单有主、无阻塞漏清、双账一致、号池有水、事务不脱期——13 项检查每项都是一条期望态</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>② 周期观测</b>数据一变即巡检 + 周期兜底<br>扫文件真相，不猜、不忆</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>③ diff 偏差</b>发现即结构化入待办<br>severity 三级：info / warn / <b>critical 仅升级信箱</b></div>
-    <div class="arrow">↺</div>
-    <div class="step"><b>④ 修正/告警</b>处置置 handled 闭环<br>同一问题再犯自动 reopened</div>
-  </div>
-  <h3>16 项期望态检查（选摘）</h3>
-  <table>
-    <tr><th>检查</th><th>期望态被打破的样子</th></tr>
-    <tr><td>#1 解锁待开工</td><td>前置工单已全部 done，本单还躺在 backlog——该开工了没人开</td></tr>
-    <tr><td>#2 认领缺口</td><td>工单有 owner 但 worklog 无条目——接了单没记账，或根本没接</td></tr>
-    <tr><td>#3 双账对账</td><td>task.md 与 worklog 说法不一致——以工单为准并告警</td></tr>
-    <tr><td>#4 脱期事务 / #11 逾期与停滞预警</td><td>常设事务超期未推进；工单过了 due 或长期无更新</td></tr>
-    <tr><td>#5 升级信箱</td><td>员工 [escalate] 请求总管决策——<b>唯一 critical</b>，必须打扰用户</td></tr>
-    <tr><td>#6 号池水位 / #9 僵尸工位卡 / #10 数据陈旧 / #13 依赖环</td><td>号要耗尽、卡 3 天没动、看板数据过期、阻塞关系成环永久锁死</td></tr>
-  </table>
-  <div class="land"><b>落点</b>通知系统套用中断模型：severity = 中断优先级，<b>quiet_hours 勿扰时段 = 中断屏蔽字</b>（warn/info 夜间静默、并入次日 09:00 摘要，critical 永远直达）；通知只报「新出现」的偏差（哈希去重），不重复轰炸。巡检日志只增不删（审计流水），状态文件可改可重建（派生态）——主从分明。<b>不在场模式（away_mode）= 中断总屏蔽</b>：出差时实时通知全静默、每日摘要照常置顶未拍板项——绝不代决策。<b>知识回流提示</b>：升级/失败工单提醒总管把教训沉淀进知识库——教训有回家的路，二次踩坑即候选晋升为技能素材。</div>
-</section>
-
-<section class="slide" id="s11">
-  <div class="no">11</div>
-  <span class="kicker">容错哲学 · P11</span>
-  <h2>绝不静默：宁可标红，不可丢弃</h2>
-  <p class="oneline">系统对「错误数据」的态度，决定了一个组织能不能信任自己的看板。</p>
-  <div class="pain"><b>痛点</b>很多工具遇到脏数据直接丢弃：status 写错了？这条工单消失。日期格式不对？这条记录跳过。用户看到的是「少了一条」——他不知道是被删了还是本来没有，<b>数据以静默的方式说谎</b>。</div>
-  <div class="mech"><b>机制</b>OPC 的铁律（P11）：非法状态<b>照常上板并标红</b>，旁边配修法提示——数据绝不因格式错误而消失，修正后自动恢复正常渲染。全系统贯彻同一哲学：
-    <ul class="clean">
-      <li>工单状态非法 → 上板标红 + 告警修法，不丢弃（P11）</li>
-      <li>引用失效 → 门禁拦截 + 扫描自愈，绝不静默返回假路径（opc://org 多命中直接报歧义）</li>
-      <li>巡检发现 → 只增不删的审计流水 + 可闭环的状态机，处置有痕、再犯重开</li>
-      <li>服务后台循环异常 → 记入 last_error，/api/ping 可查，不做吞异常的「假健康」</li>
-      <li>agent 侧 [警告] 全部带修法话术——发现问题的同时告诉你怎么修</li>
-    </ul></div>
-  <div class="land"><b>落点</b>信任来自可预期：看板上的每一条你都敢信，因为「看不见」在 OPC 里不可能是「被藏起来」。</div>
-</section>
-
-<section class="slide" id="s12">
-  <div class="no">12</div>
-  <span class="kicker">安全 · 最小权限</span>
-  <h2>安全边界：读接口宽，写边界窄</h2>
-  <p class="oneline">本机服务也有安全模型——因为「任意网页都能摸到的本机端口」是真实攻击面。</p>
-  <div class="pain"><b>痛点</b>典型失误：本机 HTTP 服务把「重算数据」做成 GET 接口还没鉴权——任何网页里插一行 <code>&lt;img src="http://127.0.0.1:8765/api/x/sync"&gt;</code>，你浏览恶意页面时它就在反复触发全公司重算与通知轰炸。静态文件服务的目录穿越（URL 编码反斜杠）则可能把公司根外的文件读出去。</div>
-  <div class="mech"><b>机制</b>读宽写窄（架构铁律）：
-    <ul class="clean">
-      <li><b>只读 API</b>：GET /api/{公司ID}/tickets、dashboard、patrol、ping 随便查——文件才是真相，读不改状态</li>
-      <li><b>唯一写动作</b>：POST /api/{公司ID}/sync（重算看板），同源校验（Origin 不匹配拒、Sec-Fetch-Site: same-site 也拒——本机另一端口同样算跨源），GET 直接 405</li>
-      <li><b>双重防穿越</b>：路径段按 / 与 \ 双分隔符切分过滤 + realpath 前缀校验，越界一律落回必然 404 的路径，绝不返回租户根目录列表</li>
-      <li><b>失败可观测</b>：后台循环异常记入 last_error 并暴露在 ping 里——「服务在跑」和「服务健康」是两回事</li>
-      <li><b>写路径纪律</b>：机制代码不写业务数据（文件是真相），只写自己的运行状态（巡检日志/状态/待办）</li>
-    </ul></div>
-  <div class="land"><b>落点</b>攻防两端都验证过：跨站 POST 实测 403、目录穿越实测 404、GET 退役实测 405——安全不是配置项声明，是 selftest 里的断言。</div>
-</section>
-
-<section class="slide" id="s12b">
-  <div class="no">12+</div>
-  <span class="kicker">隐私 · 公开发布</span>
-  <h2>对外发布：单仓双远程剥离法</h2>
-  <p class="oneline">想让别人 fork 学机制，又不能把私有资料一起公开——答案是同一个仓库、两个远程、一份剥离清单。</p>
-  <div class="pain"><b>痛点</b>两难：要么为了公开而把私有文件删掉（本地丢掉版本管理与备份），要么直接把含私有的 <code>main</code> 推上公开仓库（隐私外泄，且历史里删不干净——force-push 之前推过的都还在）。两种都源于「一个仓库只能二选一」的错觉。</div>
-  <div class="mech"><b>机制</b>单仓双远程剥离法：
-    <ul class="clean">
-      <li><b>origin = 公开远程</b>：只收「按清单剥离后」的干净 <code>main</code>，供他人 fork；pre-push 守卫禁止从工作仓库直推</li>
-      <li><b>backup = 私有远程</b>：直推含私有的 <code>main</code> 全量 = 完整版本管理 + 异地备份，允许且应当做</li>
-      <li><b>一份清单</b>：仓库根 <code>.opc-private-paths.txt</code>（相对路径 + <code>*</code> 通配）声明「公开分支剥离什么」；发布脚本按它跑 <code>git filter-repo --invert-paths</code></li>
-      <li><b>发布走脚本</b>：<code>scripts/opc-publish.*</code> 在临时克隆里剥离后 force-push——临时克隆不带钩子，故可直推公开远程</li>
-      <li><b>判据</b>：拿不准就加清单——多剥无害（公开分支少个文件），漏剥是事故</li>
-    </ul></div>
-  <div class="land"><b>落点</b>机制内建为公司级技能 <code>privacy-publish</code>，并在四处 <code>AGENTS.md</code>（组织根 / 公司 / 总管 / 新建模板）同步赋能：agent 命中「推送 / 发布 / 剥离隐私 / 私有清单」即自动加载完整流程，人不必记住任何命令。</div>
-</section>
-
-<section class="slide" id="s13">
-  <div class="no">13</div>
-  <span class="kicker">设计借鉴总表</span>
-  <h2>我们从哪里偷的师</h2>
-  <p class="oneline">完整的映射清单——每一行都是「经典思想 → 系统里的真实对应物」，不是比喻是结构。</p>
-  <table>
-    <tr><th style="width:210px">经典思想</th><th>痛点</th><th>OPC 对应物</th></tr>
-    <tr><td>组成原理 · 多级缓存</td><td>知识塞满上下文，贵且稀释注意力</td><td>技能三层渐进披露（L1 触发词 / L2 正文≤120 行 / L3 附属冷存），doctor 体量门禁</td></tr>
-    <tr><td>组成原理 · 虚拟内存</td><td>改个目录名，几百处引用全断</td><td>opc:// 符号引用 + resolver（MMU）+ 稳定锚（物理帧）+ 自愈扫描（缺页处理）</td></tr>
-    <tr><td>OS · 微内核</td><td>watcher/计划任务/心跳三套调度打架</td><td>决策 #18 收敛单常驻服务，进程=宿主、公司=租户、服务可插拔</td></tr>
-    <tr><td>OS · 中断与屏蔽</td><td>通知轰炸或漏报二选一</td><td>severity 优先级 + quiet_hours 屏蔽字 + 只报新发现（哈希去重）+ 每日摘要</td></tr>
-    <tr><td>OS · 信号量 / WAL</td><td>双会话并发写台账互相覆盖</td><td>file_lock（O_EXCL+超时+抢占）、原子写唯一 tmp、先占号后建单</td></tr>
-    <tr><td>K8s · 控制循环</td><td>人盯人管理对 AI 组织失效</td><td>巡检 = reconcile：16 项期望态 → 观测 → diff → 修正闭环</td></tr>
-    <tr><td>算法 · DAG 拓扑</td><td>工单 A↔B 互锁永久卡死无人知</td><td>blocked_by/parent 建图查环（三色 DFS），生成器告警 + 巡检 #13 兜底</td></tr>
-    <tr><td>设计模式 · 断路器</td><td>升级请求无人处理，工单无声卡死</td><td>超时自动升层：等 lead 2 天 → 越级总管 → 3 天 → 标注「等用户拍板」</td></tr>
-    <tr><td>设计模式 · 模板方法 / 适配器</td><td>开新公司靠复制粘贴改几十处</td><td>company-template（骨架固定公司填空）、AGENTS.md/CLAUDE.md 平台适配、通知通道可插拔（策略）</td></tr>
-    <tr><td>软件工程 · init/CI</td><td>新环境能不能跑全靠口口相传</td><td>doctor 七项自检自愈 + 七模块 selftest + 三平台 CI 矩阵 + pre-commit 门禁</td></tr>
-  </table>
-  <p class="muted">这条清单本身有纪律（P32）：机制更新/改动/新增时同步本文档，与机制改动同一提交落地——好设计必须在对外讲解里留档，不随会话蒸发。</p>
-</section>
-
-<section class="slide" id="s14">
-  <div class="no">14</div>
-  <span class="kicker">组织学习 · 三级知识库</span>
-  <h2>查得到：知识放哪、谁管、怎么不烂？</h2>
-  <p class="oneline">员工学到的东西要么烂在自己记忆里别人看不到，要么塞进公司库等总管慢慢提炼；Agent 想查一条知识只能全目录翻找，token 全花在「找」而不是「用」上；存进去就没人管，过期、重复、失焦三重腐烂，半年后没人敢信。</p>
-  <div class="pain"><b>痛点</b>知识库最大的敌人不是「没写下来」，是<b>写下来了但查不到、而且会烂</b>。查不到 → 每次重新踩坑；会烂 → 查到了也不敢信。两头堵死，知识库就成了文件坟场。</div>
-  <div class="mech"><b>机制</b>三级同构——员工级 / 团队级 / 公司级，每级 = 人写的 <code>KB.md</code>（组织原则）+ 机器生成的 <code>INDEX.md</code>（条目清单）+ 主题子目录。同构不是美观问题：Agent 检索逻辑只写一份，上浮时零格式转换。配三条硬规矩：</div>
-  <table>
-    <tr><th style="width:132px">维度</th><th>设计</th><th>为什么</th></tr>
-    <tr><td><b>加载</b></td><td>索引行（常驻，约 30 字符/条）→ 摘要 → 全文，<b>命中才升级</b>；<code>tokens</code> 字段让 Agent 在摘要层就能判断全文值不值得读</td><td>省 token 靠<b>不加载</b>，不是靠少加载——就是 CPU 缓存行的思路：按 64B 取，不整块读</td></tr>
-    <tr><td><b>上浮</b></td><td><b>归属转移，不是复制</b>：物理搬家 + 原处留真实 .md 存根（承接历史 <code>opc://</code> 引用）；审批前查重；作者与维护人分离</td><td>复制即漂移。走 exclusive cache——一条知识物理上只存在一层，天然没有一致性负担</td></tr>
-    <tr><td><b>淘汰</b></td><td>永不自动删除，只降级与归档；过期 / 重复 / 冷门三条<b>只告警</b>，人工裁决</td><td>CPU 的 eviction 是硬件自动、无损淘汰（主存还有副本）；知识照搬就是数据丢失</td></tr>
-  </table>
-  <div class="land"><b>落点</b>关键解耦：<b>Agent 不需要「感知变更」，只需要「每次读到最新的索引」</b>——服务监听目录变动实时重生成，它要的是现状不是历史；差异另写 <code>KB-CHANGELOG.md</code> 给人看（KB.md 是三级里唯一人写的部分，也是唯一会漂的部分）。还有一处反直觉的取舍：KB.md 漂移检查实测 28 条全误报后<b>撤出了自动巡检</b>——机器给工具（<code>--kb-drift</code>），人决定何时用，而不是让告警淹掉看板。</div>
-</section>
-
-<section class="slide" id="s15">
-  <div class="no">15</div>
-  <span class="kicker">组织学习 · 知识飞轮</span>
-  <h2>可复盘：为什么经验不会随会话蒸发？</h2>
-  <p class="oneline">AI 员工干完活会话一关，经验就蒸发了——失败单子的教训躺在 messages 里没人看，半年后同一个坑踩第二遍。人不复盘是惰性，AI 不复盘是没机制。</p>
-  <div class="pain"><b>痛点</b>复盘靠「下次记得开个复盘会」？AI 组织没有例会可开——会话今天开明天关。复盘必须由机制触发：不靠自觉，靠「一行标记 + 双圈咬合」。</div>
-  <div class="mech"><b>机制</b>外圈是摄入旅程（接住 → 拆开 → 放对 → 问清 → 给出 → 查到 → 复盘）：用户丢一份资料 + 一句自然语言，拆解、归位、结构化全部是系统的副产品——「丢错人不等于放错地」（明显私有员工自收，疑似公共 escalate 总管，总管是唯一摄入守门人）。内圈是复盘回路：</div>
-  <div class="flow">
-    <div class="step"><b>① 干活</b>工单推进<br>巡检守着期望态</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>② 触发复盘</b>进终态即提醒<br>failed / done / 升级处置完</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>③ 一句话教训</b>owner 写 <code>[lesson: …]</code><br>两分钟，有标记 = 已复盘</div>
-    <div class="arrow">→</div>
-    <div class="step"><b>④ 总管归位</b>知识库候选<br>二次命中 → 晋升候选</div>
-    <div class="arrow">↺</div>
-    <div class="step"><b>⑤ 能力升级</b>扩写挂进技能 L3<br>用户拍板 · 下次菜单更丰富</div>
-  </div>
-  <div class="land"><b>落点</b>方法卡（适用/反适用场景）等结构化全是系统的副产品，用户无感；两级固化阶梯（知识库 → 方法卡 → 技能 → 机制）晋升门槛逐级升高，二次命中是廉价而真实的命中率代理。健康度每月摘要可见：新增教训 X 条、晋升 Y 条——连续两月为零 = 触发器失灵。</p>
-  <div class="pain"><b>痛点</b>你精心设计的知识库目录结构（分类逻辑、命名、层级），被热心的 AI「帮忙优化」——挪了目录、改了名，设计意图碎了一地，而你毫不知情。</div>
-  <div class="mech"><b>机制 · 结构权属默认冻结</b>：知识库分两层权限——<b>内容层</b>（提炼、登记条目、补 frontmatter）员工自治自由；<b>结构层</b>（增删改名、移动、重分类）默认视为用户的设计产物而冻结，任何人要动必须先 escalate 汇报「动什么 / 为什么 / 建议」，拍板后执行。授权自治显式化：用户说「这个目录归你管」→ 登记进该层 KB.md 权属段，登记了才解锁；无登记 = 冻结。自治的「发现-整理-回写」纪律（启动第四动作）让用户丢完资料即可撒手。</div>
-  <div class="land"><b>落点</b>「用户只管搭建和表达意图」与「设计不被乱动」两全：员工在内容层自治飞轮，结构层事事有请示、授权有登记（KB.md 权属段），意图推断还会回写固化——越用越懂你，且永不越界。</div>
-  <p class="muted"></div>
-</section>
-
-<section class="slide" id="s16">
-  <div class="no">16</div>
-  <span class="kicker">工程判断</span>
-  <h2>边界：明确不做什么</h2>
-  <p class="oneline">一个系统的成熟度，看它拒绝了什么。</p>
-  <ul class="clean">
-    <li><b>不做细粒度权限系统</b>：不给 agent 上目录级 user/group/permission 位。理由：AI 组织「越权」的代价低（git 可回滚）、灵活性的收益高，红线 + 锁 + 巡检已经覆盖真实风险——权限位是重机制，杀死灵活性。真实 OS 需要它是因为进程会失控，这里的「进程」是可对话纠正的 agent。</li>
-    <li><b>不上私有数据库 / 不做服务端</b>：文件即真相（02）的好处依赖这条底线。一旦状态进了数据库，「git 审计、双击即开、平台无关」全部作废。</li>
-    <li><b>不过度设计遥测</b>：技能命中率、token 成本统计已记账（等真实多公司跑起来有数据再做）——没有数据量的统计是伪需求。</li>
-    <li><b>不用提示词解决机制问题</b>：「请记得每次都检查 X」不是机制，是许愿。凡是必须发生的事，都下沉为门禁/巡检/selftest。</li>
-  </ul>
-  <div class="land"><b>落点</b>设计哲学一句话：<b>能用机制的不用自觉，能用文件的不用服务，能借经典的不自创。</b></div>
-</section>
-
-<section class="slide" id="s17">
-  <div class="no">17</div>
-  <span class="kicker">上手</span>
-  <h2>快速开始</h2>
-  <p class="oneline">对使用者只暴露两条命令；对 agent 只暴露一个工作区。</p>
-<pre><code># 新机器：一键自举（链接 + 钩子 + 看板数据 + 索引 + 服务自启）
-python opc_resolver.py --bootstrap
-
-# 日常：想派活，把 companies/C001/E0000/ 当工作区打开会话，直接说需求
-# 看板：http://127.0.0.1:8765/C001/dashboard.html（服务自动实时化）</code></pre>
-  <ul class="clean">
-    <li>开工门禁：agent 自动跑 <code>--doctor</code>，你不需要记住它的存在</li>
-    <li>使用手册（怎么派活、怎么和员工对话、常见情况）：见 <a href="USER_GUIDE.html">USER_GUIDE.html</a></li>
-    <li>命令与初始化细节见 <code>README.md</code>；设计原则全文见 <code>PRINCIPLES.md</code>（P1~P32）</li>
-  </ul>
-  <p class="muted">本文档随机制演进同步更新（P32）。数据与结构以仓库实体为准。</p>
-</section>
-
-<footer>OPC 系统总览 · 2026-08-30 生成 · 叙事骨架：痛点 → 机制 → 落点 · 随机制演进更新</footer>
+<section id="sources"><h2>13 · 思想来源、端到端案例与边界</h2><h3>设计借了什么</h3><table><tr><th>来源思想</th><th>借鉴</th><th>不照搬</th></tr><tr><td>单一真相 SSOT</td><td>文件是事实，投影可重建</td><td>不把每个索引都当第二真相</td></tr><tr><td>DIP/Repository</td><td>业务消费者依赖 resolver/模型接口</td><td>不让每个公司复制机制代码</td></tr><tr><td>虚拟内存/MMU、DNS</td><td>逻辑地址与物理位置分离</td><td>不把类比误当权限系统</td></tr><tr><td>缓存与渐进披露</td><td>INDEX/摘要常驻，正文按需读</td><td>不缓存过期事实而不校验来源</td></tr><tr><td>WAL 与文件锁</td><td>写前记录、原子替换、崩溃可恢复</td><td>不为简单文件 CRUD 引入重型数据库</td></tr><tr><td>Kubernetes reconcile</td><td>期望态、观测态、幂等收敛</td><td>不让控制器代替业务审批</td></tr><tr><td>CQRS/物化视图</td><td>写模型与读投影分离，批次可验证</td><td>不强行把所有历史变成事件溯源系统</td></tr><tr><td>GitOps/策略即代码</td><td>版本化、漂移可见、规则可检查</td><td>不把合并自动等于授权发布</td></tr></table><h3>端到端案例：网站改版</h3><ol><li>用户对总管说：“请在两周内完成官网改版，重点提升线索转化，给我可验收页面和数据依据。”</li><li>总管澄清目标、资料、范围、验收和 due，建立父工单；前端、内容、测试拆成子单，依赖关系写入 <code>blocked_by/parent</code>。</li><li>员工会话按规范链读取根、公司、团队和岗位入口；命中“页面开发”技能后才读完整流程和参考资料。</li><li>负责人认领后在 worklog 记录计划、进行和完成；工单状态与 worklog ticket 交叉核验。</li><li>并行会话通过 workspace 锁和原子取号写入，避免 wid 撞号；交付物使用安全相对路径。</li><li>OPC 服务发现数据变化，生成同一批次的工单和公司/团队/个人投影；巡检发现测试子单未完成就告警。</li><li>用户在 review 阶段检查页面、证据和验收标准；不通过就给具体返工条件，通过才进入 done。</li><li>复盘结论先留在项目事实，再判断是否上浮为团队方法；稳定且普遍的做法才进入技能或制度。</li><li>公开发布时把客户私有资料加入剥离清单，生成干净子集并保留发布证据。</li></ol><h3>适用与不适用</h3><div class="grid"><div class="card"><h3>适合</h3><p>本地优先、需要多个 AI 角色协作、希望文件可审计和 Git 可版本化、组织规模中小、仍有人做关键决策的团队。</p></div><div class="card"><h3>不替代</h3><p>高吞吐交易数据库、跨地域强一致系统、复杂 RBAC/合规权限平台、无人监管的全自动经营系统。</p></div></div><div class="band proof"><span class="label">继续阅读</span>普通用户请看 <a href="USER_GUIDE.html">USER_GUIDE.html</a>；安装与命令请看 <a href="README.md">README.md</a>；稳定规范看 <a href="PRINCIPLES.md">PRINCIPLES.md</a>；运行时契约看 <a href="opc_schema.py">opc_schema.py</a>、<a href="opc_resolver.py">opc_resolver.py</a> 和 canonical skills。</div></section>
+<footer>OPC 系统机制导览 · 手工维护的静态文档 · 易变数字、命令和平台状态以代码、schema、README 与技能文件为准</footer>
 </div>
-</body>
-</html>
+</body></html>

@@ -39,6 +39,36 @@ import opc_model    # 共享读取器（P25）；注释截断等口径与模型�
 _DEFAULT_ENTITY_TYPES = {"employee": "E", "team": "T", "project": "P"}
 
 
+def _safe_path(base, *parts):
+    """Resolve a configured or URI-derived path without leaving its root."""
+    base_real = os.path.realpath(os.path.abspath(base))
+    candidate = base_real
+    for part in parts:
+        if not isinstance(part, str) or not part or os.path.isabs(part):
+            raise ValueError(f"非法路径段：{part!r}")
+        segments = part.replace("\\", "/").split("/")
+        if any(segment in ("", ".", "..") for segment in segments):
+            raise ValueError(f"非法路径段：{part!r}")
+        candidate = os.path.join(candidate, *segments)
+
+    candidate_real = os.path.realpath(os.path.abspath(candidate))
+    try:
+        inside = os.path.commonpath((base_real, candidate_real)) == base_real
+    except ValueError:
+        inside = False
+    if not inside:
+        raise ValueError(f"路径越界：{candidate}")
+    return candidate
+
+
+def safe_relative_path(base, rel, label="path"):
+    """Public containment check for consumer paths relative to ``base``."""
+    try:
+        return _safe_path(base, rel)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} 不在允许范围内：{rel!r}") from exc
+
+
 def entity_types(root=None):
     """实体类型注册表：{type: 目录名前缀}。manifest [entity_types] 覆盖默认值。"""
     reg = dict(_DEFAULT_ENTITY_TYPES)
@@ -82,13 +112,13 @@ class CompanyConfig:
     # ---- 派生绝对路径（细节注入点）----
     @property
     def home_abs(self):
-        return os.path.join(self.root, self.home)
+        return _safe_path(self.root, self.home)
 
     def _abs(self, key):
         rel = self._m.get(key)
         if rel is None:
             raise KeyError(f"未定义符号：opc://company:{self.cid}/{key}")
-        return os.path.join(self.home_abs, rel)
+        return _safe_path(self.home_abs, rel)
 
     @property
     def workbench_abs(self):
@@ -243,11 +273,11 @@ def resolve_entity(cid, etype, eid, sub=None):
     if etype == "skill":
         # 约定式：{home}/{skills}/{name}
         base = cfg._m.get("skills", "skills")
-        p = _require_dir(os.path.join(home, base, eid),
+        p = _require_dir(_safe_path(home, base, eid),
                          f"opc://company:{cid}/skill/{eid}")
-    elif etype in entity_types():
+    elif etype in entity_types(cfg.root):
         # 校验 eid 与注册表前缀匹配（防 team/E0000 跨类错配；前缀真相在 [entity_types]）
-        prefix = entity_types()[etype]
+        prefix = entity_types(cfg.root)[etype]
         if not re.match(rf"^{prefix}\d+$", eid):
             raise ValueError(f"实体 {etype}:{eid} 编号前缀不符（{etype} 应为 {prefix}+数字）")
         # 扫描发现式：home 下找 {id}-* 目录（实体即目录，id 是稳定前缀）
@@ -260,26 +290,24 @@ def resolve_entity(cid, etype, eid, sub=None):
         if not hits:
             raise FileNotFoundError(
                 f"未找到实体 {etype}:{eid}（扫描 {home} 无匹配 {eid}-*）")
-        p = _require_dir(os.path.join(home, hits[0]), f"opc://company:{cid}/{etype}/{eid}")
+        p = _require_dir(_safe_path(home, hits[0]), f"opc://company:{cid}/{etype}/{eid}")
     else:
         # 兼容 key 模式透传（opc://company:C001/workbench 等）；
         # 带子路径时校验存在（2026-08-30：知识库等文档引用，URI 首段=knowledge manifest key，子路径必须存在）
         if etype in cfg._m:
             if not eid:
                 return cfg._abs(etype)
-            p = os.path.join(cfg._abs(etype), eid, *(sub or []))
+            p = _safe_path(cfg._abs(etype), eid, *(sub or []))
             if not os.path.exists(p):
                 raise FileNotFoundError(
                     f"失效引用：opc://company:{cid}/{etype}/{eid}"
                     + (f"/{'/'.join(sub)}" if sub else "") + f" -> {p}（不存在）")
             return p
-        raise ValueError(f"不支持的实体类型：{etype}（可用：skill 或注册表 {sorted(entity_types())} 或 manifest key）")
+        raise ValueError(f"不支持的实体类型：{etype}（可用：skill 或注册表 {sorted(entity_types(cfg.root))} 或 manifest key）")
 
     if sub:
         # 子路径逐级校验（SKILL.md 等具体文件）
-        cur = p
-        for part in sub:
-            cur = os.path.join(cur, part)
+        cur = _safe_path(p, *sub)
         if not os.path.exists(cur):
             raise FileNotFoundError(f"失效引用：opc://company:{cid}/{etype}/{eid}/{'/'.join(sub)} -> {cur}（不存在）")
         return cur
@@ -1132,7 +1160,12 @@ def _roster_team_map(cfg, root=None):
         if not re.match(rf"^{emp_prefix}\d+$", eid):
             continue
         team = opc_model.strip_inline_comment(cells[team_i])
-        out[eid] = team if team and team not in ("-", "—") else None
+        if not team or team in ("-", "—"):
+            out[eid] = []
+            continue
+        # roster 允许逗号、顿号或空白分隔多个团队；保留声明顺序供主团队策略使用。
+        teams = [t for t in re.split(r"[,，、\\s]+", team) if t and t not in ("-", "—")]
+        out[eid] = teams
     return out
 
 
@@ -1254,12 +1287,18 @@ def sync_agent_chains(root=None, dry_run=False, cid=None):
                 if not os.path.isfile(ea):
                     continue
                 eid = emp_prefix + m.group(1)
-                tid = tmap.get(eid)
-                if tid and tid not in teams:
-                    issues.append(f"{current_cid}/{eid}: roster 团队 {tid} 不存在或缺 team.md，规范链暂挂公司层")
-                    tid = None
+                declared = tmap.get(eid)
+                team_ids = declared if isinstance(declared, list) else ([declared] if declared else [])
+                valid_teams = [tid for tid in team_ids if tid in teams]
+                invalid_teams = [tid for tid in team_ids if tid not in teams]
+                if invalid_teams:
+                    issues.append(f"{current_cid}/{eid}: roster 团队 {', '.join(invalid_teams)} 不存在或缺 team.md")
                 if eid not in tmap:
                     issues.append(f"{current_cid}/{eid}: roster 未登记，规范链按公司直挂")
+                # 规范链当前保持单直属声明；多团队取 roster 第一项作为主团队，其余由审计提示。
+                tid = valid_teams[0] if valid_teams else None
+                if len(valid_teams) > 1:
+                    issues.append(f"{current_cid}/{eid}: 多团队 {', '.join(valid_teams)} 暂以首项 {tid} 作为直属规范链")
                 uri = (f"opc://company:{current_cid}/team/{tid}/agents" if tid
                        else f"opc://company:{current_cid}/agents")
                 if not dry_run and _write_chain_section(ea, uri):
@@ -1310,12 +1349,12 @@ def audit_agent_chains(root=None):
                               f"opc://company:{cid}/agents", f"{cid}/{tid}/AGENTS.md")
                 elif em:
                     eid = emp_prefix + em.group(1)
-                    tid = tmap.get(eid)
-                    if tid and not os.path.isdir(os.path.join(home, f"{tid}-")) \
-                            and not [d for d in os.listdir(home)
-                                     if d.startswith(tid + "-") and os.path.isfile(os.path.join(home, d, "team.md"))]:
-                        issues.append(f"规范链悬空：{cid}/{eid} roster 团队 {tid} 无对应目录")
-                        continue
+                    declared = tmap.get(eid)
+                    team_ids = declared if isinstance(declared, list) else ([declared] if declared else [])
+                    valid = [tid for tid in team_ids if any(d.startswith(tid + "-") and os.path.isfile(os.path.join(home, d, "team.md")) for d in os.listdir(home))]
+                    tid = valid[0] if valid else None
+                    if team_ids and not valid:
+                        issues.append(f"规范链悬空：{cid}/{eid} roster 团队 {', '.join(team_ids)} 无对应目录")
                     expected = (f"opc://company:{cid}/team/{tid}/agents" if tid
                                 else f"opc://company:{cid}/agents")
                     check_one(os.path.join(edir, "AGENTS.md"), expected, f"{cid}/{eid}/AGENTS.md")
@@ -1687,7 +1726,7 @@ def diff_template(root=None, cid=None):
               .replace("C00x", "<CID>"))   # 模板建司占位符（create-company 问卷用）
         return t
 
-    _EXCL_DIRS = (".git", ".workbuddy", "memory", "workspace", "node_modules")
+    _EXCL_DIRS = (".git", ".workbuddy", ".opc-data", ".opc-sync", "memory", "workspace", "node_modules")
     _EXCL_FILE = re.compile(r"(-data\.js|tasks-data\.json|task-index\.\w+|roster\.md|patrol-log\.md|"
                             r"patrol-state\.json|patrol-pending\.md|INDEX\.md)$")
     _pfx = "|".join(re.escape(p) for p in set(entity_types().values()))

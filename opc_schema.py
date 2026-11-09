@@ -93,6 +93,11 @@ PATROL_CHECKS = {
     14: {"kind": "kb_stale",       "severity": "warn",     "action": "review_knowledge"},   # review_by 到期 / 已超期
     15: {"kind": "kb_dupe",        "severity": "warn",     "action": "merge_knowledge"},    # 同层疑似重复
     16: {"kind": "kb_cold",        "severity": "info",     "action": "archive_knowledge"},  # 长期零命中 → 人工判断归档
+    # 看板告警兜底（2026-08-31 双告警排查发现：巡检 2/3 号项只按关键词挑食消费
+    # dashboard risks.warnings，漏掉的告警只有人盯看板才能看见=发现链断裂）。
+    # 17 号把未被 2/3 认领的 warnings 全量上报，保证「看板上有的告警，巡检必报」。
+    17: {"kind": "board_warning",  "severity": "warn",     "action": "reconcile_worklog"},
+    18: {"kind": "integration",    "severity": "warn",     "action": "review_integration"}, # 外部连接/冲突/权限/限流
     # 注：KB.md 结构漂移**未进自动巡检**（2026-08-30 实测撤回）——自由文本正则提取
     # 实测 28 条全误报（反例目录/兄弟目录被当成"提到但不存在的目录"），自动告警只会淹看板。
     # 漂移防护走已有闭环：目录变动 → INDEX 重生成 → KB-CHANGELOG.md 留痕 → 分层通知人；
@@ -111,6 +116,9 @@ def validate():
         problems.append("TASK_ACTIVE 含未知状态")
     if TASK_ACTIVE & TASK_TERMINAL:
         problems.append("TASK_ACTIVE 与 TASK_TERMINAL 交集非空")
+    nums = sorted(PATROL_CHECKS)
+    if nums != list(range(1, len(nums) + 1)):
+        problems.append(f"PATROL_CHECKS 编号不连续：{nums}")
     return problems
 
 

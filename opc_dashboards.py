@@ -45,7 +45,8 @@ from opc_model import (parse_frontmatter,                    # 共享读取器�
                        normalize_day as normalize_date,    # 日期规整（D2 收敛）
                        read_text_warn as read_text,        # 告警读（D2 收敛）
                        atomic_write,                       # 原子写（D3 收敛）
-                       parse_company_args)                 # CLI 参数提取（D 收敛）
+                       parse_company_args,                 # CLI 参数提取（D 收敛）
+                       unplaceholder)                      # "-" 占位符视同留空（与 worklog 门禁同口径）
 from opc_schema import (WORKLOG_STATUS, TASK_ACTIVE as ACTIVE_TS,   # 状态机唯一真相源
                         TASK_STATUS_ORDER, TASK_TERMINAL, AFF_STATUS, AFF_CADENCE_DAYS,
                         PATROL, EMPLOYEE_STATUS)
@@ -310,6 +311,13 @@ def parse_skills(ctx, entity_dir):
     return out
 
 
+def wid_seq(wid):
+    """wid 尾段序号（W-20260831-003 -> 3），作为同日内的时序次级键——
+    worklog 是追加写，日期只有天粒度，同日先后靠 wid 签发序；无 wid/不可解析回退 0。"""
+    m = re.search(r"-(\d+)$", str(wid or ""))
+    return int(m.group(1)) if m else 0
+
+
 def parse_worklog(ctx, eid, emp_dir):
     """解析 E*/workspace/worklog.md（热）+ worklog-archive/worklog-*.md（冷，年度归档）
     多块记录 -> 条目列表（含校验告警）。归档只动文件位置不动数据：生成器全量扫描
@@ -339,10 +347,11 @@ def parse_worklog(ctx, eid, emp_dir):
             wid = str(fm.get("wid") or "")
             if wid:
                 if wid in seen_wid:
-                    warnings.append({"scope": "worklog", "msg": f"{eid} worklog 重复 wid={wid}（跨热/归档文件），后者覆盖前者"})
+                    warnings.append({"scope": "worklog", "msg": f"{eid} worklog 重复 wid={wid}（热/归档范围内已存在，后者在看板覆盖前者）"
+                                                              f"——重编后者，并查写入方是否绕过 worklog 门禁（opc_model --append）"})
                 seen_wid.add(wid)
             typ = fm.get("type") or "自由"
-            ticket = str(fm.get("ticket") or "").strip()
+            ticket = unplaceholder(fm.get("ticket"))
             if typ == "工单" and not ticket:
                 warnings.append({"scope": "核验", "msg": f"{eid} 工单型条目「{title}」缺 ticket 字段（A2 规则）"})
             if typ != "工单" and ticket:
@@ -350,7 +359,7 @@ def parse_worklog(ctx, eid, emp_dir):
                 ticket = ""
             date = normalize_date(fm.get("date"))
             updated = normalize_date(fm.get("updated")) or date or ""
-            deliverable = str(fm.get("deliverable") or "").strip()
+            deliverable = unplaceholder(fm.get("deliverable"))
             valid_deliv = True
             deliv_href = ""
             if deliverable:
@@ -372,14 +381,14 @@ def parse_worklog(ctx, eid, emp_dir):
                     deliv_href = os.path.relpath(full, os.path.join(ctx.base, emp_dir)).replace(os.sep, "/")
             entries.append({
                 "wid": wid, "date": date or "", "title": str(title), "status": status,
-                "type": typ, "ticket": ticket, "project": str(fm.get("project") or ""),
+                "type": typ, "ticket": ticket, "project": unplaceholder(fm.get("project")),
                 "updated": updated, "note": str(fm.get("note") or ""),
-                "aff": str(fm.get("aff") or "").strip(),   # 常设事务引用（type=事务/工单均可带）
+                "aff": unplaceholder(fm.get("aff")),   # 常设事务引用（type=事务/工单均可带）
                 "deliverable": deliverable, "deliverable_valid": valid_deliv,
                 "deliverable_href": deliv_href,
                 "archived": rel != "worklog.md",   # 归档条目标记（mydesk「含归档」筛选用）
             })
-    entries.sort(key=lambda e: (e["updated"] or e["date"]), reverse=True)
+    entries.sort(key=lambda e: (e["updated"] or e["date"], wid_seq(e.get("wid"))), reverse=True)
     return entries
 
 
@@ -524,13 +533,13 @@ def link_affairs(affairs, emp_entries):
                 touched[aff] = (day, eid)
             touches.setdefault(aff, []).append(
                 {"date": day, "eid": eid, "title": e.get("title") or "",
-                 "status": e.get("status") or ""})
+                 "status": e.get("status") or "", "wid": e.get("wid") or ""})
     for a in affairs:
         t = touched.get(a["id"])
         a["last_touched"] = t[0] if t else ""
         a["last_by"] = t[1] if t else ""
         a["touches"] = sorted(touches.get(a["id"], []),
-                              key=lambda x: x["date"], reverse=True)[:50]
+                              key=lambda x: (x["date"], wid_seq(x.get("wid"))), reverse=True)[:50]
         # 逾期判定：active + 有节奏 + 超阈值
         a["overdue"] = False
         a["never_done"] = False
@@ -680,7 +689,7 @@ def generate_all(ctx):
         for w in e["entries"]:
             activity.append({"eid": e["eid"], "name": e["name"], **{k: w[k] for k in
                              ("wid", "title", "status", "type", "ticket", "project", "updated", "date")}})
-    activity.sort(key=lambda a: (a["updated"] or a["date"]), reverse=True)
+    activity.sort(key=lambda a: (a["updated"] or a["date"], wid_seq(a.get("wid"))), reverse=True)
 
     # ---- 风险（§4.5：进行中 > STALE_DAYS 天未动）----
     stale_refs = []
@@ -700,6 +709,7 @@ def generate_all(ctx):
                  or (dir_label(base_name) if "-" in base_name else base_name))
 
     # ================= 公司级 dashboard-data.js =================
+    external = load_external_projection(base_dir)
     dash = {
         **common,
         "company": {"cid": ctx.cid, "name": comp_name},
@@ -714,6 +724,7 @@ def generate_all(ctx):
         "activity": activity[:300],
         "risks": {"stale": stale_refs, "warnings": warnings},
         "links": {"kanban": "workbench/kanban.html"},
+        "external": external,
         "status_meta": tasks_data.get("status_meta", {}),
     }
     write_js(os.path.join(base_dir, "dashboard-data.js"), "DASHBOARD_DATA", dash)
@@ -797,6 +808,45 @@ def load_tasks_data(ctx):
     except Exception as e:
         print(f"  [警告] tasks-data.json 解析失败（{e}），工单联动模块将为空")
         return {"tasks": [], "employees": {}, "projects": {}, "status_meta": {}}
+
+
+def load_external_projection(base_dir):
+    """Read connector-neutral external shadows; third-party raw payloads never enter dashboards."""
+    path = os.path.join(base_dir, ".opc-sync", "projection.json")
+    if not os.path.isfile(path):
+        return {"items": [], "conflicts": [], "tombstones": [], "connections": []}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        bindings = data.get("bindings") if isinstance(data.get("bindings"), dict) else {}
+        shadows = data.get("shadows") if isinstance(data.get("shadows"), dict) else {}
+        items = []
+        for binding_id, shadow in shadows.items():
+            if not isinstance(shadow, dict):
+                continue
+            binding = bindings.get(binding_id, {})
+            fields = shadow.get("fields") if isinstance(shadow.get("fields"), dict) else {}
+            items.append({
+                "binding_id": binding_id,
+                "provider": (data.get("connections", {}).get(binding.get("connection_id"), {}) or {}).get("connector_type", "external"),
+                "entity_type": binding.get("entity_type", "task"),
+                "local_id": binding.get("local_id", ""),
+                "external_id": shadow.get("external_id", ""),
+                "title": str(fields.get("title") or fields.get("name") or shadow.get("external_id") or binding_id),
+                "status": str(fields.get("status") or ""),
+                "external_version": str(shadow.get("external_version") or ""),
+                "observed_at": str(shadow.get("observed_at") or ""),
+                "deleted": bool(shadow.get("deleted")),
+                "fields": fields,
+            })
+        return {
+            "items": items,
+            "conflicts": [v for v in data.get("conflicts", {}).values() if isinstance(v, dict) and not v.get("resolved")],
+            "tombstones": [v for v in data.get("tombstones", {}).values() if isinstance(v, dict)],
+            "connections": list((data.get("connections") or {}).values()),
+        }
+    except (OSError, ValueError, TypeError):
+        return {"items": [], "conflicts": [], "tombstones": [], "connections": [], "error": "external projection invalid"}
 
 
 # ---------- watch：轮询数据源 mtime ----------
@@ -894,14 +944,19 @@ def selftest():
                   os.path.join(tmp, "tasks-data.json"), "roster.md", os.path.join(tmp, "affairs"))
         os.makedirs(os.path.join(tmp, "E0001-甲", "workspace", "worklog-archive"), exist_ok=True)
         with open(os.path.join(tmp, "E0001-甲", "workspace", "worklog.md"), "w", encoding="utf-8") as fh:
-            fh.write("---\nwid: W1\ndate: 2026-08-27\ntitle: 热条目\ntype: 直聊\nstatus: 进行中\nupdated: 2026-08-27\n---\n")
+            # 同日三块按 001→003→002 物理乱序写入（后补/回填的真实场景）
+            fh.write("---\nwid: W-20260831-001\ndate: 2026-08-31\ntitle: 热条目甲\ntype: 直聊\nstatus: 进行中\nupdated: 2026-08-31\n---\n\n"
+                     "---\nwid: W-20260831-003\ndate: 2026-08-31\ntitle: 热条目丙\ntype: 直聊\nstatus: 已完成\nupdated: 2026-08-31\n---\n\n"
+                     "---\nwid: W-20260831-002\ndate: 2026-08-31\ntitle: 热条目乙\ntype: 直聊\nstatus: 已完成\nupdated: 2026-08-31\n---\n")
         with open(os.path.join(tmp, "E0001-甲", "workspace", "worklog-archive", "worklog-2025.md"), "w", encoding="utf-8") as fh:
             fh.write("---\nwid: W0\ndate: 2025-12-01\ntitle: 归档条目\ntype: 直聊\nstatus: 已完成\nupdated: 2025-12-01\n---\n")
         ents = parse_worklog(ctx, "E0001", "E0001-甲")
-        check("归档全量扫描(热+冷共2条)", len(ents) == 2)
-        hot = [e for e in ents if not e["archived"]][0]
+        check("归档全量扫描(热+冷共4条)", len(ents) == 4)
+        hot = [e for e in ents if not e["archived"]]
         cold = [e for e in ents if e["archived"]][0]
-        check("archived 标记正确", hot["title"] == "热条目" and cold["title"] == "归档条目")
+        check("archived 标记正确", cold["title"] == "归档条目")
+        check("同日按 wid 签发序倒排（最新在前）",
+              [e["title"] for e in hot] == ["热条目丙", "热条目乙", "热条目甲"])
         # 看板页内跳转链接：纯相对路径（file:// 与 opc_service /CID/ 路由双模式成立），
         # 锚前缀 companies/<cid>/ 在服务模式下与 URL 前缀双重拼接 → 404（跳转 bug 修复）
         check("页内跳转双模式相对路径", sibling_nav_links() == {"dashboard": "../dashboard.html",
@@ -1005,6 +1060,13 @@ def selftest():
         cfg = opc_resolver.CompanyConfig("C888", tmp, {})
         ctx = Ctx(cfg, base, os.path.join(base, "page-templates"), os.path.join(wb, "tasks-data.json"),
                   roster_rel, os.path.join(wb, "affairs"))
+        os.makedirs(os.path.join(base, ".opc-sync"), exist_ok=True)
+        with open(os.path.join(base, ".opc-sync", "projection.json"), "w", encoding="utf-8") as fh:
+            json.dump({"connections": {"x": {"connector_type": "feishu"}},
+                       "bindings": {"b": {"connection_id": "x", "entity_type": "task", "local_id": "EXT1"}},
+                       "shadows": {"b": {"external_id": "rec1", "fields": {"title": "在线任务", "status": "进行中"},
+                                             "external_version": "1", "observed_at": "now", "deleted": False}},
+                       "conflicts": {}, "tombstones": {}, "events_tail": []}, fh)
         generate_all(ctx)
         with open(os.path.join(base, "T001-开发", "teamboard-data.js"), encoding="utf-8") as fh:
             tj = fh.read()
@@ -1023,6 +1085,8 @@ def selftest():
         check("集成: 公司级动态流", "干活" in dj)
         dj_data = json.loads(re.match(r"^window\.\w+ = ([\s\S]*);\s*$", dj).group(1))
         check("集成: 公司级工单汇总", dj_data["tickets"]["active"] == 1 and dj_data["tickets"]["total"] == 1)
+        check("集成: 外部 shadow 独立进入公司看板", len(dj_data["external"]["items"]) == 1
+              and dj_data["external"]["items"][0]["provider"] == "feishu")
         check("集成: cid 来自 manifest 非目录名解析", '"cid": "C888"' in dj)
         check("集成: 公司名来自 company.md 实体卡", '"name": "测试公司甲"' in dj)
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))

@@ -46,3 +46,15 @@ patrol-pending.md
 
 # OPC 发布用临时构建目录（opc-publish 生成：剥离私有后的干净克隆，不入库）
 .opc-publish-build/
+
+# Immutable projection releases and current pointer (rebuildable local artifacts)
+.opc-data/
+*/.opc-kb-promote.journal.json
+.opc-sync/
+
+# 第三方项目克隆（自带 .git 的嵌套仓库，体积 268MB/2849 文件，入库会炸仓库；本地保留、不入库）
+# 判据：凡是 clone 下来的外部仓库都按此处理——需要引用就写调研结论，不要整包收进 OPC。
+**/OpenMAIC/
+
+# 商业私密项目（含域名资产、支付渠道调研、资质核查；属个人商业信息，不入库、不发布）
+C001-AI自动化公司/P0005-算命网站变现项目/

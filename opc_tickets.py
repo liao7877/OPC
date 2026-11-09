@@ -44,6 +44,7 @@ from opc_model import (parse_frontmatter,                      # 共享读取器
                        file_lock, locked_append, locked_update,  # 并发互斥（2026-08-29 拍板）
                        parse_company_args)                       # CLI 参数提取（D 收敛）
 import opc_resolver
+import opc_model
 from opc_schema import (TASK_STATUS as VALID_STATUS,          # 状态机唯一真相源（opc_schema）
                         TASK_STATUS_ORDER, TASK_STATUS_ORDER as STATUS_ORDER,
                         TASK_TERMINAL)
@@ -108,12 +109,23 @@ def build_input_item(ctx, dirname, idx, path, name):
     if not name:
         name = os.path.basename(path.rstrip("/\\")) or path
     valid = True
+    reason = ""
     if path:
-        full = os.path.normpath(os.path.join(ctx.wb_dir, path))
-        valid = os.path.exists(full)
+        if any(ord(ch) < 32 for ch in path) or "://" in path:
+            valid = False
+            reason = "只允许 workbench 内的相对路径"
+        else:
+            try:
+                full = opc_resolver.safe_relative_path(ctx.wb_dir, path, "inputs.path")
+                valid = os.path.exists(full)
+                if not valid:
+                    reason = "路径不存在"
+            except ValueError:
+                valid = False
+                reason = "路径越界或不是相对路径"
         if not valid:
-            print(f"  [警告] {dirname} inputs[{idx}] 路径不存在：{path}")
-    return {"name": name, "path": path, "valid": valid}
+            print(f"  [警告] {dirname} inputs[{idx}] {reason}：{path}")
+    return {"name": name, "path": path, "valid": valid, "reason": reason}
 
 
 def build_record(ctx, task_dir, dirname):
@@ -742,18 +754,20 @@ def append_worklog_entry(ctx, owner, tid, title, project):
     today = day[:4] + "-" + day[4:6] + "-" + day[6:]
 
     def _append_block(existing_text):
-        # wid 序号分配基于持锁快照，双会话并发建单不会撞 wid（2026-08-29 拍板）
-        seq = len(re.findall(r"^wid: W-%s-" % day, existing_text, re.M)) + 1
-        return existing_text + (
-            f"\n---\nwid: W-{day}-{seq:02d}\ndate: {today}\ntitle: {title}\n"
+        # 与 --append 使用同一 worklog 门禁和员工 workspace 锁，覆盖热账/归档账。
+        block = (
+            f"\n---\nwid: \ndate: {today}\ntitle: {title}\n"
             f"status: 计划中\ntype: 工单\nticket: {tid}\nproject: {project}\nupdated: {today}\n---\n"
         )
+        new, _notes = opc_model.worklog_gate(
+            block, opc_model.worklog_wid_pool(wl, existing_text), today=today)
+        return existing_text + new
 
     # 追加容错：自动建账失败不阻断建单主流程（员工可按 skill 自行补记）
     # 并发安全（2026-08-29 拍板）：读→序号分配→替换全程持锁，杜绝后写覆盖先写与撞 wid
     try:
         os.makedirs(os.path.dirname(wl), exist_ok=True)
-        locked_update(wl, _append_block)
+        opc_model.locked_worklog_update(wl, _append_block)
         print(f"已自动建账：{emp_dirs[0]}/workspace/worklog.md 新增「计划中」条目（ticket={tid}）")
     except Exception as e:
         print(f"  [警告] 自动建账失败（{e}），请该员工按 worklog-discipline 技能自行补记")
@@ -957,11 +971,66 @@ def selftest():
     return 0 if ok else 1
 
 
+def verify(ctx):
+    """只读核验现有工单投影，不生成或修改任何文件。"""
+    problems = []
+    if not os.path.isfile(ctx.out_json):
+        problems.append(f"缺少 {ctx.out_json}")
+    else:
+        try:
+            with open(ctx.out_json, encoding="utf-8") as fh:
+                payload = json.load(fh)
+            tasks = payload.get("tasks", [])
+            ids = [t.get("id") for t in tasks]
+            if any(not tid for tid in ids):
+                problems.append("工单投影存在缺少 id 的条目")
+            if len(ids) != len(set(ids)):
+                problems.append("工单投影存在重复 id")
+            source_ids = []
+            for name in os.listdir(ctx.tasks_dir) if os.path.isdir(ctx.tasks_dir) else []:
+                task_dir = os.path.join(ctx.tasks_dir, name)
+                if os.path.isdir(task_dir) and os.path.isfile(os.path.join(task_dir, "task.md")):
+                    source_ids.append(dir_prefix_id(name))
+            if set(ids) != set(source_ids):
+                problems.append(f"投影与任务目录不一致：投影 {len(ids)} 条，源目录 {len(source_ids)} 条")
+        except (OSError, ValueError, TypeError) as exc:
+            problems.append(f"工单 JSON 读取/解析失败：{exc}")
+    if not os.path.isfile(ctx.out_js):
+        problems.append(f"缺少 {ctx.out_js}")
+    else:
+        try:
+            text = open(ctx.out_js, encoding="utf-8").read()
+            m = re.match(r"^window\.\w+ = ([\s\S]*);\s*$", text)
+            if not m:
+                problems.append("工单 JS 投影格式无效")
+            else:
+                parsed_js = json.loads(m.group(1))
+                if not isinstance(parsed_js, dict) or not isinstance(parsed_js.get("tasks"), list):
+                    problems.append("工单 JS 投影缺少 tasks 数组")
+        except OSError as exc:
+            problems.append(f"工单 JS 读取失败：{exc}")
+    print("工单投影只读核验…")
+    if problems:
+        for problem in problems:
+            print(f"  ✗ {problem}")
+        return 1
+    print("  ✓ 工单 JSON/JS 可读，ID 与任务目录一致")
+    return 0
+
+
 def main(argv):
     if "--selftest" in argv:
         return selftest()
+    known = {"--company", "--dir", "--watch", "--new", "--owner", "--project",
+             "--parent", "--blocked-by", "--check-structure", "--verify"}
+    unknown = [arg for arg in argv[1:] if arg.startswith("--") and arg.split("=", 1)[0] not in known]
+    if unknown:
+        print(f"错误：未知参数 {', '.join(unknown)}")
+        return 2
     company, company_dir = parse_company_args(argv)
     ctx = resolve_ctx(company, company_dir)
+    if "--verify" in argv:
+        return verify(ctx)
     if "--watch" in argv:
         watch(ctx)
     elif "--new" in argv:

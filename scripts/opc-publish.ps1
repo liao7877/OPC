@@ -9,7 +9,12 @@ $MANIFEST = Join-Path $REPO_ROOT '.opc-private-paths.txt'
 $PUBLIC_REMOTE = if ($env:OPC_PUBLIC_REMOTE) { $env:OPC_PUBLIC_REMOTE } else { (git config --get opc.publicRemote) }
 if (-not $PUBLIC_REMOTE) { $PUBLIC_REMOTE = 'public' }
 $BUILD_DIR = Join-Path $REPO_ROOT '.opc-publish-build'
-$PY = if ($env:OPC_PYTHON) { $env:OPC_PYTHON } else { 'C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe' }
+$PY = if ($env:OPC_PYTHON) { $env:OPC_PYTHON } else {
+  $cmd = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $cmd) { $cmd = Get-Command python3 -ErrorAction SilentlyContinue }
+  if (-not $cmd) { throw '找不到 Python，请安装 Python 3.11+ 或设置 OPC_PYTHON' }
+  $cmd.Source
+}
 
 if (-not (Test-Path $MANIFEST)) { Write-Error "找不到私有清单 $MANIFEST"; exit 1 }
 

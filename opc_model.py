@@ -27,11 +27,15 @@ opc_model.py — OPC 实体共享读取器（唯一解析点）
 
 from __future__ import annotations
 import argparse
+import datetime
+import hashlib
 import json
 import locale
 import os
 import re
+import secrets
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -146,11 +150,17 @@ def normalize_dt(s):
     if not m:
         return None
     y, mo, d, h, mi, se = m.groups()
+    try:
+        datetime.date(int(y), int(mo), int(d))
+        if h is not None:
+            datetime.time(int(h), int(mi), int(se or 0))
+    except ValueError:
+        return None
     base = "%04d-%02d-%02d" % (int(y), int(mo), int(d))
     if h is not None:
         base += " %02d:%02d" % (int(h), int(mi))
         if se:
-            base += ":" + se
+            base += ":%02d" % int(se)
     return base
 
 
@@ -174,19 +184,26 @@ def read_text_warn(path):
 
 
 def atomic_write(path, text):
-    """P12 原子写：唯一名临时文件 + os.replace。newline="" 禁止换行符翻译
-    （保证模板分发副本与源逐字节一致）。
-    tmp 掺 pid+纳秒（2026-08-29 三轮体检）：固定 .tmp 名下两个写者并发写同一目标时
-    互踩 tmp，「原子写」退化为污染源——唯一名后各写各的 tmp，os.replace 仍原子。"""
+    """P12 原子写：临时文件落盘后替换目标，失败时清理临时文件。"""
     tmp = f"{path}.{os.getpid()}.{time.time_ns()}.tmp"
-    with open(tmp, "w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        except OSError:
+            pass
 
 
 # ---- 并发互斥（2026-08-29 拍板：锁原语落地；原子写只防「写一半被读」，防不了「后写覆盖先写」）----
 
-LOCK_STALE_SECONDS = 30.0   # 锁文件超过该秒数视为持有者崩溃残留，允许抢占
+LOCK_STALE_SECONDS = 30.0   # 仅用于无效/不可探测持有者的残留兜底
+LOCK_HEARTBEAT_SECONDS = 5.0
 
 
 def _pid_alive(pid):
@@ -221,10 +238,39 @@ def _pid_alive(pid):
         return False
 
 
-def _break_lock(lock_path):
+def _write_lock_heartbeat(lock_path, token):
+    current = _read_lock(lock_path)
+    if current.get("token") != token:
+        return False
+    current["heartbeat"] = time.time()
+    try:
+        atomic_write(lock_path, json.dumps(current))
+        return True
+    except OSError:
+        return False
+
+
+def _read_lock(lock_path):
+    try:
+        with open(lock_path, encoding="utf-8") as fh:
+            raw = fh.read().strip()
+        if raw.startswith("{"):
+            import json
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        return {"pid": int(raw), "token": "legacy"}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _break_lock(lock_path, token=None):
     """抢占/清理锁文件：优先 rename 旁路——部分沙箱（safe-delete fail-closed）与
     Windows 文件占用会让 os.unlink 失败，rename 不触发删除语义通常仍可用；
     挪走后的孤儿文件再尽力删，删不掉也无害（名字已不带锁语义）。"""
+    if token is not None:
+        current = _read_lock(lock_path)
+        if current.get("token") != token:
+            return False
     trash = f"{lock_path}.stolen.{os.getpid()}.{time.time_ns()}"
     try:
         os.rename(lock_path, trash)
@@ -252,36 +298,50 @@ def file_lock(path, timeout=10.0, poll=0.05):
     抢占与释放均走 _break_lock（rename 旁路），沙箱拦 unlink 的环境不再永久死锁。"""
     lock_path = str(path) + ".lock"
     deadline = time.monotonic() + timeout
+    token = secrets.token_hex(16)
     acquired = False
     while True:
         try:
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            payload = {"pid": os.getpid(), "token": token,
+                       "acquired_at": time.time(), "heartbeat": time.time()}
+            os.write(fd, json.dumps(payload).encode())
+            os.fsync(fd)
             break
         except FileExistsError:
-            holder_dead = False
+            holder = _read_lock(lock_path)
+            holder_pid = holder.get("pid")
+            # 空/半写锁是创建窗口，等待而不是抢占。
+            holder_dead = bool(holder_pid) and not _pid_alive(int(holder_pid))
+            heartbeat = holder.get("heartbeat")
             try:
-                with open(lock_path, encoding="utf-8") as fh:
-                    raw = fh.read().strip()
-                holder_dead = bool(raw) and not _pid_alive(int(raw))
-            except (OSError, ValueError):
-                pass                # 读不到/内容不是 PID（写入窗口）→ 只按 mtime 规则
-            try:
-                stale = time.time() - os.path.getmtime(lock_path) > LOCK_STALE_SECONDS
-            except OSError:
-                stale = False       # 锁刚好被释放/挪走，重试
-            if (stale or holder_dead) and _break_lock(lock_path):
+                stale = time.time() - float(heartbeat) > LOCK_STALE_SECONDS
+            except (TypeError, ValueError):
+                try:
+                    stale = time.time() - os.path.getmtime(lock_path) > LOCK_STALE_SECONDS
+                except OSError:
+                    stale = False
+            # 有 PID 的锁只有在持有者已死亡时抢占；旧格式/空锁仅在长期残留时兜底回收。
+            if (holder_dead or (stale and not holder_pid)) and _break_lock(lock_path, token=holder.get("token")):
                 continue
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"获取锁超时（{timeout}s）：{lock_path}（他人持有且未过期）")
             time.sleep(poll)
     acquired = True
+    stop_heartbeat = threading.Event()
+    def _heartbeat_loop():
+        while not stop_heartbeat.wait(LOCK_HEARTBEAT_SECONDS):
+            _write_lock_heartbeat(lock_path, token)
+    heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+    heartbeat_thread.start()
     try:
-        os.write(fd, str(os.getpid()).encode())
         yield
     finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=LOCK_HEARTBEAT_SECONDS + 1)
         os.close(fd)
         if acquired:
-            _break_lock(lock_path)  # 释放也走旁路：unlink 被环境拦截时不留死锁
+            _break_lock(lock_path, token=token)
 
 
 def locked_append(path, text):
@@ -301,6 +361,160 @@ def locked_update(path, transform):
     with file_lock(path):
         existing = _read(Path(path))
         atomic_write(path, transform(existing))
+
+
+# ---- worklog 门禁追加（2026-08-31 双告警的治本层）----
+# 两类坏数据都产生于「agent 手工拼块 + 裸追加」：wid 凭感觉编号（两个会话同编
+# -001，后者在看板覆盖前者）与实体卡占位符惯例（ticket: -）带进 worklog（A2 校验
+# 把 "-" 当已填）。门禁让正确写法成为唯一走得通的写法，而不是靠会话自觉；
+# 漏网的（手改文件等写路径）由 opc_dashboards 校验 + opc_patrol 17 号兜底发现。
+
+WORKLOG_TYPES = ("工单", "直聊", "事务", "自由")
+WORKLOG_LEGACY_TYPES = ("机制", "运维")  # 历史条目兼容；新条目优先使用四类规范枚举
+
+
+def unplaceholder(v):
+    """实体卡惯例的「不适用」占位符（- / — / –）在 worklog 数值字段里视同留空。
+    单一真相在 opc_model（dashboards 共享导入，P25 同款收敛）。"""
+    v = str(v or "").strip()
+    return "" if v in ("-", "—", "–") else v
+
+
+def _wids_in_text(text):
+    return {m.group(1).strip() for m in re.finditer(r"^wid:\s*(\S.*)$", text, re.M)}
+
+
+def worklog_workspace(target):
+    target = str(target)
+    target_dir = os.path.dirname(target)
+    if re.match(r"^worklog-\d{4}\.md$", os.path.basename(target)):
+        return os.path.dirname(target_dir)
+    return target_dir
+
+
+def locked_worklog_update(path, transform):
+    """在员工 workspace 级锁内执行 worklog 读改写。"""
+    path = str(path)
+    with file_lock(os.path.join(worklog_workspace(path), ".worklog")):
+        existing = _read(Path(path))
+        atomic_write(path, transform(existing))
+
+
+def worklog_wid_pool(target, existing):
+    """撞号判定 / 序号分配的数据面：持锁快照 existing + 热/归档目录全量 wid。
+    归档文件追加时也必须看到热文件和全部归档；归档是只增不改的冷数据，锁外读安全。"""
+    target = str(target)
+    target_dir = os.path.dirname(target)
+    if re.match(r"^worklog-\d{4}\.md$", os.path.basename(target)):
+        workspace = os.path.dirname(target_dir)
+    else:
+        workspace = target_dir
+    pool = _wids_in_text(existing)
+    hot = os.path.join(workspace, "worklog.md")
+    if os.path.normcase(hot) != os.path.normcase(target) and os.path.isfile(hot):
+        try:
+            pool |= _wids_in_text(Path(hot).read_text(encoding="utf-8"))
+        except OSError:
+            pass
+    arch = os.path.join(workspace, "worklog-archive")
+    if os.path.isdir(arch):
+        for name in sorted(os.listdir(arch)):
+            if re.match(r"^worklog-\d{4}\.md$", name):
+                path = os.path.join(arch, name)
+                if os.path.normcase(path) == os.path.normcase(target):
+                    continue
+                try:
+                    pool |= _wids_in_text(Path(path).read_text(encoding="utf-8"))
+                except OSError:
+                    pass
+    return pool
+
+
+def worklog_gate(content, wid_pool, today=None):
+    """worklog 条目块门禁（纯函数，selftest 直测；文件/锁层见 main 的 --append 分支）。
+
+    逐块校验 title/status/type/date，规整占位符；wid 缺省自动分配（当天已有最大
+    序号+1），显式 wid 撞号拒收；A2 规则：工单型缺 ticket 拒收、非工单条目 ticket
+    （含 "-" 占位）强制清空。返回 (规整后内容, notes)；违规 raise ValueError。
+    非条目块（首行非 ---，如归档指针注释）原样放行——worklog 允许非条目内容。"""
+    from opc_schema import WORKLOG_STATUS   # 状态机唯一真相源（惰性导入防顶层环）
+    today = today or time.strftime("%Y-%m-%d")
+    lines = content.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if not lines or lines[0].strip() != "---":
+        return content, []          # 非条目内容：不拦
+    notes, out, pool = [], [], set(wid_pool)
+    i, n = 0, len(lines)
+    while i < n:
+        # worklog 家规：闭合 --- 之后到下一个 --- 之间是该条目的正文（## 小节等），
+        # 与生成器 split_blocks 同一口径；正文里再出现 --- 即视为下一条目开头。
+        j = i + 1
+        while j < n and lines[j].strip() != "---":
+            j += 1
+        if j >= n:
+            raise ValueError("条目块缺闭合 ---（第 %d 行起）" % (i + 1))
+        k = j + 1
+        while k < n and lines[k].strip() != "---":
+            k += 1
+        fm, body, _ = parse_frontmatter("---\n" + "\n".join(lines[i + 1:j]) + "\n---")
+        title = unplaceholder(fm.get("title"))
+        if not title:
+            raise ValueError("条目缺 title（必填，动词开头一句话说清做了什么）")
+        status = unplaceholder(fm.get("status"))
+        if status not in WORKLOG_STATUS:
+            raise ValueError("status 非法：%r（只允许 %s）" % (status, "/".join(sorted(WORKLOG_STATUS))))
+        typ = unplaceholder(fm.get("type")) or "自由"   # 与生成器同口径：缺省按自由
+        if typ not in WORKLOG_TYPES and typ not in WORKLOG_LEGACY_TYPES:
+            raise ValueError("type 非法：%r（新条目只允许 %s；历史兼容 %s）" %
+                             (typ, "/".join(WORKLOG_TYPES), "/".join(WORKLOG_LEGACY_TYPES)))
+        raw_date = unplaceholder(fm.get("date"))
+        date = normalize_day(raw_date) if raw_date else today
+        if raw_date and not date:
+            raise ValueError("date 非法：%r（要 YYYY-MM-DD）" % raw_date)
+        wid = unplaceholder(fm.get("wid"))
+        if wid and not re.match(r"^W-\d{8}-\d+$", wid):
+            raise ValueError("wid 格式非法：%r（必须 W-YYYYMMDD-序号；不填则自动分配）" % wid)
+        if wid and wid[2:10] != date.replace("-", ""):
+            raise ValueError("wid 日期与 date 不一致：%s / %s" % (wid, date))
+        if not wid:
+            prefix = "W-" + date.replace("-", "")   # 家规：W-YYYYMMDD-序号（紧凑日期）
+            mx = max((int(m.group(1)) for w in pool
+                      for m in [re.match(r"^%s-(\d+)$" % re.escape(prefix), w)] if m),
+                     default=0)
+            wid = "%s-%03d" % (prefix, mx + 1)
+            notes.append("wid 自动分配为 %s（当天已有最大序号+1）" % wid)
+        elif wid in pool:
+            raise ValueError("wid 撞号：%s 已存在（热文件/归档范围）——别手工编号，"
+                             "删掉 wid 让门禁按「当天最大+1」自动分配" % wid)
+        pool.add(wid)
+        ticket = unplaceholder(fm.get("ticket"))
+        if typ == "工单" and not ticket:
+            raise ValueError("工单型条目缺 ticket（A2 规则）——填 TSKxxxxx 或把 type 改对")
+        if typ != "工单" and ticket:
+            notes.append("非工单型条目已按 A2 规则清空 ticket（原值 %r）——"
+                         "不填就留空，禁用 - 占位（校验器会把 - 当已填）" % ticket)
+            ticket = ""
+        canonical = {
+            "wid": wid, "date": date, "title": title, "status": status, "type": typ,
+            "ticket": ticket, "aff": unplaceholder(fm.get("aff")),
+            "project": unplaceholder(fm.get("project")),
+            "deliverable": unplaceholder(fm.get("deliverable")),
+            "updated": normalize_day(unplaceholder(fm.get("updated"))) or date,
+            "note": unplaceholder(fm.get("note")),
+        }
+        fm_lines = ["%s: %s" % (k, canonical[k]) for k in canonical]
+        fm_lines += ["%s: %s" % (k, fm[k]) for k in fm           # 门禁不认识的扩展键原样保留
+                     if k not in canonical and fm[k] not in (None, "")]
+        # worklog 家规：闭合 --- 之后到下一个 --- 之间是该条目的正文（## 小节等），
+        # 必须原样带回——parse_frontmatter 只喂了字段行，body 恒空，正文取原文切片。
+        body_text = "\n".join(lines[j + 1:k]).strip()
+        block = "---\n" + "\n".join(fm_lines) + "\n---"
+        if body_text:
+            block += "\n" + body_text
+        out.append(block)
+        i = k
+    return "\n".join(out) + "\n", notes
 
 
 def parse_company_args(argv):
@@ -659,15 +873,16 @@ def _kb_write_changelog(kb, label, before, after):
     """
     added = sorted(r for r in after if r not in before)
     removed = sorted(r for r in before if r not in after)
-    renamed = sorted((r, after[r], before[r]) for r in after
-                     if r not in before and after[r] in before.values())
-    for r, _t, old_t in renamed:
+    renamed = sorted((r, after[r], old_path, old_title)
+                     for r in after
+                     if r not in before
+                     for old_path, old_title in before.items()
+                     if after[r] == old_title and old_path not in after)
+    for r, _t, old_path, _old_t in renamed:
         if r in added:
             added.remove(r)
-        for k, v in list(before.items()):
-            if v == old_t and k not in after and k in removed:
-                removed.remove(k)
-                break
+        if old_path in removed:
+            removed.remove(old_path)
     if not (added or removed or renamed):
         return ""
     import datetime as _dt
@@ -676,8 +891,8 @@ def _kb_write_changelog(kb, label, before, after):
         lines.append(f"- 新增：{after[r]}（`{r}`）")
     for r in removed:
         lines.append(f"- 移除：{before[r]}（`{r}`）")
-    for r, t, old_t in renamed:
-        lines.append(f"- 改标题：{old_t} → {t}（`{r}`）")
+    for r, t, old_path, old_t in renamed:
+        lines.append(f"- 移动：`{old_path}` → `{r}`（标题：{old_t}）")
     body = "\n".join(lines) + "\n"
     log = Path(kb) / "KB-CHANGELOG.md"
     if not log.is_file():
@@ -691,12 +906,26 @@ def _kb_write_changelog(kb, label, before, after):
 
 
 def sync_kb_index(root, cid=None):
-    """把各层知识库条目写成 knowledge/INDEX.md（生成物：头部声明「勿手改」）。
+    """在公司事务锁内重建知识索引；未指定公司时逐公司串行。"""
+    root_path = Path(root)
+    if cid:
+        import opc_resolver
+        company = next((Path(c) for c in discover_companies(str(root_path))
+                        if opc_resolver.extract_company_id(_read(Path(c) / "company.md")) == cid), None)
+        if company is None:
+            raise FileNotFoundError(f"未找到公司 {cid}，无法同步知识索引")
+        with file_lock(company / ".opc-kb-transaction", timeout=30):
+            recovery = _recover_kb_journal(company)
+            if recovery:
+                raise RuntimeError(recovery)
+            return _sync_kb_index_unlocked(str(root_path), cid)
+    return _sync_kb_index_unlocked(str(root_path), None)
 
-    索引行 = L0 常驻层（约 30 字符/条）：agent 先看本表，命中才读条目 `summary`，
-    确认有用才读全文（P33 ① 三级加载）。返回写入的 INDEX 路径列表。
-    """
+
+def _sync_kb_index_unlocked(root, cid=None):
+    """把各层知识库条目写成 knowledge/INDEX.md（调用方负责事务锁）。"""
     root = Path(root)
+
     comp_dirs = [Path(c) for c in discover_companies(str(root))]
     tpl = root / "company-template"
     if tpl.is_dir() and (tpl / "company.md").is_file():
@@ -885,7 +1114,59 @@ def _kb_resolve_target(comp, to):
     return Path(comp) / hits[0], kind, hits[0].name
 
 
+def _sha256_text(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _kb_journal_path(comp):
+    return Path(comp) / ".opc-kb-promote.journal.json"
+
+
+def _write_kb_journal(path, data):
+    atomic_write(str(path), json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _recover_kb_journal(comp):
+    """前滚未完成的知识上浮；遇到用户改写则保留 journal 并报告冲突。"""
+    jp = _kb_journal_path(comp)
+    if not jp.is_file():
+        return None
+    try:
+        tx = json.loads(_read(jp))
+        src, dest, stub = Path(tx["source"]), Path(tx["destination_path"]), tx["stub"]
+        expected = tx["source_hash"]
+        if dest.exists() and _sha256_text(_read(dest)) != tx["destination_hash"]:
+            return f"上浮事务冲突：目标已被其他内容修改，journal 保留：{jp}"
+        if src.exists() and _sha256_text(_read(src)) not in (expected, _sha256_text(stub)):
+            return f"上浮事务冲突：源文件已被其他内容修改，journal 保留：{jp}"
+        if not dest.exists():
+            atomic_write(str(dest), tx["destination"])
+        if not src.exists() or _sha256_text(_read(src)) == expected:
+            atomic_write(str(src), stub)
+        elif _sha256_text(_read(src)) != _sha256_text(stub):
+            return f"上浮事务冲突：存根无法安全写入，journal 保留：{jp}"
+        jp.unlink()
+        return None
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        return f"上浮事务恢复失败：{exc}，journal 保留：{jp}"
+
+
 def promote_entry(root, src, to, actor=""):
+    """在公司级锁内执行可恢复的知识归属转移。"""
+    root, src = Path(root), Path(src)
+    comp = next((Path(c) for c in discover_companies(str(root))
+                 if os.path.commonpath((os.path.abspath(str(src)), os.path.abspath(str(c)))) == os.path.abspath(str(c))), None)
+    if comp is None:
+        return False, "未定位到源条目所属公司"
+    lock_target = comp / ".opc-kb-transaction"
+    with file_lock(lock_target, timeout=30):
+        recovery = _recover_kb_journal(comp)
+        if recovery:
+            return False, recovery
+        return _promote_entry_locked(root, src, to, actor, comp=comp)
+
+
+def _promote_entry_locked(root, src, to, actor="", comp=None):
     """上浮（归属轴）：物理搬家 + 原处留真实存根 + 审批前查重（决策 #19 §17.4）。
 
     存根必须是真实 .md 文件而非索引里的一行——否则原路径的 opc:// 引用全部断链。
@@ -896,6 +1177,10 @@ def promote_entry(root, src, to, actor=""):
     import shutil
     from difflib import SequenceMatcher
     root, src = Path(root), Path(src)
+    if comp is not None:
+        recovery = _recover_kb_journal(comp)
+        if recovery:
+            return False, recovery
     if not src.is_file():
         return False, f"源条目不存在：{src}"
     txt = _read(src)
@@ -916,6 +1201,9 @@ def promote_entry(root, src, to, actor=""):
     tkb = tdir / KB_DIR
     if not tkb.is_dir():
         return False, f"目标层尚无 {KB_DIR}/ 目录：{tkb}"
+    recovery = _recover_kb_journal(comp)
+    if recovery:
+        return False, recovery
     import opc_resolver
     cid_here = opc_resolver.extract_company_id(_read(comp / "company.md"))
     if not cid_here or not re.match(r"^C\d+$", cid_here):
@@ -938,8 +1226,10 @@ def promote_entry(root, src, to, actor=""):
     dest_dir = (tkb / sub) if str(sub) != "." else tkb
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / src.name
-    if dest.exists():
-        dest = dest_dir / f"{src.stem}-v2{src.suffix}"
+    suffix = 1
+    while dest.exists():
+        suffix += 1
+        dest = dest_dir / f"{src.stem}-v{suffix}{src.suffix}"
     # frontmatter 改写：maintainer 换成接手管理员，留 promoted 痕迹（作者不丢）
     lines = txt.split("\n")
     if lines and lines[0].strip() == "---":
@@ -956,7 +1246,7 @@ def promote_entry(root, src, to, actor=""):
                     seg.append(f"{key}: {val}")
             seg.append(f"promoted: {_dt.date.today().isoformat()} → {tlabel}")
             lines[1:end] = seg
-    atomic_write(str(dest), "\n".join(lines))
+    destination_text = "\n".join(lines)
     new_rel = str(dest.relative_to(tkb)).replace("\\", "/")
     new_uri = (_kb_entry_uri(cid_here, tkind, tlabel, new_rel)
                if cid_here else new_rel)
@@ -970,9 +1260,29 @@ def promote_entry(root, src, to, actor=""):
             f"# {title}\n\n"
             f"> 本文已上浮至 `{new_uri}`（决策 #19：上浮 = 归属转移，物理只存一份）。\n"
             "> 本文件是**存根**，保留以承接历史 `opc://` 引用；内容请读新地址。\n")
-    os.remove(str(src))
+    journal = {
+        "version": 1, "txid": secrets.token_hex(12), "phase": "prepared",
+        "cid": cid_here, "source": str(src), "destination_path": str(dest),
+        "source_hash": _sha256_text(txt), "destination_hash": _sha256_text(destination_text),
+        "stub_hash": _sha256_text(stub), "destination": destination_text,
+        "stub": stub, "actor": actor,
+    }
+    jp = _kb_journal_path(comp)
+    _write_kb_journal(jp, journal)
+    atomic_write(str(dest), destination_text)
+    journal["phase"] = "dest_written"
+    _write_kb_journal(jp, journal)
+    # 原文件用原子替换写成存根，避免 remove 与 stub 写入之间出现断链窗口。
     atomic_write(str(src), stub)
-    sync_kb_index(str(root), cid_here)
+    journal["phase"] = "source_stubbed"
+    _write_kb_journal(jp, journal)
+    _sync_kb_index_unlocked(str(root), cid_here)
+    journal["phase"] = "indexes_synced"
+    _write_kb_journal(jp, journal)
+    try:
+        jp.unlink()
+    except OSError:
+        pass
     return True, (f"已上浮「{title}」→ {tlabel}：`{new_rel}`；"
                   f"原处留存根 `{src.name}` 承接旧引用（作者 {fm.get('author') or '—'} / "
                   f"维护人 {actor or '—'}）")
@@ -1066,7 +1376,7 @@ def selftest():
         with file_lock(lockfile):
             check("file_lock：持锁期间锁文件在且含持有者 PID",
                   os.path.isfile(lockfile + ".lock")
-                  and Path(lockfile + ".lock").read_text(encoding="utf-8") == str(os.getpid()))
+                  and json.loads(Path(lockfile + ".lock").read_text(encoding="utf-8"))["pid"] == os.getpid())
         check("file_lock：正常释放后锁文件不残留", not os.path.exists(lockfile + ".lock"))
         # 模拟孤儿锁：持有者早退没清理（内容=已失活 PID）→ 应立即被抢占，不等 30s 过期
         Path(lockfile + ".lock").write_text(str(2**31 - 1), encoding="utf-8")
@@ -1176,6 +1486,66 @@ def selftest():
     enc = locale.getpreferredencoding(False)
     check("stdin 解码：本机编码兜底可解",
           _decode_input(io.BytesIO("中文内容".encode(enc)).read()) == "中文内容")
+
+    # ---- worklog 门禁（2026-08-31 双告警治本层）----
+    def gate(content, pool=()):
+        return worklog_gate(content, set(pool), today="2030-01-02")
+
+    blk = "---{n}wid:{n}date: 2030-01-02{n}title: 干了件活{n}status: 已完成{n}type: 自由{n}ticket: -{n}deliverable: -{n}---{n}正文{n}{n}## 小节{n}- 要点".format(n=NL)
+    out, notes = gate(blk)
+    fm_out, _, _ = parse_frontmatter(out)
+    check("门禁：wid 自动分配（首条当天 001）",
+          fm_out["wid"] == "W-20300102-001" and fm_out["ticket"] in ("", None)
+          and fm_out["deliverable"] in ("", None))
+    check("门禁：条目正文原样保留", "## 小节" in out and "- 要点" in out)
+    out2, _ = gate(blk, pool={"W-20300102-001", "W-20300102-07"})
+    fm_out2, _, _ = parse_frontmatter(out2)
+    check("门禁：序号取当天最大+1（07 存在时分配 008）", fm_out2["wid"] == "W-20300102-008")
+    blk_fixed = blk.replace("wid:", "wid: W-20300102-001")
+    try:
+        gate(blk_fixed, pool={"W-20300102-001"})
+        check("门禁：显式 wid 撞号拒收", False)
+    except ValueError:
+        check("门禁：显式 wid 撞号拒收", True)
+    try:
+        gate(blk.replace("wid:", "wid: W-2030-1"))
+        check("门禁：显式 wid 格式非法拒收", False)
+    except ValueError:
+        check("门禁：显式 wid 格式非法拒收", True)
+    blk_tsk = blk.replace("type: 自由", "type: 工单")
+    try:
+        gate(blk_tsk)
+        check("门禁：工单型缺 ticket 拒收", False)
+    except ValueError:
+        check("门禁：工单型缺 ticket 拒收", True)
+    blk_ok_tsk = blk_tsk.replace("ticket: -", "ticket: TSK00010")
+    out3, _ = gate(blk_ok_tsk)
+    fm_out3, _, _ = parse_frontmatter(out3)
+    check("门禁：工单型 ticket 合法放行", fm_out3["wid"] == "W-20300102-001" and fm_out3["ticket"] == "TSK00010")
+    try:
+        gate(blk.replace("status: 已完成", "status: 干完了"))
+        check("门禁：status 非法拒收", False)
+    except ValueError:
+        check("门禁：status 非法拒收", True)
+    try:
+        gate(blk.replace("title: 干了件活", "title: -"))
+        check("门禁：title 占位符视同缺失拒收", False)
+    except ValueError:
+        check("门禁：title 占位符视同缺失拒收", True)
+    out4, notes4 = gate(blk.replace("type: 自由", "type: 直聊"))
+    fm_out4, _, _ = parse_frontmatter(out4)
+    check("门禁：非工单条目 `-` 占位静默清空（无 A2 提示）",
+          fm_out4["ticket"] in ("", None) and not any("A2" in x for x in notes4))
+    out4b, notes4b = gate(blk.replace("type: 自由", "type: 直聊").replace("ticket: -", "ticket: TSK00010"))
+    fm_out4b, _, _ = parse_frontmatter(out4b)
+    check("门禁：非工单条目真实 ticket 强制清空并提示",
+          fm_out4b["ticket"] in ("", None) and any("A2" in x for x in notes4b))
+    out5, _ = gate("<!-- 归档指针注释 -->" + NL)
+    check("门禁：非条目内容原样放行", out5.startswith("<!--"))
+    out6, _ = gate(blk + NL + NL + blk.replace("wid:", "wid: "), pool={"W-20300102-001"})
+    fm_out6, _, _ = parse_frontmatter(out6)
+    check("门禁：缺 wid 多块连加各分配不撞号", fm_out6["wid"] == "W-20300102-002")
+
     print("自测" + ("全部通过 ✓" if ok else "存在失败 ✗"))
     return 0 if ok else 1
 
@@ -1194,6 +1564,9 @@ def main():
                     help="KB.md 结构漂移排查（**人工按需**，不进自动巡检：自由文本误报率高）")
     ap.add_argument("--append", nargs=2, metavar=("目标文件", "内容文件"),
                     action="store", help="锁内追加：把内容文件追加到目标（多会话安全；内容文件为 - 时读 stdin）")
+    ap.add_argument("--worklog", action="store_true",
+                    help="配合 --append：按 worklog 门禁处理（自动分配 wid / A2 校验 / 撞号拒收）。"
+                         "目标文件名是 worklog.md 时自动生效，无需本开关（归档文件追加才需要）")
     ap.add_argument("--company", default=None, help="限定公司 ID（--sync-index 用）")
     ap.add_argument("--selftest", action="store_true", help="内置自测（不碰真实数据）")
 
@@ -1229,8 +1602,26 @@ def main():
             if not content.strip():
                 print(f"[ERR] 内容文件为空：{src}")
                 return 1
-        locked_append(target, content)
-        print(f"[ok] 已锁内追加 {len(content)} 字符 -> {target}")
+        if a.worklog or os.path.basename(target) == "worklog.md":
+            def _gate(existing):
+                new, notes = worklog_gate(content, worklog_wid_pool(target, existing))
+                _gate.notes = notes
+                if not existing:
+                    return new
+                # 块间家规：条目块之间留一个空行；热文件无尾换行时先补（防 ---- 粘连）
+                sep = "" if existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
+                return existing + sep + new
+            try:
+                locked_worklog_update(target, _gate)
+            except ValueError as e:
+                print(f"[ERR] worklog 门禁拒绝（未写入）：{e}")
+                return 1
+            for nt in _gate.notes:
+                print("[i] " + nt)
+            print(f"[ok] 已过 worklog 门禁并追加 -> {target}")
+        else:
+            locked_append(target, content)
+            print(f"[ok] 已锁内追加 {len(content)} 字符 -> {target}")
         return 0
     if a.promote:
         ok, msg = promote_entry(root, a.promote, a.to, a.actor)

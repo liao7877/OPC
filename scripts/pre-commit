@@ -14,8 +14,8 @@ if [ -f "$root/opc_resolver.py" ]; then
   command -v python3 >/dev/null 2>&1 && PY=python3
   command -v python  >/dev/null 2>&1 && PY=python
   if [ -z "$PY" ]; then
-    echo "⚠️ pre-commit 跳过：未找到 python/python3（需 >= 3.11 跑命名空间门禁）"
-    exit 0
+    echo "❌ pre-commit 阻断：未找到 Python 3.11+，无法运行命名空间门禁。" >&2
+    exit 1
   fi
   if ! "$PY" "$root/opc_resolver.py" --check; then
     echo "❌ pre-commit 阻断：命名空间存在失效引用或锚点漂移。"

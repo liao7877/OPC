@@ -78,6 +78,7 @@ run_boards.bat once                     # 可选：手动重建看板数据（bo
 # —— 各模块内置自测（不碰真实数据，排查问题时用）——
 python3 opc_resolver.py --selftest && python3 opc_model.py --selftest
 python3 opc_tickets.py --selftest && python3 opc_dashboards.py --selftest && python3 opc_patrol.py --selftest
+python3 opc_sync.py --selftest && python3 integrations/feishu.py --selftest  # 在线协作内核 + 飞书 fake HTTP
 
 # —— 看板不同步时（新电脑 / 目录搬家 / 多份 clone）——
 python3 opc_resolver.py --doctor   # 服务探活含「根身份校验」：端口上是别的根的服务会点名 + 给处置命令；自启项指向旧目录则自动重写
@@ -120,6 +121,13 @@ python3 opc_resolver.py --ensure-links  # 零参数，按 company.md 的「公�
 
 - 进程=宿主、公司=租户：扫描 `opc.toml` 全部公司逐家装配，新公司自动纳管；`opc.toml [service]` 可配端口/巡检周期/每日摘要时间/通知通道。
 - 跨平台自启：Windows=启动文件夹 `OPC-Service.vbs`（headless 无窗口）；macOS/Linux=crontab `@reboot` 标记块。删自启项即卸载；`python opc_service.py` 可前台手动跑（`--open` 顺带开浏览器）。
+
+**3.1 在线协作 Level 3（飞书第一版）**
+- 员工先加载公司级 `feishu-bitable` / `feishu-knowledge` Skill；执行通道优先采用已核验 CLI 或官方 HTTP API，MCP 仅作可选 fallback。
+- 平台中立契约在 `opc_integrations.py`，reconcile/冲突/墓碑/事件账本在 `opc_sync.py`，飞书 HTTP 边界在 `integrations/feishu.py`；运行态写入公司根 `.opc-sync/`（已忽略，不入库）。
+- 使用 `integrations/feishu.example.json` 复制出**仓库外的本机私有配置**后替换测试资源 ID，再运行 `python opc_sync.py --root <公司根> --config <私有配置.json> --reconcile`。示例文件不含凭据；真实 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 只放环境变量或系统凭据库。
+- `python opc_sync.py --root <公司根> --status` 查看连接/绑定/shadow/冲突数量；`--project` 重建给看板和巡检读取的标准 projection。
+- 第一版开放多维表格读取与字段白名单的单条有限更新、Wiki/DOCX 只读；批量、删除、表结构、权限和知识自动晋升默认关闭。
 
 **4. 跑看板**
 - 日常**无需手动**：OPC 服务已在 `http://127.0.0.1:8765/{公司ID}/dashboard.html` 托管看板并实时刷新。

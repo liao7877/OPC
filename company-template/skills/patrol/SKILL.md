@@ -33,8 +33,9 @@ triggers: [巡检, 巡查, 公司体检, 例行检查, 心跳, 服务巡检]
 | 14 | 知识库·过期 | 条目 `review_by` 到期或已超期 | 各级 knowledge/ 条目 frontmatter | 人工复审：更新内容，或改 `status` 降级归档（**永不自动删**） |
 | 15 | 知识库·重复 | 同层两条标题相似度 ≥ 阈值（默认 0.75） | 各级 knowledge/INDEX.md | 人工合并（上浮审批时也会查重拦截） |
 | 16 | 知识库·冷门 | 条目长期零命中（默认 90 天） | 各级 knowledge/INDEX.md | 人工判断是否归档，不自动删 |
+| 17 | 看板告警兜底 | dashboard `risks.warnings` 中未被 2/3 号关键词认领的告警（worklog 撞号 / 非工单填 ticket / deliverable 失效 / roster 异常等） | dashboard-data.js risks | 按文案处置；worklog 类查写入方是否绕过门禁（`opc_model --append`） |
 
-> 13~16 号（2026-08-30 决策 #19 新增）：#13 依赖环；#14/#15/#16 是知识库**腐烂防护三条**——**机器只发现，处置一律人工裁决**，永不自动删除，只降级与归档（可逆；CPU 的 eviction 是硬件无损淘汰，知识不能照搬）。三条并入每日 09:00 摘要，不实时弹窗。阈值在 `opc.toml [knowledge]`（`review_warn_days` / `dupe_similarity` / `cold_hits_days`）。
+> 17 号保证「看板上有的告警，巡检必报」。写路径治本靠 worklog 门禁；机器只发现，处置仍由总管人工裁决（P29）。
 
 > 11/12 号（2026-08-29 决策 #18 新增）：用户拍板「要主动打扰」的两类事件——工单逾期/临期与长期无进展。阈值在 `opc_schema.PATROL`（`due_soon_days` / `stalled_days`，默认各 3 天）。
 

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>公司驾驶舱 · <本司ID></title>
+<title>公司驾驶舱 · C001</title>
 <style>
   :root {
     --bg: #0f1419; --panel: #1a2129; --panel-2: #222b35; --border: #2c3742;
@@ -125,7 +125,7 @@
       <input type="number" min="1" class="stale-input" id="staleMin" />
       <a class="btn" id="kanbanLink" href="workbench/kanban.html">🗂 工单协作看板</a>
       <button class="btn" id="syncBtn">🔄 同步</button>
-      <button class="btn" id="themeBtn">☀️ 切亮色</button>
+      <button class="btn" id="themeBtn">🌙 切暗色</button>
     </div>
   </header>
   <div id="staleBar"></div>
@@ -155,17 +155,18 @@
     function pct(r) { return (r === null || r === undefined) ? "—" : Math.round(r * 100) + "%"; }
     function empName(code) { var m = (DATA && DATA.employees) || {}; for (var i = 0; i < m.length; i++) { if (m[i].eid === code) return m[i].name; } return code; }
 
-    // ---- 主题（默认暗）----
+    // ---- 主题（默认亮色；仅手动切换才记忆，避免初始化把默认值写进 localStorage，导致改默认对老访客无效）----
     function applyTheme(t) {
       document.documentElement.setAttribute("data-theme", t);
       document.getElementById("themeBtn").textContent = t === "dark" ? "☀️ 切亮色" : "🌙 切暗色";
-      try { localStorage.setItem(LSKEY("boards-theme"), t); } catch (e) {}
     }
     var savedTheme = null;
     try { savedTheme = localStorage.getItem(LSKEY("boards-theme")); } catch (e) {}
-    applyTheme(savedTheme || "dark");
+    applyTheme(savedTheme || "light");
     document.getElementById("themeBtn").addEventListener("click", function () {
-      applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+      var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      try { localStorage.setItem(LSKEY("boards-theme"), next); } catch (e) {}
+      applyTheme(next);
     });
 
     // ---- 陈旧阈值 ----
@@ -353,9 +354,30 @@
       var m6 = '<section id="m6"><h2>🚨 风险与核验<span class="cnt">停滞预警 + worklog×工单 交叉核验</span></h2>' +
         (staleHtml || warnHtml ? staleHtml + warnHtml : '<div class="empty">暂无风险与核验告警 ✓</div>') + "</section>";
 
-      M.innerHTML = m2 + m1 + m4 + m3 + m3b + m5 + m6;
+      // M7 online collaboration shadows. These are read models, never local task truth.
+      var ext = DATA.external || {items:[], conflicts:[], tombstones:[]};
+      var extCards = (ext.items || []).map(function (x) {
+        return '<div class="card"><div class="emp-name">' + esc(x.title) +
+          ' <span class="dim">' + esc(x.provider) + '</span></div>' +
+          '<div><span class="badge">' + esc(x.entity_type || 'external') + '</span>' +
+          (x.status ? '<span class="badge">' + esc(x.status) + '</span>' : '') +
+          (x.deleted ? '<span class="badge st-reg">已删除/墓碑</span>' : '') + '</div>' +
+          '<div class="dim" style="margin-top:6px">external ' + esc(x.external_id) +
+          (x.local_id ? ' · local ' + esc(x.local_id) : '') +
+          (x.external_version ? ' · version ' + esc(x.external_version).slice(0,12) : '') + '</div></div>';
+      }).join('');
+      var extWarnings = (ext.conflicts || []).map(function (c) {
+        return '<div class="risk-item bad">冲突 ' + esc(c.binding_id) + '：' + esc(c.message || c.kind) + '</div>';
+      }).join('');
+      var m7 = '<section id="m7"><h2>🌐 在线协作<span class="cnt">外部 shadow ' +
+        (ext.items || []).length + ' · 冲突 ' + (ext.conflicts || []).length +
+        ' · 墓碑 ' + (ext.tombstones || []).length + '</span></h2>' +
+        '<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">' +
+        (extCards || '<div class="empty">暂无已绑定在线资源</div>') + '</div>' + extWarnings + '</section>';
+
+      M.innerHTML = m2 + m1 + m4 + m3 + m3b + m5 + m6 + m7;
       document.getElementById("navChips").innerHTML =
-        ['m2|📊 统计', 'm1|👥 员工', 'm4|🧩 团队', 'm3|📁 项目', 'm3b|🔁 事务', 'm5|🌊 动态', 'm6|🚨 风险']
+        ['m2|📊 统计', 'm1|👥 员工', 'm4|🧩 团队', 'm3|📁 项目', 'm3b|🔁 事务', 'm5|🌊 动态', 'm6|🚨 风险', 'm7|🌐 在线']
           .map(function (x) { var p = x.split("|"); return '<a href="#' + p[0] + '">' + p[1] + "</a>"; }).join("");
       Array.prototype.forEach.call(M.querySelectorAll(".card.click"), function (el) {
         el.addEventListener("click", function () {
